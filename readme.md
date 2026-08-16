@@ -2,9 +2,12 @@
 
 *Design document. Nothing here is built.*
 
-The alternative to [`doc/ricercar`](../ricercar/readme.md), written after that approach's §8 was traced back to its
+The alternative to [`ricercar`](ricercar/readme.md), written after that approach's §8 was traced back to its
 causes. It is not a repair of ricercar. It starts from a different category and reaches most of the same questions
 with less machinery, and it is written because ricercar's own measurements point at it.
+
+§§1–7 were written before reading the literature now in [`literature/`](literature/); §§2.1, 2.5, 3, 5, 7 and 8
+were revised against it, and each revision is marked. Two claims did not survive.
 
 **The claim in one line.** Fugue is a word problem over a finite alphabet, subject to a constraint of bounded
 memory — so the right tools are automata, dynamic programming and exact combinatorial search, and the continuum was
@@ -98,6 +101,18 @@ time, the branch and bound over placement — do not have counterparts here. The
 
 This also disposes of the register problem §7.6 found the hard way. There is no `L_R` to be register-dependent
 about.
+
+> **Correction, from Giraud et al. (2015).** The first row of that table is wrong for real fugues. A fugal answer
+> is often **tonal**, not real: transposed to the dominant, *and* altered in its first few notes so that the
+> dominant pitch maps to the tonic rather than the supertonic. Giraud names this as the reason their matcher works
+> on **diatonic** intervals rather than semitones — "a scale will always match only a scale."
+>
+> So `x + k` describes the *real* answer only. The repair is small and the parameterisation already has room for
+> it: the tonal answer is **its own transformation type `τ`**, not a value of `k`, and §3's compatibility table is
+> already indexed by `(τᵢ, τⱼ, …)`. But a subject stated with one `τ` and answered with another is the normal
+> case, not an extension, and the table has to carry it from the start. Pitch is therefore best held as
+> `(scale degree, inflection)` rather than as a semitone integer — Giraud's argument, arrived at for a matching
+> problem and applying unchanged to a generation problem.
 
 ### 2.2 Counterpoint is a finite automaton
 
@@ -198,6 +213,69 @@ to constraint programming. That the boundary falls exactly between the harmonic-
 rules is a real finding about counterpoint, and it is falsifiable — name a strict-counterpoint rule with longer
 memory and the claim is wrong.
 
+> **The falsification was offered, and it refines the claim rather than breaking it.** Ebcioğlu's two-part florid
+> counterpoint system carries about fifty constraints, among them — in Anders & Miranda's paraphrase — that the
+> pitches of the voice's local maxima **within three measures** must be distinct. That is exactly the shape rule
+> predicted, and it is longer than order 3. But it is *windowed*: three measures, not the whole piece. A windowed
+> rule is still finite-state, at a state cost exponential in the window and linear in the alphabet. So the accurate
+> statement is:
+>
+> **contrapuntal rules are order ≤ 3 in events; melodic shape rules are order ≤ one phrase.** Both are finite-state.
+> The second is where the state count stops being small, and it is the honest reason to reach for a solver rather
+> than a wider DP.
+
+### 2.6 What is *not* a variable: rhythm
+
+The grid is fixed before the search. Which tick a note falls on is data; only pitch is unknown. That is a real
+restriction and it should be stated rather than discovered later.
+
+It is also the mainstream position, and for the same reason. Anders & Miranda's survey calls the general problem
+*score topology* — a contrapuntal constraint needs to know which notes sound together, which are melodically
+adjacent, and where the barline is, and none of that is determined until the rhythm is. PWConstraints' polyphonic
+subsystem **Score-PMC makes note pitches the only variables and requires the rhythmic structure to be fully
+determined in the problem definition**, because it computes its static variable ordering by sorting notes by start
+time. The identical restriction, arrived at from the identical difficulty.
+
+What it costs: no rhythmic invention, no choosing where a suspension may be prepared, no deciding a subject's
+durations. What it buys: simultaneity is a lookup, the constraint graph is static, and §2.5's layered DAG exists at
+all. For a fugue this is a fair trade — the subject's rhythm *is* given, and the episodes are the part where it
+would matter.
+
+### 2.7 Where a solver takes over from the DP
+
+The DP dies at the voice count, not at the piece length. State at a tick is the product of the free voices'
+domains: with a two-octave compass that is roughly `24^(V−e)` before obligations, so `V − e = 2` is comfortable,
+`3` wants the harmonic automaton pruning it, and `4` or more is out of reach exactly.
+
+**This is where a CDCL solver belongs, and the reason is conflict learning, not theories.** Every system in the
+survey that searches over polyphony uses plain chronological backtracking; Anders & Miranda name *thrashing* as its
+known weakness — the same conflict rediscovered over and over because the search never records why it failed —
+and Ebcioğlu had to build backjumping into a new language (BSL) to get around it. Conflict-driven clause learning
+is that fix, done properly: the conflict is learned once as a clause and never revisited anywhere in the tree. In a
+five-voice texture, where a dead end in bar 30 is caused by a choice in bar 3, this is the whole game.
+
+Three further properties matter here specifically:
+
+- **`unsat` is a proof**, and the unsat core names the conflicting constraints. "No fifth entry can be added" comes
+  back with *which pair of entries* forbids it — a musically meaningful answer, and the thing ricercar's
+  `best_remaining()` existed to fake.
+- **Soft constraints are native.** §5 is about where taste enters; the answer below is the Pareto front, and
+  Z3's optimizer supports multi-objective search in `pareto` mode directly.
+- **Incrementality.** Push an entry, re-solve, pop — which is the shape of §3's greedy loop, and precisely what
+  ricercar's `capacity()` got wrong by rebuilding.
+
+What it is *not* good for here: none of the SMT theories earn their keep. Pitch is finite-domain, interval legality
+is a precomputed table, and `(pᵢ − pⱼ) mod 12` is actively unpleasant in linear integer arithmetic. The right
+encoding is **one-hot Booleans per (voice, tick), table constraints for interval legality, and the automaton
+unrolled as a state variable per tick with transition clauses** — which is bounded model checking's standard trick
+and lands the whole problem in pure SAT. Use the solver as a very good SAT engine with an optimiser on top, not as
+an SMT solver.
+
+Two warnings, both real at five voices. **Symmetry** — voice permutation within a register, and the global
+transposition of the entire texture — inflates unsat proofs badly and nothing breaks it for you; order the voices
+by register and pin the first entry at `(τ = identity, d = 0, k = 0)`. And **one model is not a set of pieces**:
+blocking clauses enumerate near-duplicates, so diversity has to be asked for explicitly rather than hoped for.
+
 ---
 
 ## 3. The measurement §6.1 wanted, computed exactly
@@ -269,6 +347,36 @@ re-entry. It is just a search order now rather than a metric.
 
 ---
 
+### 3.3 The subject is input, and its boundary is contested
+
+This is the second thing the literature broke, and it is worse than the tonal answer because there is no clean
+repair.
+
+Capacity is a function of the subject. §3 assumes the subject is given. Giraud et al. built a ground truth for the
+24 Bach fugues of WTC I against four musicological sources — Prout, Tovey, Keller, Bruhn, plus Charlier — and
+report that **in eight of the twenty-four, at least two sources disagree about where the subject ends**, sometimes
+by several notes. On Fugue No. 9 they quote Tovey to the effect that it is not worth settling where the subject
+ends and the countersubject begins; the flow between them is continuous.
+
+A subject four notes longer overlaps more, forbids more offsets, and has lower capacity. So **a single capacity
+number silently encodes an editorial decision**, and a corpus ranking built from single numbers would be measuring
+the editors as much as the subjects — the same failure mode as ricercar's unpinned `θ`, arriving from a completely
+different direction.
+
+Three ways to take it, in increasing order of honesty:
+
+1. use the algomus ground truth and cite it — reproducible, but inherits one committee's view;
+2. report capacity **as an interval** over the alternative subject-ends the sources give, which the ground-truth
+   files record;
+3. treat the subject end as a *free variable* and report the capacity profile over it — which is more interesting
+   than either, because "where does this subject stop stretto-ing well" is a musical question, and the profile's
+   shape may be the argument for one editor over another.
+
+(3) is the version worth building, and it costs nothing extra: the compatibility table is computed per subject
+length anyway, so the profile is a loop over prefixes of one table.
+
+---
+
 ## 4. Space filling, in the right category
 
 The instinct behind ricercar was not wrong. Counterpoint really is a tiling problem. The error was the category:
@@ -292,9 +400,30 @@ Written in ricercar's §8 form, because the point of that section is that it exi
 - **Whether the result is good.** Unchanged and irreducible. A legal fugue is not a beautiful one, and no formalism
   fixes that.
 - **But the failure mode inverts, and this is worth stating plainly.** A complete solver does not fail by finding
-  nothing; it fails by finding *far too much*. Completeness is not selectivity, and the standard reply — soften the
-  constraints, optimise a weighted sum — is where taste re-enters through the back door. That is ricercar §5's
-  boundary arrived at from the other side, and it is the same boundary.
+  nothing; it fails by finding *far too much*. Completeness is not selectivity. That is ricercar §5's boundary
+  arrived at from the other side, and it is the same boundary.
+
+  **Measured, by Komosinski & Szachewicz (2014).** For an eleven-note *cantus firmus*, first species, two voices —
+  the smallest interesting case there is — the number of legal counterpoints is **10⁵ to 3·10⁶**, growing
+  exponentially in length. Whatever this method is short of, candidates is not it.
+
+- **And the standard reply is wrong, which is the most useful thing the literature says.** The usual fix is to
+  weight the broken rules and minimise `Σ pᵢ·nᵢ`. Komosinski & Szachewicz reject it on two grounds. The weights are
+  unobtainable — the treatises rank rules only loosely, and they quote Fux himself declining to rank one: *"I shall
+  leave to your discretion the use or avoidance of it."* And a sum is the wrong algebra, because it makes breaking
+  one important rule equivalent to breaking three trivial ones, which is not how anyone hears music.
+
+  Their alternative is to **not aggregate**: report the **Pareto front** under the dominance relation — every
+  counterpoint not beaten on all criteria at once. No weights, no trade-offs asserted, nothing lost that is best at
+  anything. Their seven criteria are ordinary (direct motion, repeated notes, imperfect consonances, skips, two
+  skips in a line, perfect consonances by direct motion, forbidden jumps), and they split them: two are **hard** and
+  five are **soft**.
+
+  This is the right shape for §2.2's rulebook too, and it should be adopted: **the automaton carries the hard
+  rules, the Pareto front carries the soft ones.** Taste then enters exactly once, at the end, as a human choosing
+  from an incomparable set — not smuggled into an objective function. Two caveats they record themselves: the front
+  can reach ~700 members for an eleven-note *cantus firmus*, which is too many to read; and exhaustive enumeration
+  "will not be practical" for longer melodies, which is the argument for §2.7's solver.
 - **The rules are stipulated, not derived.** This is the real methodological cost, and it is a genuine loss against
   ricercar. Plomp–Levelt *derives* consonance: §7.1 found interior minima at 316, 386, 498, 702 and 884 cents —
   the minor third, major third, fourth, fifth and major sixth — falling out of summed partial pairs rather than
@@ -302,8 +431,18 @@ Written in ricercar's §8 form, because the point of that section is that it exi
   transcription of an explicit theory rather than fitting to data, which is what "elegant, not fitted" asks for,
   but it is not derivation and should not be described as such.
 - **A style, and a caricature of one.** Fux is not Bach, and Bach breaks Fux constantly. Whose rulebook goes into
-  the automaton is an arguable, inspectable modelling choice — which is better than an unarguable one, but it is
-  still a choice, and the output is bounded by it.
+  the automaton is an arguable, inspectable modelling choice — better than an unarguable one, but still a choice,
+  and the output is bounded by it. **Both papers demonstrate the cost on themselves.** Komosinski & Szachewicz
+  print a Pareto-optimal counterpoint and note in its own caption that Fux would forbid it, for a chromatic half
+  step their rule set omitted. And Schottstaedt's system — five species, up to six voices, forty-odd weighted
+  rules, the most ambitious of its generation — produces, in Anders & Miranda's assessment, rhythm atypical of the
+  style it targets, "almost march-like," with melodies full of large skips. **Satisfying the rules is not the same
+  as being in the style, and a system can fail while reporting success.** That is the failure to expect here, and
+  §8's step 1 is written to catch it early.
+- **Infeasibility is real and is not always a bug.** Komosinski & Szachewicz found *cantus firmi* for which **no**
+  counterpoint satisfies even their two hard rules — the legal set is empty, not small. A complete method reports
+  that as a proof rather than as a timeout, which is the right behaviour, but it means "no solution" will
+  sometimes be the honest answer to a musically reasonable request.
 - **Melodic invention.** The subject is input. §3.2 makes designing one cheaper, but designing for *capacity* is
   not designing for interest.
 - **Robustness.** See §6.
@@ -332,42 +471,86 @@ the two were not distinguished when the domain was chosen.
 ## 7. Prior art
 
 None of this is novel, and that is a feature — the components are known-good and the risk sits in the composition
-rather than in the parts. Details should be checked before they are relied on; the lineage is not in doubt.
+rather than in the parts. Rows marked ✔ are in [`literature/`](literature/) and were read; the rest are cited from
+those three and should be checked before they are relied on.
 
 | | |
 |---|---|
-| Hiller & Isaacson, *Illiac Suite* (1957) | rule-based counterpoint by generate-and-reject |
-| Schottstaedt, *Automatic Counterpoint* (1984) | Fux's species rules, backtracking with penalty weights |
-| Ebcioğlu, CHORAL (CMJ 1988) | ~350 rules for Bach chorale harmonisation — the cautionary tale, and the argument for factoring a rulebook into automata rather than listing it |
+| ✔ Anders & Miranda, *ACM Comput. Surv.* 43(4):30, 2011 | the survey to read first — music CP end to end, and the source for most rows below |
+| ✔ Komosinski & Szachewicz, *J. Math. & Music* 9(1):75–94, 2015 | first-species counterpoint by the **dominance relation** — the argument against weighted sums, and §5's numbers |
+| ✔ Giraud, Groult, Leguy & Levé, *Computer Music Journal* 39(2):77–96, 2015 | fugue **analysis**, and the ground-truth corpus §8 now uses |
+| Hiller & Isaacson, *Illiac Suite* (1957) | rule-based counterpoint by generate-and-reject; the field starts here |
+| Schottstaedt, *Automatic Counterpoint* (CCRMA TR-19, 1984; rev. 1989) | Fux, five species, **up to six voices**, 40+ weighted rules — the closest prior attempt at the scale §2.7 targets, and the cautionary result |
+| Ebcioğlu, CHORAL (*J. Logic Programming* 8(1):145–185, 1990) | ~350 rules for Bach chorale harmonisation, in a language (BSL) built for it because backtracking alone would not do — the argument for factoring a rulebook rather than listing it |
+| Ebcioğlu (1980), two-part florid counterpoint | ~50 constraints, including the windowed melodic-peak rule that refines §2.5 |
 | Pesant, `regular` constraint (CP 2004) | the domain-consistent DFA-membership propagator of §2.5 |
-| Anders, Strasheela; Laurson, PWConstraints | constraint systems built for music |
-| Anders & Miranda, ACM Comput. Surv. 43(4), 2011 | the survey to read first |
-| Boenn, Brain, De Vos, Fitzgerald, ANTON | the same programme in answer-set programming, which may be the most elegant surface syntax available for it |
+| Laurson, PWConstraints / Score-PMC; Anders, Strasheela | the two ends of the design space: fixed rhythm + fast static ordering, versus arbitrary score topology |
+| Boenn, Brain, De Vos & Fitzgerald, ANTON (*TPLP* 11(2–3):397–427, 2011) | the same programme in answer-set programming, which may be the most elegant surface syntax available for it |
 | Vuza; Coven–Meyerowitz; Andreatta, Amiot, Agon | tiling rhythmic canons — §4 |
 
 Deliberately excluded: Cope's EMI and everything downstream of it. Recombinant methods are fitted to a corpus by
 construction, which is the constraint this document was written under.
 
+**Two things the survey says that bear directly on §2.3 and §2.4.** Its conclusion names the gaps: *"Other
+neglected fields include harmonic counterpoint, and the modeling of melody and musical form."* And, more precisely,
+*"no system supports that the hierarchic structure of the score can be constrained freely, but such a feature would
+be highly useful for modeling musical form."* The harmonic automaton and the form grammar are therefore **not**
+reinventions — they are the two things this literature reports as missing. That is the strongest reason to think
+the composition is worth attempting even though every part is off the shelf.
+
+**And a calibration on speed**, from the same conclusion: an all-interval series or first-species Fuxian
+counterpoint solves in milliseconds; harmonising a melody or **two-voice florid counterpoint takes seconds**. So
+§8's realisation step should be budgeted in seconds for two voices, and five voices should be treated as genuinely
+open rather than as more of the same.
+
+**One methodological note, from Giraud.** Discussing why they did not learn their thresholds: machine learning
+*"could improve the thresholds and weights of these models, but strategies have to be designed to address the
+problem of overfitting, a concern for data sets as small as these are prone."* Thirty-six fugues is not a corpus
+you can fit anything to. The no-fitting constraint this document was written under has an empirical justification
+as well as an aesthetic one.
+
 ---
 
 ## 8. Roadmap
 
-Each step is decidable, and each produces a number or a verdict rather than a demo.
+Each step is decidable, and each produces a number or a verdict rather than a demo. **Revised against the
+literature**: step 0 is new, step 3 acquires a real corpus, and step 5 acquires an escalation ladder and an honest
+expectation of cost.
 
-1. **The two-voice automaton.** Build it, minimise it, and **report the reachable state count** — measured, in this
-   project's habit. Verdict test: reproduce textbook judgements on textbook examples, including the three the
-   roughness field got wrong. Parallel fifths flagged; a bare fifth consonant; a suspension distinguished from an
-   accidental dissonance of the same interval. §7.2 had to substitute its own test because the field could not do
-   the first of those; this is the direct answer to it.
-2. **The compatibility table and the clique**, on BWV 867's subject — already entered from the score in
-   [`ricercar/src/main.rs`](../ricercar/src/main.rs). Verdict test, per §3.1: *does Bach's Stretto II come out as a
-   clique?* Pass calibrates the automaton; fail falsifies it. No constant is fitted either way.
-3. **The corpus ranking.** Ricercar §6.1, blocked twice, at milliseconds per subject. The deliverable is the table
-   in §6.2 of that document, filled in.
+0. **Take the corpus, do not build one.** Giraud et al. published the ground truth for **36 fugues — 24 from WTC I
+   and 12 from Shostakovich's op. 87 — as machine-readable annotations under an open licence** (`algomus.fr`,
+   release 2015.01, >1000 annotations): subject and countersubject positions, alternative subject-ends where the
+   sources disagree, cadences, pedals. Their note representation is `(pitch, onset, duration)` with onsets and
+   durations in sixteenths, which is §2.1's lattice arrived at independently. **This removes the corpus from the
+   critical path entirely** and gives step 3 its input and step 1 its test cases. First job: parse it, and check the
+   BWV 867 subject already entered in [`ricercar/src/main.rs`](ricercar/src/main.rs) against their annotation.
+1. **The two-voice automaton.** Build it, minimise it, **report the reachable state count**, and split the rules
+   **hard versus soft** in Komosinski & Szachewicz's manner — the automaton takes the hard ones, §5's Pareto front
+   takes the rest. Verdict tests, in order of how much they would hurt to fail:
+   - parallel fifths flagged; a bare fifth consonant; a suspension distinguished from an accidental dissonance of
+     the same interval. Ricercar §7.2 had to substitute its own test because the field could not do the first;
+   - **run it as a checker over the 36-fugue corpus and count how often Bach violates it.** A rulebook that flags
+     Bach on every page is the Schottstaedt failure of §5 arriving early and cheaply, and it is far better to learn
+     that from a checker than from a composition. This test costs almost nothing and is the single most
+     informative thing in the roadmap.
+2. **The compatibility table and the clique**, on BWV 867's subject. Carry the **tonal answer as its own `τ`** from
+   the start (§2.1). Verdict test, per §3.1: *does Bach's Stretto II come out as a clique?* Pass calibrates the
+   automaton; fail falsifies it. No constant is fitted either way.
+3. **The corpus ranking.** Ricercar §6.1, blocked twice there, at milliseconds per subject here — over 36 real
+   subjects rather than a handful. Report **capacity as a profile over subject length** (§3.3), not as a single
+   number, since eight of the twenty-four Bach subjects have contested endings.
 4. **Subject design**, per §3.2 — search over contours with the head fixed.
-5. **Realisation.** Viterbi fill of the free voices against the harmonic automaton, then MIDI. The first audible
-   output of either document.
-6. **Form**, per §2.4. A whole fugue, with the packing question living inside the stretto block where it belongs.
+5. **Realisation**, with an escalation ladder rather than one algorithm:
+   - `V − e ≤ 2` free voices: Viterbi against the harmonic automaton. Exact. Budget: seconds, per the survey's
+     figure for two-voice florid counterpoint;
+   - `V − e = 3`: the same, pruned by harmony, or a solver;
+   - `V − e ≥ 4`: SAT/CDCL per §2.7 — one-hot pitch, table constraints, unrolled automaton, symmetry broken by
+     register and by pinning the first entry. **Treat this as open**, not as more of the same. Schottstaedt reached
+     six voices in 1984 with weighted backtracking and the result was stylistically wrong; nothing in the three
+     papers does five-voice florid counterpoint with a complete search.
+   Then MIDI. The first audible output of either document.
+6. **Form**, per §2.4 — which the survey names as unsupported by any existing system, so expect to build rather
+   than borrow. A whole fugue, with the packing question living inside the stretto block where it belongs.
 
-Steps 1 to 3 are the ones that pay for themselves. They are perhaps a few hundred lines and they close a question
-that has now been open across two blocked attempts.
+Steps 0 to 3 are the ones that pay for themselves, and step 0 is now nearly free. They are perhaps a few hundred
+lines and they close a question that has been open across two blocked attempts.
