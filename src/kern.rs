@@ -47,6 +47,11 @@ pub struct Piece {
   /// for *diatonic* transposition, which is what a stretto at the second or
   /// third actually is — an exact interval transposition would leave the key.
   pub key: [i8; 7],
+  /// Tonic pitch class and whether the mode is minor, from the `*b-:` style
+  /// key interpretation. Needed to say what a *cadence* is: `V -> I` is only
+  /// meaningful relative to a tonic, and the key signature alone cannot
+  /// distinguish a major key from its relative minor.
+  pub tonic: Option<(u8, bool)>,
   /// Instants where one voice sounded more than one pitch at once, which this
   /// reader declines to interpret. Counted so the omission is visible.
   pub polyphonic_instants: usize,
@@ -107,6 +112,7 @@ pub fn read(path: &std::path::Path) -> Result<Piece, String> {
   let mut measure = 4 * TICKS_PER_QUARTER;
   let mut beat = TICKS_PER_QUARTER;
   let mut key = [0i8; 7];
+  let mut tonic: Option<(u8, bool)> = None;
   // A tie open in this voice: the next note continues it rather than attacking.
   let mut tied: Vec<bool> = vec![];
 
@@ -144,6 +150,28 @@ pub fn read(path: &std::path::Path) -> Result<Piece, String> {
               '#' => { if let Some(l) = letter { key[l] += 1 } }
               '-' => { if let Some(l) = letter { key[l] -= 1 } }
               _ => {}
+            }
+          }
+        }
+        // `*F:` major, `*f:` minor, with accidentals: the tonic.
+        if tonic.is_none() && f.len() >= 3 && f.ends_with(':') {
+          let body = &f[1..f.len() - 1];
+          let mut ch = body.chars();
+          if let Some(letter) = ch.next() {
+            if letter.is_ascii_alphabetic() && letter.to_ascii_lowercase() <= 'g' {
+              let minor = letter.is_ascii_lowercase();
+              let deg = "cdefgab".find(letter.to_ascii_lowercase());
+              if let Some(deg) = deg {
+                let base = [0i16, 2, 4, 5, 7, 9, 11][deg];
+                let alter: i16 = body[1..].chars().map(|c| match c {
+                  '#' => 1,
+                  '-' => -1,
+                  _ => 0,
+                }).sum();
+                if body[1..].chars().all(|c| c == '#' || c == '-') {
+                  tonic = Some(((base + alter).rem_euclid(12) as u8, minor));
+                }
+              }
             }
           }
         }
@@ -255,7 +283,7 @@ pub fn read(path: &std::path::Path) -> Result<Piece, String> {
   }
   voices.retain(|v| !v.notes.is_empty());
 
-  Ok(Piece { id, voices, measure, beat, key, polyphonic_instants })
+  Ok(Piece { id, voices, measure, beat, key, tonic, polyphonic_instants })
 }
 
 /// The pitch sounding in `v` at tick `t`, and whether it is struck there.

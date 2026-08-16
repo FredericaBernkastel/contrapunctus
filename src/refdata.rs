@@ -22,6 +22,10 @@ pub struct SubjectSpec {
   pub entries: Vec<(char, i64)>,
   /// Alternative lengths other sources give, from `== S alternative` — §3.3.
   pub alternatives: Vec<i64>,
+  /// Annotated cadences: tick, and the label in Hepokoski-Darcy notation such
+  /// as `III:PAC`. Present in the ground truth from the beginning and unused
+  /// until §16 — the only external check available on the harmonic analyser.
+  pub cadences: Vec<(i64, String)>,
 }
 
 /// Parse one offset in the `.ref` grammar into ticks.
@@ -69,6 +73,7 @@ pub fn read(
   let mut measure = 0i64;
   // which label block we are inside: the primary S, an alternative, or other
   let mut in_s = false;
+  let mut in_cad = false;
 
   for raw in text.lines() {
     let line = raw.split('#').next().unwrap_or("");
@@ -83,11 +88,12 @@ pub fn read(
       let id = rest.split_whitespace().next().unwrap_or("").to_string();
       measure = measures(&id).unwrap_or(0);
       cur = if measure > 0 {
-        Some(SubjectSpec { id, len: 0, entries: vec![], alternatives: vec![] })
+        Some(SubjectSpec { id, len: 0, entries: vec![], alternatives: vec![], cadences: vec![] })
       } else {
         None
       };
       in_s = false;
+      in_cad = false;
       continue;
     }
     let Some(c) = cur.as_mut() else { continue };
@@ -112,6 +118,27 @@ pub fn read(
         in_s = true;
       } else {
         in_s = false;
+        in_cad = head == "cadences";
+      }
+      continue;
+    }
+
+    if in_cad {
+      // `*  25 (III:PAC), 37 (VII:PAC), ...`
+      let Some((voices, rest)) = t.split_once(char::is_whitespace) else { continue };
+      if !voices.chars().all(|ch| ch.is_ascii_uppercase() || ch == '*') {
+        continue;
+      }
+      for field in rest.split(',') {
+        let bare = field.split('(').next().unwrap_or("").trim();
+        let label = field
+          .split_once('(')
+          .and_then(|(_, r)| r.split(')').next())
+          .unwrap_or("")
+          .to_string();
+        if let Some(tick) = offset(bare, measure) {
+          c.cadences.push((tick, label));
+        }
       }
       continue;
     }

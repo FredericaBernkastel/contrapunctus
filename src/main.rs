@@ -39,6 +39,11 @@ fn main() {
     "h1" => harmony_run(),
     "h2" => harmony_design(),
     "h3" => harmony_corpus(),
+    "cad" => cadence_check(),
+    "hren" => harmony_renaissance(),
+    "seg" => segmentation_sensitivity(),
+    "revisit" => step4_revisit(),
+    "s16" => { cadence_check(); harmony_renaissance(); segmentation_sensitivity(); step4_revisit(); }
     _ => {
       states();
       verdict();
@@ -1201,4 +1206,315 @@ fn harmony_corpus() {
   println!("  Bach vs random across subjects    r = {:+.3}", experiments::pearson(&bs, &rs));
   let avg: f64 = rows.iter().map(|r| r.4 as f64).sum::<f64>() / rows.len() as f64;
   println!("  mean distinct degrees in an optimised contour: {avg:.1}   (§13 gave 1.0)");
+}
+
+// ---------------------------------------------------------------- §16 ------
+
+fn specs_with(pieces: &std::collections::BTreeMap<String, kern::Piece>) -> Vec<refdata::SubjectSpec> {
+  refdata::read(
+    std::path::Path::new("corpus/algomus-data/fugues/fugues.ref"),
+    &|id| pieces.get(id).map(|p| p.measure),
+  )
+  .unwrap_or_default()
+}
+
+/// Test 1. The only external check available on the harmonic analyser: does it
+/// find the cadences the ground truth annotates?
+///
+/// Every number in §14 measures whether my chord templates explain notes, not
+/// whether the labels are right. An analyser picking plausible-but-wrong chords
+/// would produce exactly those figures.
+fn cadence_check() {
+  println!("
+== §16.1 cadence validation against the ground truth ==");
+  println!("  The label names the KEY of the cadence, not only its type: of 106");
+  println!("  annotated cadences only 39 are in the home tonic. `III:PAC` is a");
+  println!("  perfect cadence in the mediant, and its arrival chord is III.
+");
+  let pieces = load_bach();
+  let specs = specs_with(&pieces);
+  println!("  fugue        key    annot  arrival  V->arrival");
+  let (mut n_ann, mut n_hit, mut n_vi, mut n_parsed) = (0usize, 0usize, 0usize, 0usize);
+  for spec in &specs {
+    let Some(p) = pieces.get(&spec.id) else { continue };
+    if spec.cadences.is_empty() { continue }
+    let Some((tonic, minor)) = p.tonic else { continue };
+    let end = p.voices.iter().flat_map(|v| v.notes.iter().map(|n| n.onset + n.dur)).max().unwrap_or(0);
+    let segs = harmony::analyse(&p.voices, p.beat, end);
+    let (mut hit, mut vi, mut parsed) = (0usize, 0usize, 0usize);
+    for (tick, label) in &spec.cadences {
+      let Some((deg, kind)) = label.split_once(':') else { continue };
+      let Some(off) = roman(deg, minor) else { continue };
+      parsed += 1;
+      // where the cadence arrives depends on its type: a half cadence stops on
+      // the dominant, a deceptive one lands on vi of the local key.
+      let local = (tonic as i16 + off).rem_euclid(12) as u8;
+      let arrival = match kind {
+        "HC" => (local as i16 + 7).rem_euclid(12) as u8,
+        "DC" => (local as i16 + 9).rem_euclid(12) as u8,
+        _ => local,
+      };
+      let dom = (local as i16 + 7).rem_euclid(12) as u8;
+      // allow the arrival to land in the annotated segment or the next one
+      let i = (*tick / p.beat).max(0) as usize;
+      let found = (i..=i + 1).any(|j| segs.get(j).and_then(|s| s.chord).map(|c| c.root == arrival).unwrap_or(false));
+      if found { hit += 1 }
+      let before = i.checked_sub(1).and_then(|j| segs.get(j)).and_then(|s| s.chord);
+      if found && before.map(|c| c.root == dom).unwrap_or(false) { vi += 1 }
+    }
+    n_ann += spec.cadences.len();
+    n_parsed += parsed;
+    n_hit += hit;
+    n_vi += vi;
+    println!(
+      "  {:<12} {:<6} {:>5} {:>8} {:>11}",
+      spec.id,
+      format!("{}{}", ["C","C#","D","E-","E","F","F#","G","A-","A","B-","B"][tonic as usize], if minor { "m" } else { "" }),
+      parsed, hit, vi
+    );
+  }
+  println!("
+  {n_parsed} cadences parsed of {n_ann} annotated");
+  println!("  arrival chord correct:               {n_hit}  ({:.0}%)", 100.0 * n_hit as f64 / n_parsed.max(1) as f64);
+  println!("  and preceded by its dominant:        {n_vi}  ({:.0}%)", 100.0 * n_vi as f64 / n_parsed.max(1) as f64);
+
+  // The baseline: how often a *randomly chosen* segment would match, which is
+  // what the hit rate has to beat to mean anything.
+  let (mut t, mut all) = (0usize, 0usize);
+  for spec in &specs {
+    let Some(p) = pieces.get(&spec.id) else { continue };
+    let Some((tonic, minor)) = p.tonic else { continue };
+    let end = p.voices.iter().flat_map(|v| v.notes.iter().map(|n| n.onset + n.dur)).max().unwrap_or(0);
+    let segs = harmony::analyse(&p.voices, p.beat, end);
+    for (_, label) in &spec.cadences {
+      let Some((deg, kind)) = label.split_once(':') else { continue };
+      let Some(off) = roman(deg, minor) else { continue };
+      let local = (tonic as i16 + off).rem_euclid(12) as u8;
+      let arrival = match kind {
+        "HC" => (local as i16 + 7).rem_euclid(12) as u8,
+        "DC" => (local as i16 + 9).rem_euclid(12) as u8,
+        _ => local,
+      };
+      // probability that two consecutive random segments contain that root
+      let n = segs.iter().filter(|s| s.chord.map(|c| c.root == arrival).unwrap_or(false)).count();
+      t += n * 2;
+      all += segs.len();
+    }
+  }
+  println!("  chance rate for the same lookup:     {:.0}%   <- the number to beat", 100.0 * t as f64 / all.max(1) as f64);
+}
+
+/// Roman numeral to semitones above the tonic, per mode. Upper case is a major
+/// triad on that degree, lower case minor, which for the scale degrees that
+/// differ between modes is what disambiguates them.
+fn roman(d: &str, minor: bool) -> Option<i16> {
+  let up = d.to_ascii_uppercase();
+  let maj = [("I", 0), ("II", 2), ("III", 4), ("IV", 5), ("V", 7), ("VI", 9), ("VII", 11)];
+  let min = [("I", 0), ("II", 2), ("III", 3), ("IV", 5), ("V", 7), ("VI", 8), ("VII", 10)];
+  let table: &[(&str, i16)] = if minor { &min } else { &maj };
+  // a case mismatch means the degree is borrowed: III in a major key is the
+  // flattened mediant, iii in a minor key the raised one
+  let base = table.iter().find(|(k, _)| *k == up).map(|(_, v)| *v)?;
+  let other = (if minor { &maj } else { &min }).iter().find(|(k, _)| *k == up).map(|(_, v)| *v)?;
+  let is_upper = d.chars().next().map(|c| c.is_uppercase()).unwrap_or(true);
+  let expect_upper = matches!(up.as_str(), "I" | "IV" | "V") != minor;
+  Some(if is_upper == expect_upper { base } else { other })
+}
+
+/// Test 2. A tonal analyser should fit modal polyphony *worse*. If it does not,
+/// it is not measuring tonality.
+fn harmony_renaissance() {
+  println!("\n== §16.2 the harmonic analyser on modal polyphony ==");
+  let mut files: Vec<std::path::PathBuf> = vec![];
+  for d in ["Jos", "Oke", "Obr", "Duf", "Bus", "Mar"] {
+    if let Ok(rd) = std::fs::read_dir(std::path::Path::new("corpus/jrp-scores").join(d)) {
+      files.extend(rd.filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.extension().map(|x| x == "krn").unwrap_or(false)));
+    }
+  }
+  files.sort();
+  files.truncate(200);
+  let mut ren = harmony::Report::default();
+  let (mut rfit, mut n) = (0.0f64, 0usize);
+  for f in &files {
+    if let Ok(p) = kern::read(f) {
+      let r = harmony::report(&p.voices, p.beat);
+      if r.total() > 0 {
+        rfit += r.mean_fit;
+        n += 1;
+        ren.merge(&r);
+      }
+    }
+  }
+  let mut bach = harmony::Report::default();
+  let (mut bfit, mut bn) = (0.0f64, 0usize);
+  for (_, p) in load_bach() {
+    let r = harmony::report_piece(&p);
+    bfit += r.mean_fit;
+    bn += 1;
+    bach.merge(&r);
+  }
+  let ct = |r: &harmony::Report| 100.0 * r.chord_tones as f64 / r.total().max(1) as f64;
+  let ex = |r: &harmony::Report| 100.0 * r.explained();
+  let un = |r: &harmony::Report| 1000.0 * r.untreated as f64 / r.total().max(1) as f64;
+  println!("  {n} Renaissance works, {} notes; 24 Bach fugues, {} notes\n", ren.total(), bach.total());
+  println!("  statistic                    Renaissance     Bach   difference");
+  println!("  mean chord fit                   {:>7.3}  {:>7.3}   {:>+7.3}", rfit / n.max(1) as f64, bfit / bn.max(1) as f64, rfit / n.max(1) as f64 - bfit / bn.max(1) as f64);
+  println!("  chord tones                      {:>6.1}%  {:>6.1}%   {:>+7.1}", ct(&ren), ct(&bach), ct(&ren) - ct(&bach));
+  println!("  explained (binary)               {:>6.1}%  {:>6.1}%   {:>+7.1}", ex(&ren), ex(&bach), ex(&ren) - ex(&bach));
+  println!("  untreated per 1000 notes         {:>7.1}  {:>7.1}   {:>+7.1}", un(&ren), un(&bach), un(&ren) - un(&bach));
+  println!("\n  prediction: a tonal vocabulary should fit modal music WORSE.");
+}
+
+/// Test 3. The beat is an unjustified free parameter, and this project has been
+/// burned four times by exactly that.
+fn segmentation_sensitivity() {
+  println!("\n== §16.3 does the segmentation window change the answer? ==");
+  println!("  window            fit    chord tones   explained   untreated/1k");
+  for (name, div) in [("half beat", 2i64), ("beat (as used)", 1), ("half measure", -2), ("measure", -1)] {
+    let mut tot = harmony::Report::default();
+    let (mut fit, mut n) = (0.0, 0usize);
+    for (_, p) in load_bach() {
+      let w = if div > 0 { p.beat / div } else if div == -2 { p.measure / 2 } else { p.measure };
+      if w == 0 { continue }
+      let r = harmony::report(&p.voices, w);
+      fit += r.mean_fit;
+      n += 1;
+      tot.merge(&r);
+    }
+    println!(
+      "  {name:<16} {:>5.3}     {:>7.1}%    {:>7.1}%       {:>7.1}",
+      fit / n.max(1) as f64,
+      100.0 * tot.chord_tones as f64 / tot.total().max(1) as f64,
+      100.0 * tot.explained(),
+      1000.0 * tot.untreated as f64 / tot.total().max(1) as f64
+    );
+  }
+}
+
+/// A **graded** harmonic objective, replacing §14.2's binary one which
+/// saturated at 1.000 for Bach and for a monotone alike.
+fn graded(voices: &[kern::Voice], beat: i64) -> f64 {
+  let r = harmony::report(voices, beat);
+  let t = r.total().max(1) as f64;
+  // chord fit, minus the untreated-dissonance rate that §14.1 found is the one
+  // statistic separating Bach from arbitrary placement. Nothing is weighted
+  // against anything else: these are on the same scale, both fractions of the
+  // same denominator.
+  r.mean_fit - r.untreated as f64 / t
+}
+
+/// Tests 4 and 5: the graded objective, and step 4 re-run against it.
+fn step4_revisit() {
+  println!("\n== §16.4 a graded harmonic objective, and step 4 again ==");
+  let pieces = load_bach();
+  let Some(p) = pieces.get("wtc-i-22") else { return };
+  let q = kern::TICKS_PER_QUARTER;
+  let base = stretto::Subject::cut(&p.voices[p.voices.len() - 1], 0, 12 * q);
+  let n = base.notes.len();
+  let score = |c: &[i16]| {
+    let s = from_contour(&base, c, &p.key);
+    let voices = vec![s.place_diatonic(0, 0, &p.key), s.place_diatonic(4 * q, -4, &p.key)];
+    graded(&voices, p.beat)
+  };
+  let bach = contour_of(&base);
+  let flat = vec![0i16; n];
+  println!("  Bach's own subject      {:.4}", score(&bach));
+  println!("  a monotone              {:.4}   (both were 1.000 under §14.2)", score(&flat));
+
+  let mut rng = Rng(0xF00D);
+  let trials = 400;
+  let mut samples = Vec::with_capacity(trials);
+  for _ in 0..trials {
+    let mut c = vec![0i16; n];
+    for x in c.iter_mut().skip(1) {
+      *x = rng.below(15) as i16 - 7;
+    }
+    samples.push(score(&c));
+  }
+  let mean: f64 = samples.iter().sum::<f64>() / trials as f64;
+  let sd = (samples.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / trials as f64).sqrt();
+  println!("  random contours ({trials})   {mean:.4} +- {sd:.4}");
+  println!("  -> Bach sits {:+.2} sd above random   (§14.2 gave +0.91, §13 gave +0.23)",
+    (score(&bach) - mean) / sd.max(1e-9));
+
+  let mut best = (score(&bach), bach.clone());
+  for restart in 0..14 {
+    let mut c = bach.clone();
+    if restart > 0 {
+      for x in c.iter_mut().skip(1) {
+        *x = rng.below(15) as i16 - 7;
+      }
+    }
+    let mut cur = score(&c);
+    loop {
+      let mut improved = false;
+      for i in 1..n {
+        let old = c[i];
+        for d in -7i16..=7 {
+          if d == old { continue }
+          c[i] = d;
+          let v = score(&c);
+          if v > cur + 1e-12 { cur = v; improved = true } else { c[i] = old }
+        }
+      }
+      if !improved { break }
+    }
+    if cur > best.0 { best = (cur, c.clone()) }
+  }
+  let (d, h, m) = liveliness(&best.1);
+  println!("\n  best contour found      {:.4}", best.0);
+  println!("  degrees                 {:?}", best.1);
+  println!("  {d} distinct degrees, {h} repeats, mean step {m:.2}");
+  println!("  beats Bach?             {}", if best.0 > score(&bach) + 1e-12 { "yes" } else { "no" });
+
+  println!("\n  -- across all subjects --");
+  println!("  fugue        Bach    random    best   distinct");
+  let mut rng2 = Rng(0xD00D);
+  let (mut nb, mut rows) = (0usize, vec![]);
+  for (id, pp, s, _) in &subjects() {
+    if s.notes.len() < 3 || s.notes.len() > 24 { continue }
+    let sc = |c: &[i16]| {
+      let sub = from_contour(s, c, &pp.key);
+      let voices = vec![sub.place_diatonic(0, 0, &pp.key), sub.place_diatonic(s.len / 3, -4, &pp.key)];
+      graded(&voices, pp.beat)
+    };
+    let own = contour_of(s);
+    let b = sc(&own);
+    let mut rsum = 0.0;
+    for _ in 0..60 {
+      let mut rc = vec![0i16; s.notes.len()];
+      for x in rc.iter_mut().skip(1) { *x = rng2.below(15) as i16 - 7 }
+      rsum += sc(&rc);
+    }
+    let rmean = rsum / 60.0;
+    let mut c = own.clone();
+    let mut cur = b;
+    loop {
+      let mut improved = false;
+      for i in 1..s.notes.len() {
+        let old = c[i];
+        for dd in -7i16..=7 {
+          if dd == old { continue }
+          c[i] = dd;
+          let v = sc(&c);
+          if v > cur + 1e-12 { cur = v; improved = true } else { c[i] = old }
+        }
+      }
+      if !improved { break }
+    }
+    let (dd, _, _) = liveliness(&c);
+    if b > rmean { nb += 1 }
+    rows.push((id.clone(), b, rmean, cur, dd));
+  }
+  for (id, b, r, c, dd) in &rows {
+    println!("  {id:<12} {b:.4}  {r:.4}  {c:.4}   {dd:>6}");
+  }
+  let md: f64 = rows.iter().map(|r| r.1 - r.2).sum::<f64>() / rows.len() as f64;
+  let beat_bach = rows.iter().filter(|r| r.3 > r.1 + 1e-12).count();
+  let avg: f64 = rows.iter().map(|r| r.4 as f64).sum::<f64>() / rows.len() as f64;
+  println!("\n  Bach beats random on the same rhythm: {nb} of {}   (§13: 5/20, §14.3: 17/20)", rows.len());
+  println!("  mean advantage of Bach's contour:     {md:+.4}   (§13: -0.0763, §14.3: +0.0552)");
+  println!("  optimiser beats Bach on:              {beat_bach} of {}", rows.len());
+  println!("  mean distinct degrees in an optimum:  {avg:.1}   (§13: 1.0, §14.3: 6.8)");
 }

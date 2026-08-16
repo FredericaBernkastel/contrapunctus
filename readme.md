@@ -2,7 +2,9 @@
 
 ### Fugue on the lattice: 513 states, a clique, and what Bach says about the rulebook
 
-*Design document. **Steps 0 to 4 of [§8](#8-roadmap), and [§2.3](#23-harmony-is-a-second-automaton)'s harmonic layer, are built and measured — see §[§9](#9-step-1-result-two-rules-survive-bach-three-do-not)–14.** Steps 4 onward are not.*
+*Design document. **Steps 0 to 4 of [§8](#8-roadmap) are built and measured. [§2.3](#23-harmony-is-a-second-automaton)'s harmonic
+layer is built and [fails validation](#16-the-harmonic-layer-does-not-survive-validation) — see §§[9](#9-step-1-result-two-rules-survive-bach-three-do-not)–[16](#16-the-harmonic-layer-does-not-survive-validation).**
+Steps 5 onward are not built.*
 
 ---
 
@@ -72,6 +74,12 @@
   - [15.3 Parameters that would otherwise have to be read out of the source](#153-parameters-that-would-otherwise-have-to-be-read-out-of-the-source)
   - [15.4 How the samples were taken, including one that is not what it looks like](#154-how-the-samples-were-taken-including-one-that-is-not-what-it-looks-like)
   - [15.5 What is not reproducible from this repository](#155-what-is-not-reproducible-from-this-repository)
+- [16. The harmonic layer does not survive validation](#16-the-harmonic-layer-does-not-survive-validation)
+  - [16.1 It finds Bach's cadences barely above chance](#161-it-finds-bachs-cadences-barely-above-chance)
+  - [16.2 It fits *modal* polyphony better than tonal — so it is not measuring tonality](#162-it-fits-modal-polyphony-better-than-tonal--so-it-is-not-measuring-tonality)
+  - [16.3 Every number depends on a window nobody justified](#163-every-number-depends-on-a-window-nobody-justified)
+  - [16.4 The graded objective is worse than the binary one](#164-the-graded-objective-is-worse-than-the-binary-one)
+  - [16.5 What this means for the next step](#165-what-this-means-for-the-next-step)
 ---
 
 ## Abstract
@@ -296,9 +304,11 @@ this project prefers to have measured.
 
 ### 2.3 Harmony is a second automaton
 
-> **Built — see [§14](#14-23-built-harmony-repairs-the-design-objective-and-fails-as-a-rule).** As a *rule* it fails: made permissive enough to accept Bach it accepts nearly everything.
-> As a *design objective* it works, and repairs [§13](#13-step-4-result-the-measure-is-valid-for-ranking-and-invalid-for-design)'s degenerate optimum. The functional-progression layer is
-> written but untested.
+> **Built, and it does not survive validation — see [§14](#14-23-built-harmony-repairs-the-design-objective-and-fails-as-a-rule) then [§16](#16-the-harmonic-layer-does-not-survive-validation).**
+> As a *rule* it fails: made permissive enough to accept Bach it accepts nearly everything. As a *design objective*
+> it looked like a repair of [§13](#13-step-4-result-the-measure-is-valid-for-ranking-and-invalid-for-design)'s
+> degenerate optimum, until four external checks showed it identifies cadences barely above chance and fits modal
+> music better than tonal. It is a triadic-consonance detector, not a model of harmony.
 
 A functional automaton over `(key, scale degree, inversion)`, with edges for the standard progressions, and
 modulation via pivot chords to closely related keys. A cadence is then a **labelled accepting path** — `ii⁶ → V → I`
@@ -1401,6 +1411,13 @@ On BWV 867 the search returns Bach's own contour — `B♭ F G♭ F E♭ D♭ C 
 2.00 — and cannot improve on it. **The objective that penalised the interval the form is built on now prefers the
 contours Bach actually wrote.**
 
+> **Withdrawn — see [§16](#16-the-harmonic-layer-does-not-survive-validation).** Every figure in this section is
+> self-referential. Four external checks were run afterwards and all four failed: the analyser identifies Bach's
+> annotated cadences correctly 38% of the time against a 23% baseline, fits *modal* polyphony better than tonal,
+> and reports effect sizes that vary elevenfold with a segmentation window nobody justified. The comparison against
+> [§13](#13-step-4-result-the-measure-is-valid-for-ranking-and-invalid-for-design)'s contrapuntal objective stands;
+> the claim that this one works does not.
+
 The remaining flaw is a ceiling rather than a perversity. The measure saturates: Bach scores 1.000, and so does a
 monotone. So it has stopped *preferring* degenerate contours, but it cannot *rank* among the ones it accepts. It is
 a filter, not an ordering — which is exactly the shape [§5](#5-what-this-will-not-do) says the soft criteria and their Pareto front are for.
@@ -1504,3 +1521,122 @@ saturation probe. They are not benchmarks and should not be read as any.
   because the Shostakovich scores are MIDI from a separate source that has not been fetched.
 - **The functional-harmony layer.** `degree_of`, `progression_ok` and `is_cadence` are written and compiled but no
   reported number exercises them ([§14.3](#143-what-23-is-and-is-not)).
+
+---
+
+## 16. The harmonic layer does not survive validation
+
+[§14](#14-23-built-harmony-repairs-the-design-objective-and-fails-as-a-rule) reported harmony as a working design
+objective on the strength of numbers that were all self-referential: they measure whether my chord templates
+explain notes, not whether the labels are right. Four external checks were run before building anything on it.
+**All four come back negative**, and one of them says the analyser is not measuring what its name claims.
+
+### 16.1 It finds Bach's cadences barely above chance
+
+The ground truth has carried **106 typed cadence annotations** since
+[§8](#8-roadmap) step 0 — Hepokoski–Darcy labels like `III:PAC`, `vi:DC`, `V:HC` — and nothing had ever read them.
+They are the only external check available.
+
+The first run scored 15% against a 12% baseline, which was **my test being wrong, not the analyser**: the label
+names the *key* of the cadence, and only 39 of the 106 are in the home tonic. `III:PAC` is a perfect cadence in the
+mediant and arrives on III. Corrected to resolve each Roman numeral against the mode, and to place a half cadence
+on the local dominant and a deceptive one on its submediant:
+
+| | |
+|---|---:|
+| cadences parsed | 106 of 106 |
+| **arrival chord correct** | **40 (38%)** |
+| and preceded by its dominant | 19 (18%) |
+| chance rate for the same lookup | **23%** |
+
+**38% against a 23% baseline.** The analyser carries real signal — 1.65× chance is not nothing — but it is wrong
+about the arrival chord three times in five, and it confirms the dominant before it less than one time in five.
+That is not something a realiser can be built on.
+
+### 16.2 It fits *modal* polyphony better than tonal — so it is not measuring tonality
+
+The prediction was straightforward and is the kind [§12.3](#123-experiment-3--the-renaissance-control-decisive-and-it-splits-the-three-refuted-rules)
+made work: a vocabulary of triads, sevenths and functional progressions describes eighteenth-century tonal music,
+so it should fit fifteenth-century modal polyphony **worse**. Same 200 Renaissance works, 188 201 notes:
+
+| statistic | Renaissance | Bach | difference |
+|---|---:|---:|---:|
+| mean chord fit | **0.929** | 0.868 | **+0.061** |
+| chord tones | **87.0%** | 80.0% | **+7.0** |
+| explained, binary | 99.8% | 99.4% | +0.3 |
+| untreated per 1000 notes | **2.3** | 5.5 | **−3.3** |
+
+**It fits Josquin better than Bach, on every statistic.** The prediction is not merely unconfirmed, it is
+falsified with the sign reversed.
+
+The explanation is not flattering. Renaissance polyphony is more triadic and far less chromatic than the WTC, so a
+detector that rewards notes for lying inside a triad will prefer it. **The analyser is measuring triadic
+consonance, not tonal function** — and a consonance measure over simultaneous pitches is, to within a
+psychoacoustic model, what [ricercar](ricercar/readme.md)'s roughness field was. Having spent fourteen sections
+getting away from that, [§2.3](#23-harmony-is-a-second-automaton) arrived back at it from the other side.
+
+### 16.3 Every number depends on a window nobody justified
+
+The segmentation is at the notated beat, chosen because it seemed reasonable. Re-run at three other plausible
+windows:
+
+| window | fit | chord tones | explained | untreated/1000 |
+|---|---:|---:|---:|---:|
+| half beat | 0.926 | 88.4% | 99.7% | **3.1** |
+| **beat** (as used) | 0.868 | 80.0% | 99.4% | **5.5** |
+| half measure | 0.787 | 71.5% | 98.2% | **17.7** |
+| measure | 0.709 | 64.2% | 96.6% | **34.3** |
+
+**The untreated-dissonance rate varies eleven-fold** across windows any analyst might defend. That was the one
+statistic [§14.1](#141-as-a-rule-it-fails--and-it-corrects-125s-reading) found separating Bach from arbitrary
+placement, at 5.5 against 12.5 — and it is now clear the separation is a property of the window as much as of the
+music.
+
+Worse, the trend has a trivial cause: a shorter window contains fewer notes, and few notes always fit some chord.
+In the limit of one note per segment the fit is exactly 1. **Mean chord fit is monotone in window fineness and
+carries no information until the window is fixed on principled grounds**, which nothing here does.
+
+This is the fifth free parameter in this project to turn out load-bearing after being chosen casually — after the
+exclusive subject window ([§10.3](#103-a-defect-the-test-caught-in-the-reading-of-the-corpus)), shared offsets
+([§11.5](#115-a-defect-the-measure-found-in-itself)), per-pair melody counting
+([§9.3](#93-bach-found-two-bugs-in-the-rulebook-in-the-first-run)) and lyric spines
+([§12.0](#120-a-parser-bug-found-on-the-way-which-corrected-everything-upstream)).
+
+### 16.4 The graded objective is worse than the binary one
+
+[§14.2](#142-as-a-design-objective-it-works--and-this-is-the-repair-133-asked-for)'s objective saturated: Bach
+scored 1.000 and so did a monotone. Grading it — mean chord fit minus the untreated rate, both fractions of the
+same denominator, so nothing is weighted against anything — was supposed to break the tie.
+
+| | §13 contrapuntal | §14.2 binary | §16.4 graded |
+|---|---:|---:|---:|
+| Bach's subject | — | 1.000 | 0.9444 |
+| **a monotone** | won outright | 1.000 | **1.0000** |
+| Bach above random | +0.23 sd | **+0.91 sd** | +0.31 sd |
+| optimiser beats Bach | 20 of 20 | **0 of 20** | 16 of 20 |
+| Bach beats random, same rhythm | 5 of 20 | 17 of 20 | **18 of 20** |
+| distinct degrees in an optimum | 1.0 | 6.8 | 6.8 |
+
+**The monotone now beats Bach outright.** A single repeated pitch has perfect chord fit and no dissonances to
+treat, so it scores exactly 1. Grading did not break the tie at the ceiling; it broke it in the wrong direction.
+
+Two things survive. Optimised contours are still melodic — 6.8 distinct degrees, not [§13](#13-step-4-result-the-measure-is-valid-for-ranking-and-invalid-for-design)'s
+monotone — and Bach still beats a random contour on his own rhythm 18 times in 20, the best figure yet. So the
+harmonic family of objectives really does align with Bach's choices in the middle of its range. It is the top of
+the range that is degenerate, and grading made that worse rather than better.
+
+### 16.5 What this means for the next step
+
+- **[§14](#14-23-built-harmony-repairs-the-design-objective-and-fails-as-a-rule)'s central claim is withdrawn.**
+  Harmony is not a working design objective. It is better than the contrapuntal one — that comparison stands,
+  and [§13.3](#133-why-and-it-is-structural-rather-than-accidental)'s diagnosis of *why* stands with it — but on
+  its own terms it fails: wrong about cadences three times in five, better on modal music than tonal, and
+  dependent on an unjustified window for the size of every effect it reports.
+- **Step 5 must not be built on this.** A realiser fills voices against the prevailing harmony, and the prevailing
+  harmony is currently identified correctly about 38% of the time.
+- **The repair is a real harmonic analyser**, not a better statistic over this one. Chord segmentation is a solved
+  problem with published baselines — the Roman-numeral-analysis literature, and Giraud's own group has a
+  cadence-detection system with figures to compare against. Substituting a validated analyser is ordinary work and
+  would let every §14 and §16 measurement be re-run unchanged.
+- **The functional layer is still untested.** `progression_ok` was never exercised: with the arrival chord wrong
+  three times in five there is nothing yet to test it against.
