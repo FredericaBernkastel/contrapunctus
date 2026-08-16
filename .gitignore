@@ -1,2 +1,5 @@
 # Build output. `corpus/` is submodules now, not ignored — see readme §8 step 0.
 target/
+# Rendered MIDI and captured run output — readme §8.6. Regenerate with
+# `cargo run --release -- realise`; nothing here is an input to anything.
+out/

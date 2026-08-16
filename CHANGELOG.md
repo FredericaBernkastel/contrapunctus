@@ -242,6 +242,71 @@ passes before any music is consulted**; Bach scores 80.4% and Renaissance 86.9%.
 
 ---
 
+## Step 5 — realisation, and the first notes
+
+`src/realise.rs` builds §2.5's shortest path; `src/midi.rs` writes it out. Rhythm is given, pitch is the only
+variable, and §2.3's harmony runs beside §2.2's counterpoint as a second obligation system over one grid. The two
+compose with no special-casing, which was the part of §2.3 still owed.
+
+### Defects of correctness
+
+1. **The generator and the checker computed a slice differently.** They now share `corpus::pair_sym`, which exists
+   only to make that impossible. A generator whose lo/hi role assignment drifts from its own checker's can emit
+   counterpoint the checker then flags, and at that point neither number means anything. A test asserts the fill
+   passes the checker; a second checks the count of legal fills against brute-force enumeration.
+2. **The soft-criterion report called the checker with the voices swapped.** `crossed` is *"the higher-indexed voice
+   sounds below the lower"*, so the report was the exact negation of voice crossing — visible because a fill that
+   scored zero on crossing appeared to cross at every slice. The search itself was right; only the report was wrong.
+3. **The chance baseline did not move with the condition it was the baseline for.** It was computed against the
+   full texture's harmonic analysis in every row, including the rows run with no plan at all, so a search choosing
+   under one set of constraints was being scored against a baseline built from another. It now uses whatever plan
+   the search used. The correction changed the reading of the table: several `chance` figures moved by six points
+   and one row crossed from above the baseline to below it.
+4. **The domain offered two spellings of one sound.** In C-sharp major the chord respelling produced `E##` beside
+   `F#` and `B##` beside `C#`, doubling the branching factor and putting double sharps in the output. One spelling
+   per sounding pitch is kept, the key's own preferred. This is not a retreat to semitones: alternatives merge only
+   when they sound alike *and* one is the key's own, so §2.1's augmented fourth and diminished fifth stay distinct.
+
+### Defects of cost
+
+The corpus run went from not finishing to eight minutes, in four steps, none of which changed a single reported
+figure. Recorded because each was invisible until measured and each was worth an order of magnitude.
+
+1. **The product was taken first.** Enumerating the joint assignment of all free voices and then testing it. A free
+   voice's melody, its harmony, and every pair it forms with a *fixed* voice depend on its own note alone, so those
+   are decided per voice and only the free-against-free pairs need the product.
+2. **`automaton::step` allocated a `Vec` for its fired-rule list on every call** — several million calls per layer.
+   `step_into` writes into a caller-owned buffer; `step` is now a wrapper over it.
+3. **The candidate list was collected into a `Vec` per state per voice per slice**, and the option counts into
+   another. Both are now iterated by index.
+4. **The analyser rescanned every note for each of 108 chord candidates.** Hoisting the per-segment weights out of
+   the chord loop left every published figure of §8.5 identical and took the λ sweep from ten minutes to 1.7
+   seconds. It had been that way since §17.
+
+Finished layers also kept their hash index, which is dead once the next layer is built. That one was a guess at the
+cause and turned out not to be it — the process never exceeded 15 MB — but the change is right regardless.
+
+### What the measurement found
+
+Reconstructing Bach's free voices from his own entries, his rhythm, and a plan built only from the voices the search
+cannot see: `10¹²` to `10¹⁸` legal fills per three-bar span, and **agreement that does not respond to the rulebook**.
+Tightening the hard tier from two rules to five moves the spans the exact search can finish from 83 to 108 of 117
+and the legal fills down by five orders of magnitude, while agreement moves from 6.9% to 7.0%. §5's inverted failure
+mode, arriving where it matters and quantified. The full table is in readme §8.6.
+
+**The reversed-objective control is the part that was not anticipated.** Running the identical search minimising and
+then maximising the soft criteria gives 7.8% and 4.9% against a random-legal baseline of 16.2%. So the criteria are
+not noise — the sign is right — and they are not usable as an objective either, because *both* extremes lose to
+picking at random from the legal set. Taking the extremum of a nearly orthogonal objective lands in an atypical
+corner. No choice of weights repairs that, which is a sharper objection than §5's and lands in the same place.
+
+Two further findings. **The melodic rule is repertoire-specific as a description and load-bearing as a constraint** —
+§8.2 stratified it out of the hard tier, and without it nothing bounds a free voice's line at all. And **§2.7's wall
+is at two free voices rather than four**, because the multiplier is the compounding obligation state and not the
+product of pitch domains, which §2.7 had assumed.
+
+---
+
 ## Recurring pattern
 
 Three constraints in this project have turned out too permissive to bind — the two-rule hard tier, the
@@ -250,5 +315,22 @@ non-chord-tone categories, and the functional progression rule — and all three
 > **Any constraint written loosely enough to admit the target on the first try will admit almost everything, and
 > the check for it is a chance baseline computed before the measurement, not after.**
 
-Five casually chosen parameters have turned out load-bearing: the exclusive subject window, shared entry offsets,
-per-pair melody counting, lyric spines, and the harmonic segmentation window.
+Step 5 is the fourth instance and the largest: a rulebook that admits `10¹⁸` fills of three bars admits everything.
+It is also the first one where the baseline was computed **before** the measurement rather than after, which is why
+it took an afternoon rather than a step of the roadmap to notice.
+
+Six casually chosen parameters have turned out load-bearing: the exclusive subject window, shared entry offsets,
+per-pair melody counting, lyric spines, the harmonic segmentation window, and the melodic rule's absence from the
+generator's tier.
+
+Two further patterns have appeared alongside it.
+
+**Baselines have to move with the thing they baseline.** Step 5's first table scored every row against a baseline
+built from the true harmony, including the rows that were run without one. A baseline that does not vary with the
+condition is not a control; it is a constant, and subtracting a constant from every row hides exactly the
+comparison the table exists to make.
+
+**Three separate defects have been argument-order or identity confusions in code that looked symmetric and was
+not** — the swapped checker arguments here, the lo/hi role tracking of step 1, and the duplicate spellings. Two of
+the three announced themselves as a number that was *exactly* wrong rather than approximately wrong: zero crossings
+in a fill that crossed at every slice, and a rate inflated by exactly `V − 1`. That signature is worth watching for.

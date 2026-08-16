@@ -55,6 +55,36 @@ pub fn check_pair(p: &Piece, a: usize, b: usize) -> Tally {
   check_voices(&p.voices[a], &p.voices[b], p.measure)
 }
 
+/// What one voice contributes to one slice: the pitch it sounds, whether it is
+/// struck there rather than held over, and how it moved into it.
+pub type Sounding = (crate::pitch::Pitch, bool, Move);
+
+/// Assemble the symbol for one slice of one pair — the *only* place the lo/hi
+/// roles are assigned.
+///
+/// The checker and the generator both call this. That is the point of its
+/// existing: §8.6 fills free voices by refusing exactly the transitions this
+/// function's symbol makes the automaton reject, so if the two ever computed
+/// the symbol differently, the generator could emit counterpoint its own
+/// checker then flags, and neither number would mean anything.
+pub fn pair_sym(a: Sounding, b: Sounding, downbeat: bool) -> Sym {
+  let (pa, struck_a, mv_a) = a;
+  let (pb, struck_b, mv_b) = b;
+  let crossed = pb.chroma() < pa.chroma();
+  let (lo_p, hi_p) = if crossed { (pb, pa) } else { (pa, pb) };
+  let (lo_m, hi_m) = if crossed { (mv_b, mv_a) } else { (mv_a, mv_b) };
+  let (lo_t, hi_t) = if crossed { (!struck_b, !struck_a) } else { (!struck_a, !struck_b) };
+  Sym {
+    vert: Vert::of(Interval::between(lo_p, hi_p)),
+    lo: lo_m,
+    hi: hi_m,
+    lo_tied: lo_t,
+    hi_tied: hi_t,
+    downbeat,
+    crossed,
+  }
+}
+
 /// The same, on two voices that need not come from a parsed piece — which is
 /// what step 2 needs, since it checks *placements* rather than scores.
 pub fn check_voices(va: &kern::Voice, vb: &kern::Voice, measure: i64) -> Tally {
@@ -78,20 +108,7 @@ pub fn check_voices(va: &kern::Voice, vb: &kern::Voice, measure: i64) -> Tally {
     };
     // Each voice's motion comes from its own history; roles are assigned after.
     let (mv_a, mv_b) = (Move::of(prev_a, pa), Move::of(prev_b, pb));
-    let crossed = pb.chroma() < pa.chroma();
-    let (lo_p, hi_p) = if crossed { (pb, pa) } else { (pa, pb) };
-    let (lo_m, hi_m) = if crossed { (mv_b, mv_a) } else { (mv_a, mv_b) };
-    let (lo_t, hi_t) = if crossed { (!ab, !aa) } else { (!aa, !ab) };
-
-    let sym = Sym {
-      vert: Vert::of(Interval::between(lo_p, hi_p)),
-      lo: lo_m,
-      hi: hi_m,
-      lo_tied: lo_t,
-      hi_tied: hi_t,
-      downbeat: measure > 0 && time % measure == 0,
-      crossed,
-    };
+    let sym = pair_sym((pa, aa, mv_a), (pb, ab, mv_b), measure > 0 && time % measure == 0);
     let (fired, next) = automaton::step(st, sym);
     for r in fired {
       if r == Rule::ForbiddenMelodic {

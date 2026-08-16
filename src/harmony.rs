@@ -298,11 +298,21 @@ fn note_weight(n: &kern::Note, t0: i64, t1: i64, beat: i64) -> f64 {
   held as f64 * if strong { 2.0 } else { 1.0 }
 }
 
-/// How well a chord explains one span: chord tones earn their weight, foreign
-/// notes lose it, and the bass earns extra for being the root.
-fn observation(voices: &[Voice], t0: i64, t1: i64, beat: i64, c: Chord) -> f64 {
-  let (mut score, mut total) = (0.0f64, 0.0f64);
-  let mut bass: Option<(Pitch, i16)> = None;
+/// Everything about one span that does not depend on which chord is proposed:
+/// what sounds, how much it weighs, and what the bass is.
+///
+/// Gathered once and reused across all 108 candidates. Re-deriving it inside the
+/// chord loop is the same answer and a hundred times the work, which turned the
+/// step-5 corpus run from seconds into ten minutes before it was noticed.
+struct Span {
+  notes: Vec<(Pitch, f64)>,
+  total: f64,
+  bass: Option<Pitch>,
+}
+
+fn span(voices: &[Voice], t0: i64, t1: i64, beat: i64) -> Span {
+  let mut sp = Span { notes: vec![], total: 0.0, bass: None };
+  let mut lowest = i16::MAX;
   for v in voices {
     for n in &v.notes {
       if n.onset >= t1 || n.onset + n.dur <= t0 {
@@ -312,19 +322,27 @@ fn observation(voices: &[Voice], t0: i64, t1: i64, beat: i64, c: Chord) -> f64 {
       if w <= 0.0 {
         continue;
       }
-      total += w;
-      score += if c.contains(n.pitch) { w } else { -w };
+      sp.total += w;
+      sp.notes.push((n.pitch, w));
       let ch = n.pitch.chroma();
-      if bass.map_or(true, |(_, b)| ch < b) {
-        bass = Some((n.pitch, ch));
+      if ch < lowest {
+        lowest = ch;
+        sp.bass = Some(n.pitch);
       }
     }
   }
-  if total <= 0.0 {
+  sp
+}
+
+/// How well a chord explains one span: chord tones earn their weight, foreign
+/// notes lose it, and the bass earns extra for being the root.
+fn observation(sp: &Span, c: Chord) -> f64 {
+  if sp.total <= 0.0 {
     return 0.0;
   }
-  let mut s = score / total;
-  if let Some((p, _)) = bass {
+  let score: f64 = sp.notes.iter().map(|&(p, w)| if c.contains(p) { w } else { -w }).sum();
+  let mut s = score / sp.total;
+  if let Some(p) = sp.bass {
     // the lowest voice carries the root: a strong cue, worth a fifth of the
     // whole segment's evidence
     if p.chroma().rem_euclid(12) as u8 == c.root {
@@ -362,7 +380,8 @@ pub fn analyse_viterbi(voices: &[Voice], beat: i64, lambda: f64) -> Vec<Segment>
 
   for s in 0..steps {
     let (t0, t1) = (times[s], times[s + 1]);
-    let obs: Vec<f64> = chords.iter().map(|&c| observation(voices, t0, t1, beat, c)).collect();
+    let sp = span(voices, t0, t1, beat);
+    let obs: Vec<f64> = chords.iter().map(|&c| observation(&sp, c)).collect();
     let mut cur = vec![f64::NEG_INFINITY; n];
     let mut bk = vec![0u16; n];
     if s == 0 {

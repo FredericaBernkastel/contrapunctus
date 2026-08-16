@@ -13,7 +13,10 @@
 
 /// `step` counts diatonic degrees from C0 (C0 = 0, D0 = 1, … B0 = 6, C1 = 7);
 /// `alter` is the accidental in semitones.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+///
+/// `Hash` and `Ord` are derived because §8.6's search keys its dynamic-
+/// programming states on the tuple of sounding pitches.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, PartialOrd, Ord)]
 pub struct Pitch {
   pub step: i16,
   pub alter: i8,

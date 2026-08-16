@@ -1,14 +1,23 @@
-//! Roadmap step 1: the two-voice automaton, measured and tested.
+//! Drivers for every measurement readme §8 reports.
 //!
 //!   cargo run --release -- states    the reachable state count
 //!   cargo run --release -- verdict   the three tests the roughness field failed
 //!   cargo run --release -- corpus    how often Bach violates the rulebook
+//!   cargo run --release -- stretto   BWV 867's five entries, as a clique
+//!   cargo run --release -- sweep     the harmonic analyser, penalty swept
+//!   cargo run --release -- realise   the fill, its measurement, and the MIDI
+//!
+//! Run with no argument for the four that take seconds. §10.2 of the readme maps
+//! each section to its command.
 
 mod automaton;
 mod corpus;
 mod experiments;
 mod harmony;
+mod midi;
+mod realise;
 mod refdata;
+mod step5;
 mod stretto;
 mod kern;
 mod pitch;
@@ -47,6 +56,10 @@ fn main() {
     "holdout" => analyser_holdout(),
     "hren2" => analyser_renaissance(),
     "func" => functional_test(),
+    "realise" => step5::run(),
+    "r1" => step5::render_stretto(),
+    "r2" => step5::reconstruct(),
+    "r3" => step5::scalarisations(),
     "s17" => { analyser_sweep(); analyser_holdout(); analyser_renaissance(); }
     "s16" => { cadence_check(); harmony_renaissance(); segmentation_sensitivity(); step4_revisit(); }
     _ => {
@@ -66,7 +79,16 @@ fn states() {
   println!("reachable          {}", reachable.len());
   let owed: std::collections::BTreeSet<u8> = reachable.iter().map(|s| s.owed).collect();
   println!("distinct owings    {}  of 256", owed.len());
-  println!("hard rules {}   soft criteria {}", automaton::HARD.len(), automaton::SOFT.len());
+  // Three counts, not two, because the middle one is a *measurement* (§8.2) and
+  // reporting only "hard" and "soft" invites the reader to reconcile a rulebook
+  // of 11 with a hard tier of 2 and get neither.
+  println!(
+    "rules transcribed  {}   ({} written as hard, {} as soft)",
+    automaton::HARD.len() + automaton::SOFT.len(),
+    automaton::HARD.len(),
+    automaton::SOFT.len()
+  );
+  println!("confirmed hard     {}   by both corpora, per readme §8.2", automaton::CONFIRMED.len());
 }
 
 /// A tiny score written by hand, as `(lower, upper)` pairs of kern tokens with

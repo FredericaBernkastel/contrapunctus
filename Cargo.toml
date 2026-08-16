@@ -1,9 +1,13 @@
-# Roadmap step 1 of readme.md: build the two-voice counterpoint automaton,
-# measure its reachable state count, and run it as a checker over the corpus.
+# readme.md §8 — everything the document reports, reproducible from here.
 #
-#   cargo run --release -- states     # the measurement step 1 asks for
+#   cargo run --release -- states     # the automaton's reachable state count
 #   cargo run --release -- verdict    # the three tests the roughness field failed
 #   cargo run --release -- corpus     # how often Bach violates the rulebook
+#   cargo run --release -- stretto    # BWV 867's five entries as a clique
+#   cargo run --release -- sweep      # the harmonic analyser, penalty swept
+#   cargo run --release -- realise    # the fill, the measurement, and out/*.mid
+#
+# `readme.md` §10.2 maps every section to the command that produces it.
 [package]
 name = "contrapunctus"
 version = "0.1.0"

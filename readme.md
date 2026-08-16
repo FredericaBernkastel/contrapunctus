@@ -39,6 +39,7 @@ are built and measured — [§8](#8-what-is-built-and-what-it-measures). Realisa
   - [8.3 The clique test](#83-the-clique-test)
   - [8.4 Capacity ranks subjects, and cannot design one](#84-capacity-ranks-subjects-and-cannot-design-one)
   - [8.5 The harmonic analyser](#85-the-harmonic-analyser)
+  - [8.6 Realisation, and the first notes](#86-realisation-and-the-first-notes)
 - [9. Roadmap](#9-roadmap)
 - [10. Reproducing the results](#10-reproducing-the-results)
   - [10.1 Environment and data](#101-environment-and-data)
@@ -98,11 +99,26 @@ monotone, and Bach's own contours score below random on their own rhythms. The r
 rules need a perfect consonance to fire, and a fugal answer is at the fifth, so the measure penalises the interval
 the form is built on. A design objective has to be harmonic, and that remains open.
 
-What the method does not do is decide whether the result is good, and its failure mode is the inverse of the usual
-one: a complete search does not fail by finding nothing but by finding far too much — on the order of `10⁵`–`10⁶`
-legal counterpoints to an eleven-note *cantus firmus*. Where taste enters is therefore the central design question
-rather than an afterthought, and the position taken here is the **Pareto front** over soft criteria rather than a
-weighted sum, on the ground that no weighting in the literature is defensible and Fux declines to supply one.
+The realiser then produces notes, and with them the method's real difficulty, which is the inverse of the usual
+one: **a complete search does not fail by finding nothing but by finding far too much.** Holding one of Bach's own
+subject entries fixed, taking his rhythm and a harmonic plan derived only from the voices the search is not allowed
+to see, and filling the rest exactly, the rulebook leaves seven to seventeen pitches open at every note and between
+`10¹²` and `10¹⁸` complete legal fills of a three-bar span. Across every combination of rulebook and plan,
+**agreement with what Bach wrote barely moves while the chance baseline nearly triples** — so the constraints are
+doing all of the work and the objective almost none. Reversing the sign of that objective is the control that says
+which: minimising the soft criteria beats maximising them by three points, and **both are less than half of a
+random legal choice**, because taking the extremum of a nearly orthogonal objective lands in an atypical corner of
+the legal set. Where taste enters is therefore the central problem rather than an afterthought, and the position
+taken here is the **Pareto front** over soft criteria rather than a weighted sum, on the ground that no weighting
+in the literature is defensible and Fux declines to supply one.
+
+Two further results fall out of building it. The melodic prohibition is **repertoire-specific as a description and
+load-bearing as a constraint** — the corpus stratified it out of the hard tier for flagging Bach thirty-eight times
+more often than the Renaissance, yet without it nothing bounds a free voice's line at all, and adding it back
+halves the pitches left open at every note. And the exact search meets its wall at **two** free voices rather than
+the predicted four, because the multiplier is the compounding obligation state rather than the product of pitch
+domains — an argument for conflict-learning search that is stronger and arrives earlier than the one this document
+set out with.
 
 **Method.** Nothing here is fitted to a corpus. The rules are transcribed from treatises; every threshold is either
 measured against an exhibited passage or swept and reported as a curve rather than chosen. The single parameter
@@ -277,6 +293,14 @@ and chooses a chord path by Viterbi, charging a penalty to change chord so that 
 rather than being imposed by a window**. It identifies the arrival chord of an annotated cadence 80% of the time
 against a 14% baseline ([§8.5](#85-the-harmonic-analyser)).
 
+**The generative half is built too**, and the claim in the first paragraph — that the two automata compose — is now
+a fact about running code rather than a reading of the literature. [§8.6](#86-realisation-and-the-first-notes)'s
+realiser runs a chord-membership obligation system beside [§2.2](#22-counterpoint-is-a-finite-automaton)'s over one
+grid: a note foreign to the prevailing chord must be prepared or approached by step, and owes a resolution on the
+next articulation. The two systems needed no knowledge of each other, and turning the harmonic one *off* takes the
+number of spans the exact search can finish from 83 of 117 to 36. **Harmony is not a refinement of the
+counterpoint constraint; it is most of the constraint.**
+
 The functional half — a cadence as a *labelled accepting path* rather than a coincidence — is **not** established.
 The progression rule as written accepts nine of twelve root motions, so it admits 75% of everything before any
 music is consulted, and it separates nothing. A real version needs degree successions relative to a **local** key,
@@ -350,13 +374,21 @@ would matter.
 ### 2.7 Where a solver takes over from the DP
 
 The DP dies at the voice count, not at the piece length. State at a tick is the product of the free voices'
-domains: with a two-octave compass that is roughly `24^(V−e)` before obligations, so `V − e = 2` is comfortable,
+domains: with a two-octave compass that is roughly `24^(V−e)` before obligations, so `V − e = 2` looks comfortable,
 `3` wants the harmonic automaton pruning it, and `4` or more is out of reach exactly.
+
+**That arithmetic is wrong in an instructive way, and [§8.6](#86-realisation-and-the-first-notes) measures how.**
+The phrase doing the damage is *"before obligations"*. Two free voices give a few hundred pitch pairs; the built
+search reaches tens of thousands of live states on the same spans, because a dissonance owed in one pair and a leap
+owed in another are independent bits that compound across every pair at once. **The wall is at two free voices, and
+the multiplier is the obligation set rather than the pitch product.** Everything below is therefore an
+understatement of the case for a solver rather than an overstatement, which is the direction an argument should err
+in.
 
 **Schottstaedt reached exactly this wall in 1984 and his report is the best evidence in the literature that it is
 real.** Read directly rather than through the survey, it says four things that bear on the design here:
 
-- His stated goal was *"five to eight part mixed species counterpoint"* — the same target as [§8](#9-roadmap)'s step 5.
+- His stated goal was *"five to eight part mixed species counterpoint"* — the same target [§8.6](#86-realisation-and-the-first-notes) sets out for.
 - Exhaustive search is hopeless and he quantifies it: a **ten-note, two-voice, first-species** problem has `16¹⁰`
   branches, about twenty minutes at one nanosecond per check. That is the smallest case in the subject.
 - His branch-and-bound **is** complete — *"if any solution at all exists, we are guaranteed to find it… we are also
@@ -559,6 +591,11 @@ Written in ricercar's [§8](ricercar/readme.md#8-what-this-will-not-do) form, be
   the smallest interesting case there is — the number of legal counterpoints is **10⁵ to 3·10⁶**, growing
   exponentially in length. Whatever this method is short of, candidates is not it.
 
+  **And measured here**, on this rulebook rather than theirs, in [§8.6](#86-realisation-and-the-first-notes):
+  `10¹²` to `10¹⁸` legal fills of a three-bar span of a Bach fugue, and agreement with what Bach wrote that stays
+  put however much of the rulebook is switched on. The paragraph below is not a caution about a future difficulty.
+  It is the current one, and the numbers are ten orders of magnitude worse than the ones that prompted it.
+
 - **And the standard reply is wrong, which is the most useful thing the literature says.** The usual fix is to
   weight the broken rules and minimise `Σ pᵢ·nᵢ`. Komosinski & Szachewicz reject it on two grounds. The weights are
   unobtainable — the treatises rank rules only loosely, and they quote Fux himself declining to rank one: *"I shall
@@ -713,7 +750,8 @@ No rounding anywhere.
 | crude product of the state components | 1280 |
 | **reachable states** | **513** |
 | distinct obligation sets | 128 of 256 |
-| hard rules / soft criteria | 2 / 9 |
+| rules transcribed | 11 — 5 written hard, 6 written soft |
+| **hard in both corpora** ([§8.2](#82-the-rulebook-stratified-by-two-corpora)) | **2** |
 
 All three verdict tests pass, including the two ricercar could not state at all. Parallel fifths are flagged. A
 bare fifth is consonant — the roughness field measured it at `0.089`, among the least rough intervals there are,
@@ -818,39 +856,234 @@ fugues, the same λ is chosen either way and the accuracy transfers — 79% → 
 
 **What it is for.** An analyser infers harmony from notes; a generator does not have to, and can take the harmonic
 plan as input from the form grammar. So this is the instrument that will **judge** a realiser's output rather than
-the model a realiser writes against.
+the model a realiser writes against. Until the form grammar exists there is no other source of a plan, so
+[§8.6](#86-realisation-and-the-first-notes) uses it as one — and derives the plan from the *fixed* voices alone, so
+that the notes being generated never inform the harmony they are generated against.
 
 **What it is not.** It fits Renaissance polyphony slightly better than Bach on every chord-fit statistic (mean fit
 +0.022, chord tones +1.6 points). That is probably a fact about the music — Renaissance polyphony really is more
 triadic — but it means chord fit does not separate tonal from modal, and no claim about tonality should rest on it.
 
+### 8.6 Realisation, and the first notes
+
+`src/realise.rs`, `src/midi.rs`. [§2.5](#25-the-search-is-a-shortest-path)'s shortest path, built as stated there:
+rhythm is given and pitch is the only variable ([§2.6](#26-what-is-not-a-variable-rhythm)), the layers are the
+slices at which some voice articulates, a node carries [§2.2](#22-counterpoint-is-a-finite-automaton)'s automaton
+state for every pair involving a free voice, and an edge is a transition no hard rule refuses. A free voice is
+handed in as a `Voice` whose **pitches are discarded and whose onsets are obeyed**, so the search cannot choose
+when a note happens even by accident.
+
+[§2.3](#23-harmony-is-a-second-automaton)'s harmony runs beside it as a second obligation system over the same
+grid: a note foreign to the prevailing chord is legal only if prepared or approached by step, and it owes a
+resolution on the next articulation. The two obligation systems do not know about each other and needed no
+special-casing to compose, which is the part of §2.3 that was a claim until now.
+
+**The stretto is audible.** `out/stretto.mid` is [§8.3](#83-the-clique-test)'s clique — BWV 867's five entries at
+`{0, 2, 4, 6, 8}` quarters, 50 notes, two violations on the full tier and **none** on the confirmed tier, the same
+verdict the clique test gives. No search was involved: with five entries in five voices there are no free voices at
+all, which is §2.5's cost profile arriving exactly as predicted. `out/stretto-bach.mid` is the same bars as Bach
+wrote them, so the idealisation and the original can be compared by ear rather than by table.
+
+**Four things are verified rather than asserted**, by `cargo test --release`:
+
+- the generator and the checker assemble a slice's symbol through **one shared function**, and a test asserts the
+  fill passes the checker — a generator that computes the lo/hi roles even slightly differently from its own
+  checker can emit counterpoint the checker then flags, and then neither number means anything;
+- the count of legal fills is checked against **brute-force enumeration** on a small instance;
+- the search never chooses a rhythm;
+- a non-chord tone is approached and left by step.
+
+#### Reconstructing Bach's free voices
+
+For every annotated subject entry in the book, hold the entry voice, **discard the other voices' pitches while
+keeping their rhythm**, and fill them. Bach's own notes are the answer key and the search never sees them.
+
+Three rulebooks and three sources of harmony, crossed:
+
+| | |
+|---|---|
+| `confirmed(2)` | the two rules [§8.2](#82-the-rulebook-stratified-by-two-corpora) found universal — this document's endorsed tier |
+| `conf+melodic` | those two plus the melodic prohibition |
+| `full(5)` | all five rules written hard, dissonance rules included |
+| `none` | no harmonic plan — the control for how much [§2.3](#23-harmony-is-a-second-automaton) is carrying |
+| `clean` | the plan analysed from the **fixed voices only**: the honest condition, since a form grammar would supply one and the notes being generated must not inform it |
+| `leaky` | the plan analysed from the whole texture, the answer included. Cheating, and run to price the cheat |
+
+| tier | plan | solved | dead | refused | notes | exact | pitch class | chance | log₁₀ legal fills | open/note | time |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| confirmed(2) | none | 36 | 0 | 81 | 617 | 4.9% | 15.9% | 5.9% | 18.3 | 17.1 | 91s |
+| confirmed(2) | clean | **83** | 5 | 29 | 1647 | **6.9%** | 13.5% | 7.4% | 16.6 | 14.1 | 59s |
+| confirmed(2) | leaky | 81 | 1 | 35 | 1676 | 10.4% | 21.1% | 7.2% | 16.7 | 14.4 | 70s |
+| conf+melodic | none | 42 | 0 | 75 | 733 | 5.3% | 15.8% | 9.6% | 16.3 | 11.1 | 94s |
+| conf+melodic | clean | **99** | 6 | 12 | 2129 | **7.8%** | 13.2% | 16.2% | 14.7 | 7.0 | 34s |
+| conf+melodic | leaky | 110 | 1 | 6 | 2523 | 9.3% | 17.4% | 15.5% | 15.8 | 7.3 | 41s |
+| full(5) | none | 96 | 1 | 20 | 2079 | 6.4% | 12.7% | 9.8% | 15.8 | 10.9 | 69s |
+| full(5) | clean | **108** | 8 | 1 | 2466 | **7.0%** | 13.2% | 16.2% | 11.7 | 7.0 | 11s |
+| full(5) | leaky | 115 | 1 | 1 | 2731 | 10.5% | 17.3% | 15.5% | 12.5 | 7.3 | 11s |
+
+Every column but the last is deterministic and reproduces exactly between runs; `time` is wall clock on one
+machine and moves by a few seconds, quoted because tractability is one of the findings.
+
+**The notes are not determined, and that is the result.** Read `exact` against `chance` rather than against zero:
+the baseline is what picking at random from the pitches actually open at that note would have scored, computed
+under the same tier and the same plan the search used. Agreement never gets far from it in either direction — the
+best row reaches 1.4 times chance and the tighter tiers sit at **half** of it. Meanwhile the rules and the plan
+together leave seven to seventeen pitches open at every note, and the number of complete legal fills of a
+three-bar span runs to eleven or more orders of magnitude even under the full five-rule tier. **This is [§5](#5-what-this-will-not-do)'s inverted failure mode, arriving
+where it finally matters and measured rather than predicted.** A complete search over this rulebook does not fail
+by finding nothing.
+
+The sharpest way to put it is that **`exact` barely moves across the entire table while `chance` nearly triples.**
+Every constraint added — the melodic rule, the two dissonance rules, a harmonic plan — shrinks the legal set and so
+raises what a random legal choice is worth. None of it changes what the search picks out of that set by more than a
+few points. Constraint is doing all the work; the objective is doing almost none.
+
+**Is the objective wrong, or merely weak?** Run the identical search with the sign of the objective reversed and
+the two readings separate. Same tier, same plan, same 99 spans and 2129 notes:
+
+| conf+melodic, clean plan | exact | pitch class |
+|---|---:|---:|
+| soft criteria **minimised** | **7.8%** | 13.2% |
+| soft criteria **maximised** | 4.9% | 13.0% |
+| a random legal choice | 16.2% | — |
+
+So the criteria do point the right way — minimising beats maximising by three points, which is a real signal and
+the only evidence in this project that the soft tier means anything at all. And **both ends of it are less than
+half of a random legal choice.** The objective is very nearly orthogonal to being Bach, and taking the *extremum*
+of a nearly orthogonal objective lands in an atypical corner of the legal set, which is worse than landing in the
+middle of it. Optimising this objective is worse than not optimising.
+
+One honest qualification on the baseline, which cuts the other way. `chance` is computed per note with **Bach's own
+preceding note** as the melodic and harmonic context, because that is what makes it a per-note quantity at all; the
+fill has only its own preceding note, and its errors compound. The baseline is therefore solving an easier problem
+and the gap is not a like-for-like control. What it does establish is a ceiling: **even when the previous note is
+given, the whole rulebook plus a harmonic plan gets the next one right about one time in six.** The min-versus-max
+comparison above has no such caveat — it is the same machinery under the same conditions — and it is the one that
+says the objective is weak rather than inverted.
+
+**The search is given Bach's rhythm** — every onset and every tie of the voices it is reconstructing, which is a
+large part of the answer — and it still cannot find the pitches. One span whole, because percentages hide what is
+actually happening. BWV 847 at bar 11, two free voices, the melodic tier and an honest plan:
+
+```
+ Bach   E♭2 A♭3  G3  F3 E♭3 D♭3  C3 B♭2 A♭2  C4 B♭3 A♭3  G3  F3  G3 A♭3
+ fill    G3  F3  G3 A♭3  G3  D3  D3 E♭3  D3  C3 B♭2  A2  D3  C3  D3  D3
+                                            ^^^^^^^^^^^^
+                                            the right three notes, an octave low
+```
+
+**Pitch class is recovered about twice as often as pitch**, right across the table, and the three notes marked above
+are the whole of that gap in miniature. The harmonic plan pins down *which note of the chord* far better than
+chance; what it says nothing whatever about is **which octave**, and neither does anything else in the rulebook,
+because every soft criterion in the tier looks at one slice or two. Register is a property of a line over a phrase.
+It is the first concrete thing [§9](#9-roadmap)'s "criterion that is not local" would have to supply, and this is
+how it would be measured.
+
+**Every constraint buys tractability, and none of them buys agreement.** Both axes of the table say the same thing.
+Tightening the tier from two rules to five, with the plan held fixed, takes the spans the exact search can finish
+from 83 to 108 of 117, the refusals from 29 to 1, the legal fills down by five orders of magnitude, and the running
+time from 61 seconds to 11 — while `exact` moves from 6.9% to 7.0%. Supplying a plan where there was none, with the
+tier held fixed, takes the finished spans from 42 to 99 and `exact` from 5.3% to 7.8% — but takes `chance` from
+9.6% to 16.2% at the same time, so the ratio falls. Nothing in the table improves on picking at random from what
+the constraints leave open.
+
+**The melodic rule is repertoire-specific as a description and load-bearing as a constraint**, and those are
+different questions with different answers. [§8.2](#82-the-rulebook-stratified-by-two-corpora) stratified it out of
+the hard tier because Bach breaks it thirty-eight times more often than the Renaissance does — which settles what
+it is worth as a *description* of Bach and says nothing about what it is worth as a *constraint on a generator*.
+96% of his melodic moves obey it; and without it **nothing whatever bounds a free voice's line**, since the
+two-rule tier permits a two-octave leap between quavers. Adding it halves the pitches left open at every note and
+is most of the difference between the first three rows and the rest.
+
+**[§2.7](#27-where-a-solver-takes-over-from-the-dp)'s wall is at two free voices, not four, and the estimate was
+wrong about why.** That section put the state at roughly `24^(V−e)`, the product of the free voices' pitch domains,
+and called two free voices comfortable. Two free voices give about **225** pitch pairs. The measured peak is
+**59 598 live states in a single layer** — and that figure is the budget biting rather than a ceiling, since a
+layer that passes 60 000 is refused rather than counted, so the true number is unknown and larger. **The multiplier
+is the obligation set, not the pitch product**: a dissonance owed in one pair and a leap owed in another are
+independent bits, and they compound across every pair at once. The correction moves
+[§2.7](#27-where-a-solver-takes-over-from-the-dp)'s conclusion in the direction it was already pointing — it makes
+the case for a conflict-learning solver stronger and earlier, since compounding independent obligations is exactly
+the state that clause learning collapses and enumeration cannot.
+
+Both budgets are refusals, not beams. A span that exceeds either is reported in the `refused` column and excluded,
+never silently truncated to the best few thousand states — because §2.7 predicts this failure and a quiet beam
+would hide the prediction coming true. Under the full tier with a plan, one span of 117 is refused; under the
+two-rule tier with none, 81 are.
+
+#### The weighting is a choice, and it changes every note
+
+| objective minimised | cost | direct→perf | perfect | direct | crossing | unrec. leap | repeat | the line it chooses |
+|---|---:|---:|---:|---:|---:|---:|---:|---|
+| uniform | 9.0 | 0 | 0 | 1 | 0 | 7 | 1 | E♯3 D♯3 D♯3 C♯3 G♯2 G♯2 A♯2 B♯2 C♯3 G2 |
+| direct to perfect | 0.0 | 0 | 6 | 2 | 0 | 7 | 6 | D2 C♯2 D♯2 C♯2 C♯2 C♯2 C♯2 C♯2 E♯2 D♯2 |
+| perfect consonance | 0.0 | 0 | 0 | 7 | 0 | 7 | 5 | D2 C♯2 D♯2 C♯2 C♯2 E♯2 E♯2 D♯2 E♯2 F♯2 |
+| direct motion | 1.0 | 0 | 6 | 1 | 0 | 7 | 6 | D2 C2 C2 C♯2 C♯2 C♯2 C♯2 C♯2 E♯2 D♯2 |
+| voice crossing | 0.0 | 1 | 6 | 3 | 0 | 7 | 7 | D2 C♯2 D♯2 C♯2 C♯2 C♯2 C♯2 C♯2 C♯2 D♯2 |
+| unrecovered leap | 2.0 | 1 | 1 | 7 | 9 | 2 | 1 | D2 C♯2 D♯2 C♯2 **G♯4 F♯4 G♯4 A♯4 B♯4 A♯4** |
+| repeated note | 1.0 | 2 | 5 | 4 | 0 | 7 | 1 | D2 C2 C2 D♯2 C♯2 C♯2 D♯2 C♯2 E♯2 D♯2 |
+
+BWV 848, bars 42–44, one free voice, two-rule tier, the plan from the two fixed voices. The counts are read back off
+the **checker** rather than off the search's own accounting. A single objective disagrees with the uniform one on
+up to **100%** of notes, and **two of the seven fills are mutually non-dominated** — the uniform one and, of all
+things, the one that minimises unrecovered leaps by sending the free voice above the others for half the
+passage — the only crossings in the table, and legal, because crossing is soft.
+
+Every one of these fills is legal, on the same rhythm, against the same plan, in the same fugue. They are what
+changes when the *only* thing that changes is which soft criterion the sum is taken over — and §5's position is
+that no such sum is defensible. The Pareto front is not a refinement to add later; it is what is left once the
+scalarisation is admitted to be arbitrary, and the front here is not a single point.
+
+The lines are also poor music, in a way the table does not capture and the MIDI does: several are nearly static,
+because repeating a note is cheap under most of these objectives and the rulebook has nothing to say against a
+voice that does almost nothing. **No further measurement resolves this.** The output has to be listened to, and
+that is now possible for the first time in either document.
+
 ---
 
 ## 9. Roadmap
 
-Steps 0 to 4 are done and reported above. What remains, in order.
+Steps 0 to 5 are done and reported above. The project now produces notes and can be listened to. What remains, in
+order.
 
-5. **Realisation, and the first audible output.** Viterbi fill of the free voices against a **given** harmony — the
-   plan supplies it, per [§8.5](#85-the-harmonic-analyser) — then MIDI. Escalate to a SAT/CDCL solver at four or
-   more free voices per [§2.7](#27-where-a-solver-takes-over-from-the-dp), and do not layer: Schottstaedt reports
-   that failing at three voices. Neither this document nor ricercar has produced a note.
+6. **Selectivity**, which [§8.6](#86-realisation-and-the-first-notes) turned from a prediction into a number:
+   `10¹²` to `10¹⁸` legal fills of a three-bar span, and agreement with Bach that does not respond to anything the
+   rulebook does. The table there is unambiguous about which direction *not* to go: more of the same kind of
+   constraint buys tractability and nothing else, and optimising the soft criteria is worse than not optimising.
+   Three things bear on it instead, in increasing order of ambition.
 
-   Expect the difficulty to be selectivity rather than legality. A two-rule hard tier and a permissive harmonic
-   constraint will admit enormous numbers of legal fills, which is [§5](#5-what-this-will-not-do)'s inverted
-   failure mode arriving where it finally matters. No further measurement resolves it; at some point the output
-   has to be listened to, and that is the one test this project has never run.
+   - **A criterion that is not local**, which the same table points at twice. Pitch class is recovered about twice
+     as often as pitch, so what is missing is **register** — a property of a line over a phrase, invisible to every
+     criterion in the tier because they all look at one slice or two.
+     [§2.5](#25-the-search-is-a-shortest-path) already identifies the machinery: the shape accumulators, finite-
+     state but long-range. Schottstaedt implemented all three and still concluded his program *"makes no decisions
+     about overall melodic shapes"*, so this is known to be hard rather than merely unattempted.
+   - **A better plan.** The `leaky` rows price a *perfect* harmonic plan, which is an upper bound on what
+     [§2.4](#24-form-is-a-grammar)'s grammar can buy by supplying harmony alone. It is not enough on its own, and
+     knowing that before building the grammar is what those rows are for.
+   - **Replacing the soft tier rather than reweighting it.** Minimising it beats maximising it by three points, so
+     it is not noise; both lose to a random legal choice, so it is not usable as an objective either. No choice of
+     weights repairs a criterion set that is nearly orthogonal to the target, which is a sharper objection than
+     [§5](#5-what-this-will-not-do)'s and reaches the same place.
 
-6. **Form**, per [§2.4](#24-form-is-a-grammar) — which Anders & Miranda name as unsupported by any existing
+   And escalate to a SAT/CDCL solver, which [§2.7](#27-where-a-solver-takes-over-from-the-dp) put at four or more
+   free voices and [§8.6](#86-realisation-and-the-first-notes) measured at **two**. Do not layer: Schottstaedt
+   reports that failing at three voices.
+
+7. **Form**, per [§2.4](#24-form-is-a-grammar) — which Anders & Miranda name as unsupported by any existing
    system, so expect to build rather than borrow. The packing question lives inside the stretto block.
 
-7. Optional: **double fugue** — two shapes that must tile, which is where the shape-catalogue reading earns its
+8. Optional: **double fugue** — two shapes that must tile, which is where the shape-catalogue reading earns its
    keep.
 
 ### Open problems, in rough order of how much they block
 
+- **A criterion that selects.** [§8.6](#86-realisation-and-the-first-notes) is the whole of step 6 and now the
+  central problem of the project: everything downstream of it generates legal music that nothing prefers.
 - **Key-finding.** A real functional test needs degree successions relative to a *local* key, and fugues modulate
   constantly. Without it [§2.3](#23-harmony-is-a-second-automaton)'s functional half cannot be built or tested.
 - **A replacement for the two dissonance rules**, which fail in both centuries ([§8.2](#82-the-rulebook-stratified-by-two-corpora)).
+  They are also two of the few remaining candidates for constraining a fill.
 - **A design objective**, still open after two attempts ([§3.2](#32-capacity-is-a-density-and-it-cannot-be-optimised)).
   It has to reward a subject working at the fifth, which is a harmonic statement.
 - **The right rulebook for the right repertoire.** Fux is 1725 and Palestrina-style vocal; the WTC is 1722 and
@@ -871,7 +1104,8 @@ or swept.
 ```
 rustc 1.96.1   cargo 1.96.1     # no dependencies; std only
 git clone --recurse-submodules <this repo>
-cargo test --release            # 7 tests
+cargo test --release            # 13 tests
+cargo run --release -- realise  # writes out/*.mid
 ```
 
 | submodule | pinned | licence | used by |
@@ -896,9 +1130,15 @@ the Josquin Research Project for the Renaissance scores.
 | [§8.4](#84-capacity-ranks-subjects-and-cannot-design-one) density ranking | `cargo run --release -- exp1` |
 | [§8.4](#84-capacity-ranks-subjects-and-cannot-design-one) design | `cargo run --release -- design` |
 | [§8.5](#85-the-harmonic-analyser) sweep and hold-out | `cargo run --release -- sweep`, `holdout` |
+| [§8.6](#86-realisation-and-the-first-notes) stretto render | `cargo run --release -- r1` |
+| [§8.6](#86-realisation-and-the-first-notes) reconstruction | `cargo run --release -- r2` |
+| [§8.6](#86-realisation-and-the-first-notes) scalarisations | `cargo run --release -- r3` |
 
-`rank`, `probe`, `exp2`, `exp5`, `harmony`, `cad`, `seg`, `revisit`, `hren2` and `func` reproduce the superseded
-measurements recorded in [`CHANGELOG.md`](CHANGELOG.md).
+`realise` runs all three of the last. `rank`, `probe`, `exp2`, `exp5`, `harmony`, `cad`, `seg`, `revisit`, `hren2`
+and `func` reproduce the superseded measurements recorded in [`CHANGELOG.md`](CHANGELOG.md).
+
+The MIDI files land in `out/`, which is not tracked. `r2` is the only command here that takes minutes rather than
+seconds, and the reason is the subject of [§8.6](#86-realisation-and-the-first-notes).
 
 ### 10.3 Parameters
 
@@ -909,6 +1149,9 @@ measurements recorded in [`CHANGELOG.md`](CHANGELOG.md).
 | candidate grid | offsets every quarter within the subject; diatonic transpositions −7…+7; one entry per offset |
 | design grid | offsets every half note, same transposition range |
 | harmonic analyser | onset segmentation, 9 qualities × 12 roots, bass bonus 0.2, strong-beat weight ×2 |
+| realiser plan | `λ = 1.0`, the middle of [§8.5](#85-the-harmonic-analyser)'s plausible band |
+| realiser compass | each voice's range over the **whole piece**, which a form grammar would supply; never the passage's own range, which would be circular |
+| realiser budgets | 60 000 states per layer, 4 000 000 edges per span — both refusals, never beams ([`realise.rs`](src/realise.rs)) |
 | PRNG | SplitMix64 inline; seeds `0x5EED`, `0xC0FFEE`, `0xBEEF`, `0xF00D`, `0xD00D` |
 | trials | 400 random contours for single-subject figures, 60 per subject for corpus tables |
 | hill-climbing | 12–16 restarts, first improvement accepted, one note changed at a time |
@@ -925,7 +1168,15 @@ Book I.
 **The design tables cover 20 of 24 subjects.** Subjects longer than 24 notes are skipped for search cost, which
 excludes BWV 855, 860, 865 and 866 — the four densest, and the four least stretto-friendly.
 
-**Timings are from one machine** and are quoted only where they carry an argument. They are not benchmarks.
+**[§8.6](#86-realisation-and-the-first-notes) covers 117 of 153 annotated entry spans.** A span qualifies if at
+least one other voice sounds through at least half of it; of those, the ones with more than two free voices are not
+attempted, because [§2.7](#27-where-a-solver-takes-over-from-the-dp)'s wall makes an exact answer impossible and
+this project does not report a beam as if it were a search. Spans refused by the state or work budget are counted
+in the `refused` column rather than dropped, so the shrinking sample is visible in the table that reports it.
+
+**Timings are from one machine** and are quoted only where they carry an argument — in
+[§8.6](#86-realisation-and-the-first-notes) they carry one, since tractability is the finding. They are not
+benchmarks.
 
 ### 10.5 What is not reproducible from this repository
 

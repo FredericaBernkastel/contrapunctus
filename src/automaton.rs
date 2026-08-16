@@ -211,6 +211,17 @@ impl Rule {
 /// *generator* would treat any hard firing as a refused transition.
 pub fn step(st: State, sym: Sym) -> (Vec<Rule>, State) {
   let mut fired = Vec::new();
+  let next = step_into(st, sym, &mut fired);
+  (fired, next)
+}
+
+/// The same, writing into a caller-owned buffer.
+///
+/// This exists for one reason: §8.6's search calls it several million times per
+/// layer, and allocating a fresh `Vec` for each was by a wide margin the most
+/// expensive thing in the project. The buffer is cleared, not appended to.
+pub fn step_into(st: State, sym: Sym, fired: &mut Vec<Rule>) -> State {
+  fired.clear();
   let mot = motion(sym.lo, sym.hi, Some(sym.vert) == st.prev);
   // A debt owed by a voice that has not yet moved is not yet broken — it is
   // still owed. Judging it while the voice holds counted one dissonance once
@@ -324,7 +335,7 @@ pub fn step(st: State, sym: Sym) -> (Vec<Rule>, State) {
     fired.push(Rule::NoteRepetition);
   }
 
-  (fired, State { prev: Some(sym.vert), owed })
+  State { prev: Some(sym.vert), owed }
 }
 
 /// Every symbol the automaton can read — the alphabet, enumerated.
