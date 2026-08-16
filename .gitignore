@@ -1,0 +1,2 @@
+# Build output. `corpus/` is submodules now, not ignored — see readme §8 step 0.
+target/

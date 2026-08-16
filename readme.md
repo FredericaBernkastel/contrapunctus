@@ -1,18 +1,58 @@
-# Contrapunctus — counterpoint on the lattice
+# Contrapunctus
 
-*Design document. Nothing here is built.*
+## Counterpoint is a regular language
 
-The alternative to [`ricercar`](ricercar/readme.md), written after that approach's §8 was traced back to its
-causes. It is not a repair of ricercar. It starts from a different category and reaches most of the same questions
-with less machinery, and it is written because ricercar's own measurements point at it.
+### Fugue on the lattice: 513 states, a clique, and what Bach says about the rulebook
 
-§§1–7 were written before reading the literature now in [`literature/`](literature/); §§2.1, 2.5, 2.6, 2.7, 3, 5, 7
-and 8 were revised against it, and each revision is marked. **Three claims did not survive**: that transposition is
-`x + k`, that the subject is given, and that the hard/soft split of the rulebook is recent.
+*Design document. **Step 0 and step 1 of §8 are built and measured — see §9.** Steps 2 onward are not.*
 
-**The claim in one line.** Fugue is a word problem over a finite alphabet, subject to a constraint of bounded
-memory — so the right tools are automata, dynamic programming and exact combinatorial search, and the continuum was
-never there to begin with.
+---
+
+## Abstract
+
+Machine composition of fugue is usually attempted in one of two categories: fit a model to a corpus, or search a
+continuous relaxation of the score. This document argues that both are the wrong category, and that fugue is a
+**word problem over a finite alphabet subject to constraints of bounded memory** — so the natural instruments are
+automata, dynamic programming and exact combinatorial search, none of which require training data and all of which
+return proofs rather than samples.
+
+The argument opens as a post-mortem. [`ricercar`](ricercar/readme.md) modelled counterpoint as a Lipschitz-certifiable
+roughness field over a continuum of entry placements, and its own measurements refute it. The legal region turned
+out **piecewise constant at the note grid**; and rounding a certified placement onto the semitone grid costs about
+ten times the margin the certificate establishes, so the proof was being taken over the wrong set. Everything
+expensive in that approach existed to bound a function whose answer is constant on a lattice.
+
+On the lattice the reformulation is small, and most of it is classical. Counterpoint is a **finite automaton** over
+`(interval, motion, articulation, metric weight)` whose state is *the interval plus what you owe* — a dissonance
+owes a resolution, a leap owes a recovery — and it stays finite because strict counterpoint requires debts settled
+on the next event. Harmony is a second automaton over functional progressions; form is a ten-line grammar;
+realising free voices against fixed entries is a shortest path, escalating to a CDCL solver at four or more free
+voices, where layering is known to fail. Densest stretto becomes **maximum clique in a Cayley graph** on the shift
+group, exactly computable, where the continuous formulation of the same question was killed at thirty minutes
+without a single placement. Bach's own five-voice hyperstretto in BWV 867 is such a clique, and it is an arithmetic
+progression — which refutes this document's earlier guess that the object was a Sidon set.
+
+Two components are built and measured against the 24 fugues of the Well-Tempered Clavier, Book I, using published
+ground-truth annotations and Huron's Humdrum encodings. The automaton has **513 reachable states** against a crude
+product of 1280, and it distinguishes a prepared suspension from the same interval struck on the same beat — the
+distinction a field over instantaneous pitch is structurally unable to make, and the device most of the repertoire
+worth imitating is built from. Run as a *checker* over Bach, it then stratifies its own rulebook: **parallel
+perfect consonances and direct motion to a perfect consonance on a downbeat occur about once per thousand slices
+and are confirmed; the dissonance and melodic prohibitions fire two orders of magnitude more often and are
+refuted.** The surviving pair is precisely the pair a roughness field cannot express at all, since a perfect fifth
+is among the smoothest intervals it knows.
+
+What the method does not do is decide whether the result is good, and its failure mode is the inverse of the usual
+one: a complete search does not fail by finding nothing but by finding far too much — on the order of `10⁵`–`10⁶`
+legal counterpoints to an eleven-note *cantus firmus*. Where taste enters is therefore the central design question
+rather than an afterthought, and the position taken here is the **Pareto front** over soft criteria rather than a
+weighted sum, on the ground that no weighting in the literature is defensible and Fux declines to supply one.
+
+**Provenance.** §§1–7 were written before reading the literature now in [`literature/`](literature/); §§2.1, 2.5,
+2.6, 2.7, 3, 5, 7 and 8 were revised against it, and every revision is marked in place. **Four claims have not
+survived contact with the sources or the data**: that transposition is `x + k`, that the subject is given, that the
+hard/soft split of the rulebook is recent, and that a stretto is a Sidon set. This document is the alternative to
+`ricercar` rather than a repair of it, and it exists because that project's own measurements point here.
 
 ---
 
@@ -679,7 +719,11 @@ expectation of cost.
 
    *(Erratum worth carrying: the dataset README, the `fugues.ref` header and the project page all give Shostakovich
    as "op. 57, 1952". It is op. 87, 1950–51 — op. 57 is the Piano Quintet. The journal paper has it right.)*
-1. **The two-voice automaton.** Build it, minimise it, **report the reachable state count**, and split the rules
+1. ~~**The two-voice automaton.**~~ **Done — see §9.** Built in [`src/`](src), 40 reachable states at first and
+   **513** once the obligation field widened, against a crude product of 1280. All three verdict tests pass. The
+   corpus checker ran and produced the more interesting result. Original wording follows.
+
+   Build it, minimise it, **report the reachable state count**, and split the rules
    **hard versus soft** in Komosinski & Szachewicz's manner — the automaton takes the hard ones, §5's Pareto front
    takes the rest. Verdict tests, in order of how much they would hurt to fail:
    - parallel fifths flagged; a bare fifth consonant; a suspension distinguished from an accidental dissonance of
@@ -711,3 +755,101 @@ expectation of cost.
 
 Steps 0 to 3 are the ones that pay for themselves, and step 0 is now nearly free. They are perhaps a few hundred
 lines and they close a question that has been open across two blocked attempts.
+
+---
+
+## 9. Step 1 result: two rules survive Bach, three do not
+
+`cargo run --release` in this directory, against the submodules of §8 step 0. Pitch is a diatonic step with an
+alteration rather than a semitone integer, because a diminished fifth and an augmented fourth are the same six
+semitones and different intervals; time is in ticks of 1/128 of a whole note, which is exact for this corpus —
+reciprocals `{1,2,4,8,16,32}`, at most one dot, and no tuplets in either book.
+
+### 9.1 The state count, measured
+
+| | |
+|---|---:|
+| alphabet | 1600 |
+| crude product | 1280 |
+| **reachable** | **513** |
+| distinct obligation sets | 128 of 256 |
+| hard rules / soft criteria | 5 / 6 |
+
+§2.2 guessed "on the order of `10³` before minimisation". The crude product is 1280 and reachability cuts it to
+513, so the guess was right in magnitude and the real number is smaller. **The first version of the automaton had
+40 reachable states** — the count quadrupled when §9.3's correction split one kind of debt into two and let
+obligations persist across held notes. That is worth recording: the state count is a property of how carefully the
+rules are stated, not a constant of counterpoint.
+
+### 9.2 The verdict tests pass
+
+All three, including the two ricercar could not state at all. Parallel fifths are flagged. A bare fifth is
+consonant — the roughness field measured it at `0.089`, among the *least* rough intervals there are, which is why
+§7.2 of that document had to substitute a different test. And a 7–6 suspension is accepted where the same seventh,
+leapt into on the same beat, is rejected: **the same instantaneous interval, distinguished by the path taken to
+it**, which is what a field over instantaneous pitch cannot do.
+
+### 9.3 Bach found two bugs in the rulebook, in the first run
+
+The checker's first pass flagged **290 hard violations per 1000 slices** — one slice in three. Almost all of it was
+mine, and localising it took one diagnostic each.
+
+- **A dissonance does not always resolve downward.** The first version demanded a descending step from every
+  dissonance. Only a *suspension* must descend; a passing note leaves by step in whichever direction it was going.
+  Schottstaedt's third-species comment says it plainly — "can be if passing either way". One wrong word in one rule
+  produced **79% of all violations**. Fixed by splitting the debt into two kinds, which is what widened the state
+  space from 40 to 513.
+- **Melody is a property of one voice, and it was being counted per pair.** In a five-part fugue each voice belongs
+  to four pairs, so every interval it sang was counted four times. Moved to a per-voice pass with its own
+  denominator.
+
+A third, found by reading rather than by running: the pairwise walk tracked the previous *lower* and *upper* pitch
+rather than each voice's own history, so at every voice crossing it measured melodic intervals between two
+different singers and corrupted the motion type that parallel detection depends on.
+
+### 9.4 The result, and it stratifies the rulebook
+
+24 fugues, 114 voice pairs, 33 331 slices, 23 498 note-to-note moves.
+
+| rule | | count | per 1000 |
+|---|---|---:|---:|
+| parallel perfect | H | 35 | **1.1** |
+| direct to perfect on downbeat | H | 23 | **0.7** |
+| unprepared dissonance | H | 717 | 21.5 |
+| unresolved dissonance | H | 3059 | 91.8 |
+| forbidden melodic interval | H | 883 | 37.6 |
+
+**Two rules are confirmed by Bach and three are refuted by him.** Parallel perfect consonances and direct motion to
+a perfect consonance on a downbeat occur about once per thousand slices across the whole book — which for a rule
+meant to be absolute is as close to vindication as a corpus can give. Those two are also precisely the rules a
+roughness field cannot express at all, since a perfect fifth is one of the *smoothest* intervals it knows. **The
+part of the rulebook that most justified abandoning the continuum is the part that survives contact with Bach.**
+
+The other three do not. What the melodic rule is objecting to, by frequency: sevenths, diminished fifths, augmented
+fourths, diminished fourths and chromatic semitones — every one of them idiomatic in the Well-Tempered Clavier and
+every one forbidden by Fux. That is not Bach breaking a rule; it is Fux describing a different repertoire, and
+§5's warning that the rulebook encodes "a style, and a caricature of one" arriving as a measurement.
+
+### 9.5 The comfortable explanation is not available
+
+The obvious defence of the three failing rules is scope: a pair of voices drawn from a five-part fugue is not a
+two-part exercise, and a seventh between alto and bass is ordinary when a third voice supplies the chord that
+explains it. §3 assumes something adjacent — that pairwise legality is *necessary but not sufficient*.
+
+The data does not support the defence. **Fugue No. 10 is the only two-voice fugue in the book and it has the worst
+hard-violation rate of all 24, at 327 per thousand against a mean of 147.** There is no third voice to explain
+anything away, and it is still the worst. So the three failing rules are not mis-scoped, they are simply too strict
+for free counterpoint — and §3's assumption may be wrong in the opposite direction from the one it anticipated:
+pairwise checking here is too **strict**, not too loose.
+
+### 9.6 What this changes
+
+- **The hard tier is smaller than assumed.** Only `ParallelPerfect` and `DirectPerfectOnDownbeat` have earned the
+  status. The dissonance and melodic rules should move to the soft tier, where §5's Pareto front can rank them
+  without anyone having to assert that Bach is wrong.
+- **Step 2's calibration test is now the sharper question.** With a two-rule hard tier, does BWV 867's stretto
+  `{0, 2, 4, 6, 8}` still come out as a clique? A rulebook this permissive will more easily say yes, which makes a
+  *failure* there much more informative than it was going to be.
+- **Step 5's solver has less to prove.** A hard tier of two rules is a far smaller constraint than five, so the
+  five-voice realisation of §2.7 is a lighter problem than Schottstaedt's — but for the same reason it constrains
+  less, and the burden shifts onto the soft criteria and their ordering.

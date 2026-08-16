@@ -1,0 +1,20 @@
+# Roadmap step 1 of readme.md: build the two-voice counterpoint automaton,
+# measure its reachable state count, and run it as a checker over the corpus.
+#
+#   cargo run --release -- states     # the measurement step 1 asks for
+#   cargo run --release -- verdict    # the three tests the roughness field failed
+#   cargo run --release -- corpus     # how often Bach violates the rulebook
+[package]
+name = "contrapunctus"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+
+[profile.release]
+debug = false
+
+# `ricercar/` declares its own workspace; `corpus/` holds submodules.
+[workspace]
+exclude = ["ricercar", "corpus"]
