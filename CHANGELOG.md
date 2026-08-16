@@ -6,9 +6,21 @@ the order it happened, the defects each one found, and the claims that did not s
 **Forward chronological**, against the usual convention, because each entry is the reason for the next and reading
 the corrections before what they correct makes nonsense of both.
 
+There are no version numbers yet and nothing here is released, so **each entry cites the commit that produced it**.
+The hashes are the unit of history this project actually has: `git show 20cd760` is the whole of step 1. Entries
+whose work landed together say so rather than pretending to a granularity the repository does not have.
+
+The design document itself — readme §§1–7, the argument the implementation was written to test — predates all of
+this, in [`1d5d518`](../../commit/1d5d518), [`9b36d70`](../../commit/9b36d70) and
+[`9fbd67d`](../../commit/9fbd67d), which is why the log below starts at step 0.
+
 ---
 
 ## Step 0 — the corpora
+
+[`7648ec0`](../../commit/7648ec0) [`568508a`](../../commit/568508a) — and, later than it should have been,
+[`e162fb0`](../../commit/e162fb0): the Renaissance submodule was pinned only when experiment 3 needed it, three
+steps after the table below claims all three.
 
 Three submodules under `corpus/`, pinned so that a ranking is reproducible against a stated revision of the ground
 truth.
@@ -35,6 +47,8 @@ Shostakovich as "op. 57, 1952". It is op. 87, 1950–51. The journal paper has i
 ---
 
 ## Step 1 — the two-voice automaton
+
+[`20cd760`](../../commit/20cd760)
 
 Built in `src/automaton.rs`, `src/pitch.rs`, `src/kern.rs`, `src/corpus.rs`.
 
@@ -63,6 +77,8 @@ state count is a property of how carefully the rules are stated, not a constant 
 
 ## Step 2 — the compatibility table and the clique
 
+[`c9f2c22`](../../commit/c9f2c22)
+
 Built in `src/stretto.rs`.
 
 **Result.** Bach's five-voice hyperstretto in BWV 867 — entries at `{0, 2, 4, 6, 8}` quarters — is **not** a clique
@@ -88,6 +104,9 @@ the two-rule tier, so the fault is the rulebook's rather than the template's.
 
 ## Step 3 — the corpus ranking
 
+[`e162fb0`](../../commit/e162fb0) — one commit carries step 3, the five experiments and step 4, because none of
+the three was worth reporting without the other two.
+
 Built in `src/refdata.rs` — a reader for the `.ref` ground truth, including its fractional measure-offset grammar.
 
 **Result.** Capacity by *clique size* does not converge under the two-rule tier: 81% of entry pairs are compatible
@@ -112,6 +131,8 @@ the editorial choice of ending can halve it, so a single figure is not a well-be
 ---
 
 ## Five experiments, to resolve the tier deadlock
+
+[`e162fb0`](../../commit/e162fb0)
 
 ### 12.0 — a parser defect that corrected everything upstream
 
@@ -163,6 +184,8 @@ for, so they are implementation faults rather than a repertoire mismatch.
 
 ## Step 4 — subject design
 
+[`e162fb0`](../../commit/e162fb0)
+
 **Result.** The measure is valid for ranking and invalid for design.
 
 Optimising a pitch contour against density gives a **monotone** — density exactly 1.000, and the optimiser beat
@@ -184,6 +207,8 @@ fifth. **The measure penalises the interval the form is built on.**
 
 ## §2.3 — the harmonic layer, first attempt
 
+[`7b633d4`](../../commit/7b633d4)
+
 Built in `src/harmony.rs`: segment at the notated beat, score every root-and-quality candidate by duration-weighted
 membership, classify every note against the chord that prevails where it sounds.
 
@@ -197,6 +222,8 @@ correctness: three transpositions of one subject is a thin self-similar texture 
 ---
 
 ## Validating the harmonic layer — four external checks, all negative
+
+[`b0163d4`](../../commit/b0163d4)
 
 Every figure above was self-referential: they measure whether the chord templates explain notes, not whether the
 labels are right.
@@ -225,6 +252,8 @@ Roman numeral against the mode, with half cadences on the local dominant and dec
 
 ## §17 — the analyser rebuilt
 
+[`6acc533`](../../commit/6acc533)
+
 The repair is architectural. A fixed window **imposes** the harmonic rhythm; segmenting at every onset and charging
 a penalty `λ` to change chord lets it **emerge**. Scoring also changed: foreign notes lose weight rather than
 merely not gaining it, weight is duration doubled on beats, and the bass earns a bonus for being the root. Viterbi
@@ -243,6 +272,8 @@ passes before any music is consulted**; Bach scores 80.4% and Renaissance 86.9%.
 ---
 
 ## Step 5 — realisation, and the first notes
+
+[`e6e4af2`](../../commit/e6e4af2)
 
 `src/realise.rs` builds §2.5's shortest path; `src/midi.rs` writes it out. Rhythm is given, pitch is the only
 variable, and §2.3's harmony runs beside §2.2's counterpoint as a second obligation system over one grid. The two
