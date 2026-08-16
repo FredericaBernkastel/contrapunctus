@@ -58,6 +58,30 @@ impl Subject {
     }
   }
 
+  /// Place transposed by `n` **diatonic steps within the key**, which is what
+  /// a stretto at the second or the third is. Each note keeps whatever
+  /// chromatic inflection it had *relative to the scale*, so an accidental
+  /// foreign to the key stays foreign after transposition.
+  pub fn place_diatonic(&self, d: i64, n: i16, key: &[i8; 7]) -> Voice {
+    Voice {
+      notes: self
+        .notes
+        .iter()
+        .map(|note| {
+          let from = note.pitch.step.rem_euclid(7) as usize;
+          let inflection = note.pitch.alter - key[from];
+          let step = note.pitch.step + n;
+          let to = step.rem_euclid(7) as usize;
+          Note {
+            onset: note.onset + d,
+            pitch: Pitch::new(step, key[to] + inflection),
+            ..*note
+          }
+        })
+        .collect(),
+    }
+  }
+
   pub fn head(&self) -> Option<Pitch> {
     self.notes.first().map(|n| n.pitch)
   }
@@ -173,6 +197,82 @@ impl Table {
   }
 }
 
+/// **Contrapuntal capacity**: the largest set of mutually compatible entries
+/// that includes the subject at its own pitch and time.
+///
+/// Offsets are restricted to *within* the subject, so every entry in a clique
+/// genuinely overlaps every other — otherwise the measure degenerates into
+/// "how many non-overlapping statements fit in a bar", which is a fact about
+/// arithmetic rather than about the subject.
+pub fn capacity(
+  sub: &Subject,
+  key: &[i8; 7],
+  measure: i64,
+  tier: &[crate::automaton::Rule],
+  step_ticks: i64,
+  cap: usize,
+) -> (usize, Vec<(i64, i16)>, f64) {
+  let mut cands: Vec<(i64, i16)> = vec![];
+  let mut d = 0;
+  while d < sub.len {
+    for n in -7i16..=7 {
+      if d == 0 && n == 0 {
+        continue;
+      }
+      cands.push((d, n));
+    }
+    d += step_ticks;
+  }
+  cands.insert(0, (0, 0)); // the subject itself is entry zero
+
+  let voices: Vec<Voice> =
+    cands.iter().map(|&(d, n)| sub.place_diatonic(d, n, key)).collect();
+  let m = cands.len();
+  let mut ok = vec![vec![false; m]; m];
+  for i in 0..m {
+    for j in (i + 1)..m {
+      let legal = compatible(&voices[i], &voices[j], measure, tier).legal();
+      ok[i][j] = legal;
+      ok[j][i] = legal;
+    }
+  }
+
+  // depth-limited search anchored at entry zero.
+  //
+  // **One entry per offset.** Without this the measure is vacuous: the first
+  // version allowed several entries at the same instant, so it counted
+  // harmonising the subject in parallel thirds as a five-fold stretto, and
+  // returned exactly whatever clique cap it was given for every subject in the
+  // corpus. A stretto is a succession of entries, not a chord of them, and
+  // Bach's own is five *distinct* offsets.
+  let mut best: Vec<usize> = vec![0];
+  let mut cur: Vec<usize> = vec![0];
+  fn go(ok: &[Vec<bool>], off: &[i64], m: usize, start: usize, cur: &mut Vec<usize>,
+        best: &mut Vec<usize>, cap: usize) {
+    if cur.len() > best.len() {
+      *best = cur.clone();
+    }
+    if cur.len() >= cap {
+      return;
+    }
+    for v in start..m {
+      if cur.len() + (m - v) <= best.len() {
+        return; // cannot beat the incumbent
+      }
+      if cur.iter().all(|&u| ok[u][v] && off[u] != off[v]) {
+        cur.push(v);
+        go(ok, off, m, v + 1, cur, best, cap);
+        cur.pop();
+      }
+    }
+  }
+  let edges: usize = (0..m).map(|i| (0..m).filter(|&j| i != j && ok[i][j]).count()).sum();
+  let density = edges as f64 / (m * (m - 1)).max(1) as f64;
+  let offs: Vec<i64> = cands.iter().map(|&(d, _)| d).collect();
+  go(&ok, &offs, m, 1, &mut cur, &mut best, cap);
+  (best.len(), best.iter().map(|&i| cands[i]).collect(), density)
+}
+
 /// Recover what transposition an entry in the score actually uses, by
 /// comparing its first note against the subject's.
 pub fn interval_from(sub: &Subject, first: Pitch) -> (i16, i16) {
@@ -183,4 +283,39 @@ pub fn interval_from(sub: &Subject, first: Pitch) -> (i16, i16) {
 
 pub fn rule_is_hard(name: &str) -> bool {
   is_hard_name(name)
+}
+
+/// Just the edge density of the compatibility graph — readme §12.1's measure,
+/// without the clique search. Capacity by clique *size* saturates under a
+/// permissive tier; density is bounded in `[0, 1]` and cannot.
+pub fn density(
+  sub: &Subject,
+  key: &[i8; 7],
+  measure: i64,
+  tier: &[crate::automaton::Rule],
+  step: i64,
+) -> f64 {
+  let mut cands: Vec<(i64, i16)> = vec![];
+  let mut d = 0;
+  while d < sub.len {
+    for n in -7i16..=7 {
+      cands.push((d, n));
+    }
+    d += step;
+  }
+  let voices: Vec<Voice> =
+    cands.iter().map(|&(d, n)| sub.place_diatonic(d, n, key)).collect();
+  let m = cands.len();
+  if m < 2 {
+    return 0.0;
+  }
+  let mut ok = 0usize;
+  for i in 0..m {
+    for j in (i + 1)..m {
+      if compatible(&voices[i], &voices[j], measure, tier).legal() {
+        ok += 1;
+      }
+    }
+  }
+  2.0 * ok as f64 / (m * (m - 1)) as f64
 }

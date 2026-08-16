@@ -1,12 +1,13 @@
 //! A Humdrum `**kern` reader, narrow enough to be exact.
 //!
-//! Time is in **ticks of 1/128 of a whole note**, chosen after counting what
-//! the corpus actually contains: reciprocals `{1, 2, 4, 8, 16, 32}`, at most
-//! one dot, and no tuplets anywhere in either book. Every duration therefore
-//! divides evenly and nothing is rounded — which readme §2.1 does not merely
-//! prefer but depends on. A reciprocal that does not divide is an error rather
-//! than a rounding, because a silent rounding here would reintroduce exactly
-//! the defect the lattice was adopted to remove.
+//! Time is in **ticks of 1/960 of a whole note**, chosen by counting what the
+//! corpora actually contain rather than by guessing. The Well-Tempered Clavier
+//! uses reciprocals `{1,2,4,8,16,32}` with at most one dot and no tuplets; the
+//! Renaissance corpus adds the breve and coloration, `{0,3,5,6,12,24}`. 960 is
+//! the smallest base making every one of those — dotted included — a whole
+//! number of ticks. A reciprocal that does not divide is an error rather than a
+//! rounding, because a silent rounding here would reintroduce exactly the
+//! defect the lattice was adopted to remove.
 //!
 //! Spine splits (`*^`) and merges (`*v`) are handled rather than assumed away:
 //! the corpus has 15 and 24 of them. A split does not create a voice — it is
@@ -16,7 +17,7 @@
 
 use crate::pitch::{parse_kern_pitch, Pitch};
 
-pub const TICKS_PER_WHOLE: i64 = 128;
+pub const TICKS_PER_WHOLE: i64 = 960;
 pub const TICKS_PER_QUARTER: i64 = TICKS_PER_WHOLE / 4;
 
 #[derive(Clone, Copy, Debug)]
@@ -42,6 +43,10 @@ pub struct Piece {
   pub measure: i64,
   /// Ticks per notated beat, from the time signature's denominator.
   pub beat: i64,
+  /// Alteration of each diatonic letter C..B under the key signature. Needed
+  /// for *diatonic* transposition, which is what a stretto at the second or
+  /// third actually is — an exact interval transposition would leave the key.
+  pub key: [i8; 7],
   /// Instants where one voice sounded more than one pitch at once, which this
   /// reader declines to interpret. Counted so the omission is visible.
   pub polyphonic_instants: usize,
@@ -54,18 +59,24 @@ fn duration(tok: &str) -> Result<i64, String> {
   if digits.is_empty() {
     return Err(format!("no duration in {tok:?}"));
   }
-  let recip: i64 = digits.parse().map_err(|_| format!("bad duration {digits:?}"))?;
-  if recip == 0 || TICKS_PER_WHOLE % recip != 0 {
-    return Err(format!("reciprocal {recip} does not divide {TICKS_PER_WHOLE} ticks"));
-  }
-  let base = TICKS_PER_WHOLE / recip;
+  // `0` is the breve (two whole notes) and `00` the longa (four), so a run of
+  // zeros doubles rather than divides.
+  let base = if digits.chars().all(|c| c == '0') {
+    TICKS_PER_WHOLE << digits.len()
+  } else {
+    let recip: i64 = digits.parse().map_err(|_| format!("bad duration {digits:?}"))?;
+    if TICKS_PER_WHOLE % recip != 0 {
+      return Err(format!("reciprocal {recip} does not divide {TICKS_PER_WHOLE} ticks"));
+    }
+    TICKS_PER_WHOLE / recip
+  };
   let dots = tok.chars().filter(|&c| c == '.').count();
   if dots > 1 {
     return Err(format!("{dots} dots in {tok:?}"));
   }
   Ok(if dots == 1 {
     if base % 2 != 0 {
-      return Err(format!("dotted {recip} is not a whole number of ticks"));
+      return Err(format!("dotted {digits} is not a whole number of ticks"));
     }
     base + base / 2
   } else {
@@ -73,10 +84,18 @@ fn duration(tok: &str) -> Result<i64, String> {
   })
 }
 
-/// One `**kern` spine, carrying the voice it belongs to across splits.
+/// One spine, carrying the voice it belongs to across splits.
+///
+/// **Every** spine is tracked, not only the note-bearing ones. Vocal music
+/// interleaves `**text` and `**silbe` spines with the `**kern` ones, and a
+/// reader that pushes a spine only for `**kern` while indexing data fields by
+/// position reads every note after the first lyric column out of the wrong
+/// field. 60 of 200 Renaissance files have such spines; before this was fixed
+/// they failed to parse, and the ones that did parse were a biased sample.
 struct Spine {
   voice: usize,
   time: i64,
+  is_kern: bool,
 }
 
 pub fn read(path: &std::path::Path) -> Result<Piece, String> {
@@ -87,6 +106,7 @@ pub fn read(path: &std::path::Path) -> Result<Piece, String> {
   let mut voices: Vec<Voice> = vec![];
   let mut measure = 4 * TICKS_PER_QUARTER;
   let mut beat = TICKS_PER_QUARTER;
+  let mut key = [0i8; 7];
   // A tie open in this voice: the next note continues it rather than attacking.
   let mut tied: Vec<bool> = vec![];
 
@@ -99,17 +119,34 @@ pub fn read(path: &std::path::Path) -> Result<Piece, String> {
 
     // --- interpretations: spine structure, meter -------------------------
     if line.starts_with('*') {
-      if fields.iter().any(|f| f.starts_with("**kern")) {
+      if fields.iter().any(|f| f.starts_with("**")) {
         for f in &fields {
-          if f.starts_with("**kern") {
-            spines.push(Spine { voice: voices.len(), time: 0 });
+          let is_kern = f.starts_with("**kern");
+          let voice = if is_kern {
             voices.push(Voice::default());
             tied.push(false);
-          }
+            voices.len() - 1
+          } else {
+            usize::MAX
+          };
+          spines.push(Spine { voice, time: 0, is_kern });
         }
         continue;
       }
       for f in &fields {
+        if let Some(sig) = f.strip_prefix("*k[") {
+          key = [0; 7];
+          let body = sig.trim_end_matches(']');
+          let mut letter: Option<usize> = None;
+          for ch in body.chars() {
+            match ch {
+              'a'..='g' => letter = "cdefgab".find(ch).map(|i| i),
+              '#' => { if let Some(l) = letter { key[l] += 1 } }
+              '-' => { if let Some(l) = letter { key[l] -= 1 } }
+              _ => {}
+            }
+          }
+        }
         if let Some(sig) = f.strip_prefix("*M") {
           if let Some((n, d)) = sig.split_once('/') {
             if let (Ok(n), Ok(d)) = (n.parse::<i64>(), d.parse::<i64>()) {
@@ -131,13 +168,18 @@ pub fn read(path: &std::path::Path) -> Result<Piece, String> {
         let f = fields.get(fi).copied().unwrap_or("*");
         match f {
           "*^" => {
-            next.push(Spine { voice: spines[i].voice, time: spines[i].time });
-            next.push(Spine { voice: spines[i].voice, time: spines[i].time });
+            let (v, t, k) = (spines[i].voice, spines[i].time, spines[i].is_kern);
+            next.push(Spine { voice: v, time: t, is_kern: k });
+            next.push(Spine { voice: v, time: t, is_kern: k });
             i += 1;
           }
           "*v" => {
             // consume the whole run of `*v`, keeping the leftmost
-            let keep = Spine { voice: spines[i].voice, time: spines[i].time };
+            let keep = Spine {
+              voice: spines[i].voice,
+              time: spines[i].time,
+              is_kern: spines[i].is_kern,
+            };
             let mut j = fi;
             while fields.get(j).copied() == Some("*v") && i < spines.len() {
               i += 1;
@@ -150,7 +192,11 @@ pub fn read(path: &std::path::Path) -> Result<Piece, String> {
             i += 1; // spine ends
           }
           _ => {
-            next.push(Spine { voice: spines[i].voice, time: spines[i].time });
+            next.push(Spine {
+              voice: spines[i].voice,
+              time: spines[i].time,
+              is_kern: spines[i].is_kern,
+            });
             i += 1;
           }
         }
@@ -171,6 +217,9 @@ pub fn read(path: &std::path::Path) -> Result<Piece, String> {
     }
     for (i, field) in fields.iter().enumerate() {
       let Some(sp) = spines.get_mut(i) else { continue };
+      if !sp.is_kern {
+        continue; // lyrics, figures, anything that is not notes
+      }
       let tok = field.trim();
       if tok.is_empty() || tok == "." {
         continue;
@@ -206,7 +255,7 @@ pub fn read(path: &std::path::Path) -> Result<Piece, String> {
   }
   voices.retain(|v| !v.notes.is_empty());
 
-  Ok(Piece { id, voices, measure, beat, polyphonic_instants })
+  Ok(Piece { id, voices, measure, beat, key, polyphonic_instants })
 }
 
 /// The pitch sounding in `v` at tick `t`, and whether it is struck there.

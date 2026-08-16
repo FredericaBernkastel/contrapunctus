@@ -6,6 +6,8 @@
 
 mod automaton;
 mod corpus;
+mod experiments;
+mod refdata;
 mod stretto;
 mod kern;
 mod pitch;
@@ -23,6 +25,15 @@ fn main() {
     "corpus" => corpus_run(),
     "diag" => diag(),
     "stretto" => stretto(),
+    "rank" => rank(),
+    "probe" => probe(),
+    "exp" => { exp_density(); exp_pareto(); exp_renaissance(); exp_chromatic(); exp_harmony(); }
+    "exp1" => exp_density(),
+    "exp2" => exp_pareto(),
+    "exp3" => exp_renaissance(),
+    "exp4" => exp_chromatic(),
+    "exp5" => exp_harmony(),
+    "design" => step4_design(),
     _ => {
       states();
       verdict();
@@ -363,4 +374,578 @@ fn window(v: &kern::Voice, t0: i64, t1: i64) -> kern::Voice {
     notes: v.notes.iter().filter(|n| n.onset >= t0 && n.onset < t1)
       .map(|n| kern::Note { onset: n.onset - t0, ..*n }).collect(),
   }
+}
+
+// ---------------------------------------------------------------- step 3 ---
+
+/// Contrapuntal capacity for every Bach subject in the ground truth, ranked.
+///
+/// Ricercar §6.1 wanted this and was blocked twice — once on an unpinned
+/// threshold, once on cost. Here it is a table lookup and a bounded clique
+/// search, and the whole corpus runs in seconds.
+fn rank() {
+  let refpath = std::path::Path::new("corpus/algomus-data/fugues/fugues.ref");
+  let dir = std::path::Path::new(KERN);
+  // load every piece first: the annotations are in bars, and a bar is only a
+  // duration once the score has told us the time signature
+  let mut pieces: std::collections::BTreeMap<String, kern::Piece> = Default::default();
+  for n in 1..=24 {
+    let f = dir.join(format!("wtc1f{n:02}.krn"));
+    if let Ok(p) = kern::read(&f) {
+      pieces.insert(format!("wtc-i-{n:02}"), p);
+    }
+  }
+  let specs = match refdata::read(refpath, &|id| pieces.get(id).map(|p| p.measure)) {
+    Ok(s) => s,
+    Err(e) => return println!("{e}"),
+  };
+
+  println!("\n== step 3: contrapuntal capacity of 24 Bach subjects ==");
+  println!("(diatonic transpositions -7..+7, offsets every quarter within the");
+  println!(" subject, one entry per offset, clique anchored at the subject)");
+  println!("Judged on the FULL 5-rule tier, not the confirmed 2-rule tier of §9.4:");
+  println!("see §11 - under the 2-rule tier capacity does not converge at all, so");
+  println!("the only tier that measures anything is one Bach himself violates.\n");
+  println!("  fugue        vv  subj  notes  cap  tightest stretto");
+  let mut rows: Vec<(usize, String, i64, usize, String)> = vec![];
+
+  for spec in &specs {
+    let Some(p) = pieces.get(&spec.id) else { continue };
+    if spec.len == 0 || spec.entries.is_empty() {
+      continue;
+    }
+    // the first annotated entry, in the voice that states it
+    let (letter, start) = spec.entries.iter().min_by_key(|(_, t)| *t).copied().unwrap();
+    let vi = voice_of(p, letter);
+    let sub = stretto::Subject::cut(&p.voices[vi], start, spec.len);
+    if sub.notes.len() < 2 {
+      continue;
+    }
+    let (cap, set, dens) = stretto::capacity(
+      &sub, &p.key, p.measure, automaton::HARD, kern::TICKS_PER_QUARTER, 12);
+    let mut tight: Vec<i64> = set.iter().map(|(d, _)| *d / kern::TICKS_PER_QUARTER).collect();
+    tight.sort_unstable();
+    let span = tight.last().copied().unwrap_or(0);
+    let _ = span;
+    rows.push((
+      cap,
+      spec.id.clone(),
+      spec.len / kern::TICKS_PER_QUARTER,
+      sub.notes.len(),
+      format!("{dens:.2}  {tight:?}q"),
+    ));
+  }
+
+  rows.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+  for (cap, id, len, notes, tight) in &rows {
+    let vv = pieces.get(id).map(|p| p.voices.len()).unwrap_or(0);
+    println!("  {id:<12} {vv:>2} {len:>5}q {notes:>5} {cap:>5}  {tight}");
+  }
+
+  // §3.3: the eight contested subjects, at both readings
+  println!("\n  -- capacity against the contested endings (§3.3) --");
+  println!("  fugue        primary          alternatives");
+  for spec in &specs {
+    if spec.alternatives.is_empty() {
+      continue;
+    }
+    let Some(p) = pieces.get(&spec.id) else { continue };
+    let (letter, start) = spec.entries.iter().min_by_key(|(_, t)| *t).copied().unwrap();
+    let vi = voice_of(p, letter);
+    let at = |len: i64| {
+      let s = stretto::Subject::cut(&p.voices[vi], start, len);
+      stretto::capacity(&s, &p.key, p.measure, automaton::HARD,
+        kern::TICKS_PER_QUARTER, 12).0
+    };
+    let alts: Vec<String> = spec
+      .alternatives
+      .iter()
+      .map(|&l| format!("{}q -> {}", l / kern::TICKS_PER_QUARTER, at(l)))
+      .collect();
+    println!(
+      "  {:<12} {:>2}q -> {:<8}  {}",
+      spec.id,
+      spec.len / kern::TICKS_PER_QUARTER,
+      at(spec.len),
+      alts.join(", ")
+    );
+  }
+}
+
+/// Ground truth names voices top-down (S A T B C); kern spines run low to high.
+fn voice_of(p: &kern::Piece, letter: char) -> usize {
+  let order = ['S', 'A', 'T', 'B', 'C'];
+  let i = order.iter().position(|&c| c == letter).unwrap_or(0);
+  p.voices.len().saturating_sub(1 + i).min(p.voices.len() - 1)
+}
+
+/// One fugue, timed, with the graph's edge density — written because the
+/// ranking did not finish in ten minutes, and the first question is whether
+/// the clique search is slow or the measure is vacuous.
+fn probe() {
+  let p = kern::read(&std::path::Path::new(KERN).join("wtc1f22.krn")).expect("kern");
+  let sub = stretto::Subject::cut(&p.voices[p.voices.len() - 1], 0, 12 * kern::TICKS_PER_QUARTER);
+  println!("\n== probe: BWV 867, capacity search ==");
+  for (name, tier) in [("confirmed (2 rules)", automaton::CONFIRMED), ("full (5 rules)", automaton::HARD)] {
+    for cap in [4usize, 6, 8, 10, 12] {
+      let t0 = std::time::Instant::now();
+      let (n, _set, dens) =
+        stretto::capacity(&sub, &p.key, p.measure, tier, kern::TICKS_PER_QUARTER, cap);
+      println!("  {name:<20} cap {cap}: capacity {n}, density {dens:.3}, {:?}", t0.elapsed());
+      if t0.elapsed().as_secs() > 30 {
+        println!("  (stopping: too slow to continue)");
+        break;
+      }
+    }
+  }
+}
+
+// ------------------------------------------------------------ experiments ---
+
+fn load_bach() -> std::collections::BTreeMap<String, kern::Piece> {
+  let dir = std::path::Path::new(KERN);
+  let mut out = std::collections::BTreeMap::new();
+  for n in 1..=24 {
+    if let Ok(p) = kern::read(&dir.join(format!("wtc1f{n:02}.krn"))) {
+      out.insert(format!("wtc-i-{n:02}"), p);
+    }
+  }
+  out
+}
+
+fn subjects() -> Vec<(String, kern::Piece, stretto::Subject, Vec<i64>)> {
+  let pieces = load_bach();
+  let specs = refdata::read(
+    std::path::Path::new("corpus/algomus-data/fugues/fugues.ref"),
+    &|id| pieces.get(id).map(|p| p.measure),
+  )
+  .unwrap_or_default();
+  let mut out = vec![];
+  for spec in specs {
+    let Some(p) = pieces.get(&spec.id) else { continue };
+    if spec.len == 0 || spec.entries.is_empty() {
+      continue;
+    }
+    let (letter, start) = spec.entries.iter().min_by_key(|(_, t)| *t).copied().unwrap();
+    let sub = stretto::Subject::cut(&p.voices[voice_of(p, letter)], start, spec.len);
+    if sub.notes.len() >= 2 {
+      out.push((spec.id.clone(), p.clone(), sub, spec.alternatives.clone()));
+    }
+  }
+  out
+}
+
+/// Experiment 1: does graph *density* discriminate where clique size saturates?
+fn exp_density() {
+  println!("\n== experiment 1: density instead of clique size ==");
+  println!("  fugue        notes/q   dens(2-rule)  dens(5-rule)");
+  let subs = subjects();
+  let (mut d2, mut d5, mut nq) = (vec![], vec![], vec![]);
+  let mut rows = vec![];
+  for (id, p, sub, _) in &subs {
+    let q = kern::TICKS_PER_QUARTER;
+    let (_, _, a) = stretto::capacity(sub, &p.key, p.measure, automaton::CONFIRMED, q, 2);
+    let (_, _, b) = stretto::capacity(sub, &p.key, p.measure, automaton::HARD, q, 2);
+    let dens = sub.notes.len() as f64 / (sub.len / q).max(1) as f64;
+    rows.push((a, id.clone(), dens, b));
+    d2.push(a);
+    d5.push(b);
+    nq.push(dens);
+  }
+  rows.sort_by(|x, y| x.0.partial_cmp(&y.0).unwrap());
+  for (a, id, dens, b) in &rows {
+    println!("  {id:<12} {dens:>7.2}   {a:>10.3}   {b:>10.3}");
+  }
+  let lo = d2.iter().cloned().fold(f64::MAX, f64::min);
+  let hi = d2.iter().cloned().fold(0.0, f64::max);
+  println!("\n  spread of 2-rule density: {lo:.3} .. {hi:.3}");
+  println!("  2-rule density vs note density   r = {:+.3}", experiments::pearson(&nq, &d2));
+  println!("  5-rule density vs note density   r = {:+.3}", experiments::pearson(&nq, &d5));
+  println!("  2-rule vs 5-rule density         r = {:+.3}", experiments::pearson(&d2, &d5));
+}
+
+/// Experiment 2: capacity under the permissive tier, with the soft criteria
+/// calibrated against Bach's own stretto.
+fn exp_pareto() {
+  println!("\n== experiment 2: capacity at Bach's own soft level ==");
+  let pieces = load_bach();
+  let Some(p867) = pieces.get("wtc-i-22") else { return };
+  let q = kern::TICKS_PER_QUARTER;
+  let limit = experiments::bach_soft_limit(p867, 266 * q, (274 + 12) * q);
+  println!("  Bach's Stretto II, worst of its 10 real pairs, per slice:");
+  for (r, v) in automaton::SOFT.iter().zip(&limit) {
+    println!("     {:<26} {v:.3}", r.name());
+  }
+  println!("\n  fugue        cap(2-rule + Pareto)");
+  let mut rows = vec![];
+  for (id, p, sub, _) in &subjects() {
+    let c = experiments::capacity_pareto(sub, &p.key, p.measure, &limit, q, 12);
+    rows.push((c, id.clone()));
+  }
+  rows.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+  for (c, id) in &rows {
+    println!("  {id:<12} {c:>6}");
+  }
+}
+
+/// Experiment 3: the same rulebook on the repertoire Fux is about.
+fn exp_renaissance() {
+  println!("\n== experiment 3: Fux's rules on 16th-century polyphony ==");
+  let mut files: Vec<std::path::PathBuf> = vec![];
+  for d in ["Jos", "Oke", "Obr", "Duf", "Bus", "Mar"] {
+    let dir = std::path::Path::new("corpus/jrp-scores").join(d);
+    if let Ok(rd) = std::fs::read_dir(&dir) {
+      files.extend(
+        rd.filter_map(|e| e.ok().map(|e| e.path()))
+          .filter(|p| p.extension().map(|x| x == "krn").unwrap_or(false)),
+      );
+    }
+  }
+  files.sort();
+  files.truncate(200);
+  if files.is_empty() {
+    return println!("  corpus/jrp-scores not found");
+  }
+  let mut total = corpus::Tally::default();
+  let mut ok = 0;
+  for f in &files {
+    if let Ok(p) = kern::read(f) {
+      total.merge(&corpus::check_piece(&p));
+      ok += 1;
+    }
+  }
+  println!(
+    "  {ok} of {} files parsed, {} slices, {} melodic moves",
+    files.len(),
+    total.slices,
+    total.melodic_moves
+  );
+
+  let mut bach = corpus::Tally::default();
+  for (_, p) in load_bach() {
+    bach.merge(&corpus::check_piece(&p));
+  }
+  println!("\n  rule                          Renaissance      Bach   (per 1k)");
+  for r in automaton::HARD {
+    let melodic = *r == automaton::Rule::ForbiddenMelodic;
+    let dr = if melodic { total.melodic_moves } else { total.slices };
+    let db = if melodic { bach.melodic_moves } else { bach.slices };
+    let ren = 1000.0 * total.by_rule.get(r.name()).copied().unwrap_or(0) as f64 / dr.max(1) as f64;
+    let bac = 1000.0 * bach.by_rule.get(r.name()).copied().unwrap_or(0) as f64 / db.max(1) as f64;
+    println!("  {:<28} {ren:>9.1} {bac:>9.1}", r.name());
+  }
+}
+
+/// Experiment 4: is the melodic rule objecting to chromaticism?
+fn exp_chromatic() {
+  println!("\n== experiment 4: chromaticism against the melodic rule ==");
+  let (mut chrom, mut mel, mut diss) = (vec![], vec![], vec![]);
+  println!("  fugue        chromatic  melodic/1k  dissonance/1k");
+  let mut rows = vec![];
+  for (id, p) in load_bach() {
+    let c = experiments::chromaticism(&p);
+    let (rates, _) = experiments::rates(&p);
+    let pick = |n: &str| rates.iter().find(|(k, _)| *k == n).map(|(_, v)| *v).unwrap_or(0.0);
+    rows.push((c, id, pick("forbidden melodic interval"), pick("unresolved dissonance")));
+  }
+  rows.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
+  for (c, id, m, d) in &rows {
+    println!("  {id:<12} {:>8.1}% {m:>11.1} {d:>14.1}", c * 100.0);
+    chrom.push(*c);
+    mel.push(*m);
+    diss.push(*d);
+  }
+  println!("\n  chromaticism vs melodic rule     r = {:+.3}", experiments::pearson(&chrom, &mel));
+  println!("  chromaticism vs dissonance rule  r = {:+.3}", experiments::pearson(&chrom, &diss));
+}
+
+/// Experiment 5: does a harmonic constraint bind where the others do not?
+fn exp_harmony() {
+  println!("\n== experiment 5: harmony as the binding constraint ==");
+  println!("  fraction of >=3-note sonorities explained by a triad or 7th chord\n");
+  let (mut f, mut t) = (0usize, 0usize);
+  for (id, p) in load_bach() {
+    let (a, b) = experiments::harmonic_fit(&p.voices);
+    if b > 0 {
+      println!("  {id:<12} {:>6.1}%  ({a} of {b})", 100.0 * a as f64 / b as f64);
+    }
+    f += a;
+    t += b;
+  }
+  println!("\n  Bach, all 24 fugues:            {:>6.1}%  ({f} of {t})", 100.0 * f as f64 / t as f64);
+
+  let q = kern::TICKS_PER_QUARTER;
+  let (mut cf, mut ct, mut n_sets) = (0usize, 0usize, 0usize);
+  for (_, p, sub, _) in &subjects() {
+    for d in [1i64, 2, 3, 5] {
+      for k in [-4i16, -2, 2, 4] {
+        let voices = vec![
+          sub.place_diatonic(0, 0, &p.key),
+          sub.place_diatonic(d * q, k, &p.key),
+          sub.place_diatonic(2 * d * q, 2 * k, &p.key),
+        ];
+        let (a, b) = experiments::harmonic_fit(&voices);
+        cf += a;
+        ct += b;
+        n_sets += 1;
+      }
+    }
+  }
+  println!(
+    "  arbitrary 3-entry strettos:     {:>6.1}%  ({cf} of {ct}, {n_sets} placements)",
+    100.0 * cf as f64 / ct.max(1) as f64
+  );
+}
+
+// ------------------------------------------------------------ step 4 -------
+
+/// Deterministic PRNG, so a reported contour can be reproduced exactly.
+struct Rng(u64);
+impl Rng {
+  fn next(&mut self) -> u64 {
+    self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    let mut z = self.0;
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    z ^ (z >> 31)
+  }
+  fn below(&mut self, n: usize) -> usize {
+    (self.next() % n as u64) as usize
+  }
+}
+
+/// Rewrite a subject's pitches from a contour of scale degrees, keeping its
+/// rhythm. The head is fixed: it is what the ear recognises on re-entry, which
+/// is readme §3.2's weighting intuition surviving as a search order.
+fn from_contour(base: &stretto::Subject, contour: &[i16], key: &[i8; 7]) -> stretto::Subject {
+  let head = base.notes[0].pitch;
+  let notes = base
+    .notes
+    .iter()
+    .zip(contour)
+    .map(|(n, &deg)| {
+      let step = head.step + deg;
+      let letter = step.rem_euclid(7) as usize;
+      kern::Note { pitch: pitch::Pitch::new(step, key[letter]), ..*n }
+    })
+    .collect();
+  stretto::Subject { notes, len: base.len }
+}
+
+fn contour_of(sub: &stretto::Subject) -> Vec<i16> {
+  let head = sub.notes[0].pitch.step;
+  sub.notes.iter().map(|n| n.pitch.step - head).collect()
+}
+
+/// How much melody a contour actually has — the diagnostic that decides whether
+/// an optimum is musical or degenerate.
+fn liveliness(c: &[i16]) -> (usize, usize, f64) {
+  let distinct: std::collections::BTreeSet<i16> = c.iter().copied().collect();
+  let holds = c.windows(2).filter(|w| w[0] == w[1]).count();
+  let motion = c.windows(2).map(|w| (w[1] - w[0]).abs() as f64).sum::<f64>()
+    / (c.len() - 1).max(1) as f64;
+  (distinct.len(), holds, motion)
+}
+
+fn step4_design() {
+  println!("\n== step 4: designing a subject against the §12.1 measure ==");
+  let pieces = load_bach();
+  let Some(p) = pieces.get("wtc-i-22") else { return };
+  let q = kern::TICKS_PER_QUARTER;
+  let base = stretto::Subject::cut(&p.voices[p.voices.len() - 1], 0, 12 * q);
+  let n = base.notes.len();
+  let score = |c: &[i16]| {
+    stretto::density(&from_contour(&base, c, &p.key), &p.key, p.measure, automaton::CONFIRMED, 2 * q)
+  };
+
+  let bach = contour_of(&base);
+  let (bd, bh, bm) = liveliness(&bach);
+  println!(
+    "  Bach's own subject      density {:.3}   {bd} distinct degrees, {bh} repeats, mean step {bm:.2}",
+    score(&bach)
+  );
+
+  // a random control
+  let mut rng = Rng(0x5EED);
+  let trials = 400;
+  let mut samples = Vec::with_capacity(trials);
+  for _ in 0..trials {
+    let mut c = vec![0i16; n];
+    for x in c.iter_mut().skip(1) {
+      *x = rng.below(15) as i16 - 7;
+    }
+    samples.push(score(&c));
+  }
+  let mean: f64 = samples.iter().sum::<f64>() / trials as f64;
+  let sd = (samples.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / trials as f64).sqrt();
+  println!("  random contours ({trials})   density {mean:.3} +- {sd:.3}");
+  println!("  -> Bach sits {:+.2} standard deviations above random",
+    (score(&bach) - mean) / sd.max(1e-9));
+
+  // hill-climb with restarts, head fixed
+  let mut best = (score(&bach), bach.clone());
+  for restart in 0..12 {
+    let mut c = vec![0i16; n];
+    if restart > 0 {
+      for x in c.iter_mut().skip(1) {
+        *x = rng.below(15) as i16 - 7;
+      }
+    }
+    let mut cur = score(&c);
+    loop {
+      let mut improved = false;
+      for i in 1..n {
+        let old = c[i];
+        for d in -7i16..=7 {
+          if d == old {
+            continue;
+          }
+          c[i] = d;
+          let s = score(&c);
+          if s > cur + 1e-9 {
+            cur = s;
+            improved = true;
+          } else {
+            c[i] = old;
+          }
+        }
+      }
+      if !improved {
+        break;
+      }
+    }
+    if cur > best.0 {
+      best = (cur, c.clone());
+    }
+  }
+
+  let (d, h, m) = liveliness(&best.1);
+  println!("\n  best contour found      density {:.3}", best.0);
+  println!("  degrees                 {:?}", best.1);
+  println!("  {d} distinct degrees, {h} repeated-note transitions, mean step {m:.2}");
+  let sub = from_contour(&base, &best.1, &p.key);
+  print!("  as pitches              ");
+  for note in &sub.notes {
+    print!("{} ", note.pitch.name());
+  }
+  println!();
+
+  // Does constraining the search to musical contours rescue it? Require at
+  // least five distinct scale degrees and no run of three identical notes.
+  let musical = |c: &[i16]| {
+    let (d, _, _) = liveliness(c);
+    d >= 5 && !c.windows(3).any(|w| w[0] == w[1] && w[1] == w[2])
+  };
+  let mut cbest = (0.0f64, bach.clone());
+  for restart in 0..16 {
+    let mut c = bach.clone();
+    if restart > 0 {
+      for x in c.iter_mut().skip(1) {
+        *x = rng.below(15) as i16 - 7;
+      }
+    }
+    if !musical(&c) {
+      continue;
+    }
+    let mut cur = score(&c);
+    loop {
+      let mut improved = false;
+      for i in 1..n {
+        let old = c[i];
+        for d in -7i16..=7 {
+          if d == old {
+            continue;
+          }
+          c[i] = d;
+          let v = score(&c);
+          if musical(&c) && v > cur + 1e-9 {
+            cur = v;
+            improved = true;
+          } else {
+            c[i] = old;
+          }
+        }
+      }
+      if !improved {
+        break;
+      }
+    }
+    if cur > cbest.0 {
+      cbest = (cur, c.clone());
+    }
+  }
+  let (cd, ch, cm) = liveliness(&cbest.1);
+  println!("\n  constrained to >=5 degrees and no triple repeat:");
+  println!("  best density {:.3}   {cd} distinct, {ch} repeats, mean step {cm:.2}", cbest.0);
+  println!("  degrees      {:?}", cbest.1);
+
+  println!("\n  -- the same optimisation over all 24 subjects' rhythms --");
+  println!("  fugue        Bach   random    best   distinct  repeats");
+  let mut wins = 0;
+  let mut rows = vec![];
+  for (id, pp, s, _) in &subjects() {
+    if s.notes.len() < 3 || s.notes.len() > 24 {
+      continue;
+    }
+    let sc = |c: &[i16]| {
+      stretto::density(&from_contour(s, c, &pp.key), &pp.key, pp.measure, automaton::CONFIRMED, 2 * q)
+    };
+    let own = contour_of(s);
+    let b = sc(&own);
+    let mut c = vec![0i16; s.notes.len()];
+    let mut cur = sc(&c);
+    loop {
+      let mut improved = false;
+      for i in 1..s.notes.len() {
+        let old = c[i];
+        for dd in -7i16..=7 {
+          if dd == old {
+            continue;
+          }
+          c[i] = dd;
+          let v = sc(&c);
+          if v > cur + 1e-9 {
+            cur = v;
+            improved = true;
+          } else {
+            c[i] = old;
+          }
+        }
+      }
+      if !improved {
+        break;
+      }
+    }
+    // The decisive control: the mean density of random contours on this very
+    // rhythm. If Bach's own contour scores no better, the measure is blind to
+    // contour and its across-subject spread is a fact about rhythm.
+    let mut rsum = 0.0;
+    for _ in 0..60 {
+      let mut rc = vec![0i16; s.notes.len()];
+      for x in rc.iter_mut().skip(1) {
+        *x = rng.below(15) as i16 - 7;
+      }
+      rsum += sc(&rc);
+    }
+    let rmean = rsum / 60.0;
+    let (dd, hh, _) = liveliness(&c);
+    if cur > b {
+      wins += 1;
+    }
+    rows.push((id.clone(), b, cur, dd, hh, rmean));
+  }
+  for (id, b, c, dd, hh, rm) in &rows {
+    println!("  {id:<12} {b:.3}  {rm:.3}   {c:.3}   {dd:>6}   {hh:>6}");
+  }
+  let bachs: Vec<f64> = rows.iter().map(|r| r.1).collect();
+  let rands: Vec<f64> = rows.iter().map(|r| r.5).collect();
+  let better = rows.iter().filter(|r| r.1 > r.5).count();
+  println!("
+  Bach's contour beats a random one on the same rhythm: {better} of {}", rows.len());
+  println!("  Bach density vs random-on-same-rhythm   r = {:+.3}", experiments::pearson(&bachs, &rands));
+  let md: f64 = rows.iter().map(|r| r.1 - r.5).sum::<f64>() / rows.len() as f64;
+  println!("  mean advantage of Bach's contour        {md:+.4}");
+  println!("\n  the optimiser beat Bach on {wins} of {} subjects", rows.len());
+  let avg_d: f64 = rows.iter().map(|r| r.3 as f64).sum::<f64>() / rows.len() as f64;
+  println!("  mean distinct degrees in an optimised contour: {avg_d:.1}");
 }

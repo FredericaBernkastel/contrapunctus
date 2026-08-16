@@ -4,7 +4,7 @@
 
 ### Fugue on the lattice: 513 states, a clique, and what Bach says about the rulebook
 
-*Design document. **Steps 0, 1 and 2 of §8 are built and measured — see §9 and §10.** Steps 3 onward are not.*
+*Design document. **Steps 0 to 4 of §8 are built and measured — see §§9–13.** Step 4's answer is that its objective is wrong. Steps 4 onward are not.*
 
 ---
 
@@ -48,6 +48,14 @@ subject, and a control on the written notes rather than on idealised transpositi
 with the rulebook rather than with the model of an entry. That two independent tests — one counting rule
 frequencies across a book, one asking whether a single passage is mutually compatible — converge on the same two
 rules is the strongest result here, because neither was designed to check the other.
+
+Ranking all 24 subjects by capacity then puts **BWV 849 first**, which is the fugue musicians name when they name
+a stretto fugue, and it survives a control for note density as the largest positive residual. But the same
+experiment exposes the sharpest limit found so far, and it is structural: **the rules Bach never breaks are
+precisely the rules that almost never bind.** Under the two-rule tier that §§9–10 selected, 81% of entry pairs are
+mutually compatible and capacity never converges; only the strict five-rule tier — the one Bach violates — yields
+a finite number. There is no single rulebook here that both accepts Bach's own hyperstretto and discriminates
+between subjects, which is the quantitative form of the observation that completeness is not selectivity.
 
 What the method does not do is decide whether the result is good, and its failure mode is the inverse of the usual
 one: a complete search does not fail by finding nothing but by finding far too much — on the order of `10⁵`–`10⁶`
@@ -675,6 +683,7 @@ expectation of cost.
    |---|---|---|---|
    | [`corpus/algomus-data`](corpus/algomus-data) | `gitlab.com/algomus.fr/algomus-data` | `a1801b5` | **ODbL 1.0**, contents DbCL 1.0 — attribute Giraud, Groult and Levé |
    | [`corpus/bach-wtc-fugues`](corpus/bach-wtc-fugues) | `github.com/humdrum-tools/bach-wtc-fugues` | `5095752` | Humdrum edition by David Huron |
+   | [`corpus/jrp-scores`](corpus/jrp-scores) | `github.com/josquin-research-project/jrp-scores` | `52de715` | Josquin Research Project — added for §12.3's control, shallow clone |
 
    Pinning matters more here than it usually does. Both are living annotation projects, a subject boundary is an
    editorial judgement that can be revised (§3.3), and **capacity is a function of the subject** — so a corpus
@@ -743,10 +752,13 @@ expectation of cost.
    rejects Bach's hyperstretto; the two-rule tier of §9.4 accepts it, under both readings of the subject. Carry the **tonal answer as its own `τ`** from
    the start (§2.1). Verdict test, per §3.1: *does Bach's Stretto II come out as a clique?* Pass calibrates the
    automaton; fail falsifies it. No constant is fitted either way.
-3. **The corpus ranking.** Ricercar §6.1, blocked twice there, at milliseconds per subject here — over 36 real
+3. ~~**The corpus ranking.**~~ **Done — see §11.** BWV 849 ranks first of 24, which is the right answer;
+   but the tier that produces a ranking at all is one Bach violates. Original wording follows.
+   Ricercar §6.1, blocked twice there, at milliseconds per subject here — over 36 real
    subjects rather than a handful. Report **capacity as a profile over subject length** (§3.3), not as a single
    number, since eight of the twenty-four Bach subjects have contested endings.
-4. **Subject design**, per §3.2 — search over contours with the head fixed.
+4. ~~**Subject design**, per §3.2 — search over contours with the head fixed.~~ **Run — see §13.** The optimum
+   is a monotone, and Bach's own contours score *below* random: the measure ranks subjects but cannot design one.
 5. **Realisation**, with an escalation ladder rather than one algorithm:
    - `V − e ≤ 2` free voices: Viterbi against the harmonic automaton. Exact. Budget: seconds, per the survey's
      figure for two-voice florid counterpoint;
@@ -932,3 +944,325 @@ the subject boundary evaporated.
 - **It does not show the method can compose.** A two-rule hard tier admits Bach's stretto, and it will admit an
   enormous amount of bad counterpoint too — §5's inverted failure mode, arriving on schedule. Everything now rests
   on the soft criteria, which is exactly where this document has always said the difficulty lives.
+
+---
+
+## 11. Step 3 result: a ranking, and the rulebook that can produce it is not the one Bach confirms
+
+`cargo run --release -- rank`. Subjects come from the ground truth for all 24 fugues — length and entry positions
+from `fugues.ref`, notes from Huron's encoding — so the ranking measures the corpus rather than my transcriptions.
+Candidate entries are every diatonic transposition `−7..+7` at every quarter-note offset **within** the subject, so
+that each entry in a clique genuinely overlaps every other.
+
+### 11.1 The measure is vacuous on the tier §9 and §10 selected
+
+This is the result, and it was not the expected one.
+
+| hard tier | graph density | capacity of BWV 867's subject |
+|---|---:|---|
+| confirmed, 2 rules (§9.4) | **0.810** | 4, 6, 8, 10 … **does not converge** — it returns whatever cap it is given |
+| full, 5 rules | 0.427 | **6**, and stable at caps of 8, 10 and 12 |
+
+Under the two-rule tier, **81% of all entry pairs are mutually compatible**, and the largest legal stretto keeps
+growing until the search is cut off. That is not a measurement of a subject; it is a measurement of how permissive
+the rulebook is.
+
+And the reason is structural rather than incidental:
+
+> **The rules Bach never breaks are precisely the rules that almost never bind.**
+
+§9 selected the two-rule tier by asking which rules Bach obeys, and the answer was the two that fire about once per
+thousand slices. A rule that fires once per thousand slices cannot forbid much of anything over the ten-slice
+overlap of two entries — so the tier that survives Bach is exactly the tier that cannot discriminate between
+subjects. **There is no single tier here that both accepts Bach's own hyperstretto and measures capacity.** §10
+needed the permissive tier to pass; §11 needs the strict one to say anything.
+
+That is §5's *"completeness is not selectivity"* arriving as a number, and it is the sharpest limit this document
+has found in itself.
+
+### 11.2 The ranking, on the strict tier, and it agrees with musicians
+
+Reported under the full five-rule tier — the only one that converges — with the standing caveat that Bach violates
+three of its rules.
+
+| | fugue | subject | notes | capacity |
+|---|---|---|---|---:|
+| 1 | **wtc-i-04, BWV 849 (C♯ minor, 5 voices)** | 12q | 5 | **11** |
+| 2 | wtc-i-14, BWV 859 (F♯ minor) | 18q | 20 | 9 |
+| 3= | wtc-i-12, BWV 857 (F minor) | 12q | 11 | 6 |
+| 3= | **wtc-i-22, BWV 867 (B♭ minor, 5 voices)** | 12q | 10 | 6 |
+| 5 | wtc-i-19, BWV 864 (A major) | 9q | 16 | 5 |
+| … | | | | |
+| 22= | wtc-i-20, BWV 865 (A minor) | 12q | 31 | 2 |
+| 23 | wtc-i-21, BWV 866 (B♭ major) | 12q | 38 | 2 |
+
+**BWV 849 comes first.** That is the fugue musicians name when they name a stretto fugue — ricercar §6.0 singled it
+out as "a triple fugue, which is the multi-shape tiling problem and strictly harder", and it is the piece whose
+austere five-note subject Bach strettos more thoroughly than any other in the book. **BWV 867, the other famous
+stretto fugue, is joint third of twenty-four.** Ricercar §6.1 asked for a measure "falsifiable against what
+musicians already believe"; on its own terms, this one passes.
+
+### 11.3 How much of that is just note density
+
+The honest check, since a sparse subject obviously strettos more easily than a busy one:
+
+| | |
+|---|---:|
+| notes per quarter vs capacity | **r = −0.750** (Spearman −0.682) |
+| subject length vs capacity | r = +0.554 |
+| note count vs capacity | r = −0.382 |
+
+So **about 56% of the variance is note density**, which is a real musical fact and not a deep one. The measure is
+substantially a proxy for how much a subject is already doing.
+
+What survives that is the residual — subjects that stretto better than their density predicts — and it is the same
+piece again:
+
+| residual | fugue | |
+|---:|---|---|
+| **+3.76** | wtc-i-04, BWV 849 | 5 notes in 12q, capacity 11 |
+| +3.15 | wtc-i-14, BWV 859 | 20 notes in 18q, capacity 9 |
+| −2.28 | wtc-i-08, BWV 853 | 14 notes in 10q, capacity 3 |
+
+BWV 849 is both the highest capacity and the largest positive residual, so its ranking is not merely an artefact of
+its sparseness. That is the one place where this measure says something a note count does not.
+
+### 11.4 §3.3 was right, and the numbers are worse than it feared
+
+Capacity computed at the primary reading and at every dissenting source's:
+
+| fugue | primary | alternatives |
+|---|---|---|
+| wtc-i-05 | 4q → 3 | 2q → 2 |
+| wtc-i-07 | 6q → **4** | 8q → **2** |
+| wtc-i-09 | 2q → 2 | 4q → **4**, 6q → 3 |
+| wtc-i-18 | 6q → 3 | 3q → 3 |
+| wtc-i-22 | 12q → 6 | 8q → **7** |
+
+Two things, both worse than §3.3 anticipated. **The editorial choice can halve the number** — BWV 852 reads 4 or 2
+depending on whether one follows Keller or Prout. And **capacity is not monotonic in subject length**: BWV 854 goes
+2 → 4 → 3 as the subject lengthens. So a single capacity figure is not merely imprecise, it is not even a
+well-behaved function of the one input a reader would assume it depends on. Any published ranking has to be a
+profile, exactly as §3.3 proposed, and §11.2's table should be read with that in mind.
+
+### 11.5 A defect the measure found in itself
+
+The first implementation let several entries share an offset. It therefore counted harmonising the subject in
+parallel thirds as a five-voice stretto, and returned **exactly whatever clique cap it was given, for every subject
+in the corpus** — 3 for a cap of 3, 6 for a cap of 6. A stretto is a succession of entries, not a chord of them,
+and Bach's own is five distinct offsets. Fixed by requiring one entry per offset; the symptom that gave it away was
+the suspiciously perfect agreement between the answer and the parameter.
+
+---
+
+## 12. Resolving §11.1: five experiments, and the one that works
+
+§11.1 left the programme stuck: the rules Bach never breaks are the rules that almost never bind, so no tier both
+accepts his hyperstretto and discriminates between subjects. Five ways out were proposed and all five were run.
+
+### 12.0 A parser bug found on the way, which corrected everything upstream
+
+Reading the Renaissance corpus exposed a defect that had been in every earlier result. **Vocal music interleaves
+`**text` and `**silbe` lyric spines with the `**kern` ones**, and the reader pushed a spine only for `**kern` while
+indexing data fields by position — so every note after the first lyric column was read from the wrong field. 60 of
+200 Renaissance files failed outright, and the 140 that parsed were a biased sample of the textless ones.
+
+The same bug was quietly present in **Bach**: fugue 24's header carries an empty column, which had been shifting
+its spines for the entire project. Fixed by tracking every spine and marking which of them bear notes. All figures
+in §9 are restated below at their corrected values; nothing moved by more than 4%, and no conclusion changed.
+
+| | before | after |
+|---|---:|---:|
+| parallel perfect | 35 (1.1/1k) | **36 (1.0/1k)** |
+| direct to perfect on downbeat | 23 (0.7/1k) | 23 (0.7/1k) |
+| unprepared dissonance | 717 (21.5) | **750 (21.4)** |
+| unresolved dissonance | 3059 (91.8) | **3179 (90.9)** |
+| forbidden melodic | 883 (37.6) | **904 (37.6)** |
+
+§10's clique verdicts are unchanged: full tier fails, confirmed tier passes, 15 against 1 on the control.
+
+### 12.1 Experiment 1 — density instead of clique size. **This resolves it.**
+
+Clique *size* saturates because the permissive tier admits almost everything. Graph *density* cannot saturate: it
+is bounded in `[0, 1]` by construction.
+
+| | |
+|---|---|
+| spread of 2-rule density across 24 subjects | **0.321 … 0.956** |
+| ranking | **BWV 849 first** (0.956); the three lowest are BWV 860, 866, 865 |
+| density vs note density | **r = −0.311** |
+| clique capacity vs note density (§11.3) | r = −0.750 |
+| 2-rule density vs 5-rule density | r = +0.639 |
+
+Density under the tier **Bach confirms** discriminates cleanly, ranks BWV 849 first exactly as the strict-tier
+clique did, and is **less than half as contaminated by note density** as clique capacity was. That is the measure
+to use: it needs no rule Bach violates, and it answers §11.3's objection at the same time.
+
+### 12.2 Experiment 2 — Pareto calibration. **Fails, and the failure is instructive.**
+
+Keep the permissive hard tier; let the soft criteria filter edges, calibrated against Bach's own stretto as §10
+calibrated the clique test. Bach's Stretto II gives, as the worst of its ten real pairs per slice:
+
+```text
+direct to perfect 0.077   perfect consonance 0.400   direct motion 0.500
+voice crossing    0.000   unrecovered leap   0.000   repeated note  0.286
+```
+
+**Two of those are zero, and a zero in a domination limit is an absolute prohibition.** Bach's five entries happen
+to contain no voice crossing and no unrecovered leap, so the calibration silently forbids both outright. Capacity
+collapses to between 1 and 4, and **BWV 867 itself scores 2** — the calibration cannot reproduce the passage it was
+calibrated on.
+
+The ranking survives — BWV 849 and BWV 859 still lead at 4 — but the measure is degenerate. The lesson is specific
+and worth keeping: **calibrating a domination limit on the componentwise maximum of a single passage turns every
+criterion that passage happens not to exhibit into a hard prohibition.** A usable version needs a reference set
+broad enough that no component is zero.
+
+### 12.3 Experiment 3 — the Renaissance control. **Decisive, and it splits the three refuted rules.**
+
+Fux describes 16th-century vocal polyphony. The same rulebook, unchanged, over 200 works from the Josquin Research
+Project — Josquin, Ockeghem, Obrecht, Dufay and contemporaries, 299 613 slices:
+
+| rule | Renaissance | Bach | ratio |
+|---|---:|---:|---:|
+| parallel perfect | 1.2 | 1.0 | — |
+| direct to perfect on downbeat | 1.5 | 0.7 | — |
+| **forbidden melodic interval** | **1.0** | **37.6** | **×38** |
+| unprepared dissonance | 8.0 | 21.4 | ×2.7 |
+| unresolved dissonance | 71.1 | 90.9 | ×1.3 |
+
+**The melodic rule is vindicated completely.** One violation per thousand moves in the repertoire Fux is writing
+about, against 37.6 in Bach — a factor of thirty-eight. It is not a broken rule; it is a correct rule about
+Renaissance vocal writing, applied to eighteenth-century keyboard music. §9.4 called it "refuted by Bach"; the
+honest statement is that **it was never about Bach**.
+
+**The dissonance rules are not rescued.** 71.1 per thousand in the Renaissance is barely better than Bach's 90.9,
+and this is the repertoire those rules were written for. They are wrong as I implemented them, in both centuries —
+my error, not a repertoire mismatch. That is the sharpest correction of the five experiments, and it points
+directly at §12.5.
+
+**And the two confirmed rules hold in both.** 1.2 against 1.0, and 1.5 against 0.7. A prohibition on parallel
+perfect consonances is apparently invariant across two centuries and two media, which is a stronger claim for those
+two rules than §9 could make from Bach alone.
+
+### 12.4 Experiment 4 — chromaticism. **Negative.**
+
+If the melodic rule were objecting to chromatic writing, its rate should track how chromatic each fugue is.
+
+| | |
+|---|---:|
+| chromaticism vs melodic rule | r = +0.249 |
+| chromaticism vs dissonance rule | r = +0.031 |
+
+It does not — six per cent of the variance. Combined with §12.3's factor of thirty-eight, the melodic difference is
+a property of **repertoire and medium**, not of chromatic writing fugue by fugue. Keyboard music leaps differently
+from voices whatever its harmonic language.
+
+### 12.5 Experiment 5 — harmony. **Supportive, and not yet enough.**
+
+The hypothesis: dissonance in tonal music is governed harmonically, so a harmonic constraint should be one Bach
+*satisfies* and arbitrary placements *violate* — the property no current rule has.
+
+| | ≥3-note sonorities explained by a triad or seventh chord |
+|---|---:|
+| Bach, all 24 fugues | **78.0%** (5983 of 7672) |
+| arbitrary 3-entry strettos from the same subjects | **56.9%** (1355 of 2382) |
+
+The gap is real and in the right direction: harmony separates Bach from arbitrary placement by 21 points, where the
+dissonance rules separate them by nothing. But 78% for Bach is too low to be a hard rule — the missing 22% is
+suspensions, passing tones and appoggiaturas, which are non-chord tones *by design*. The crude template test is
+therefore the right idea and the wrong instrument. It needs the non-chord-tone treatment that §2.3's harmonic
+automaton was always meant to supply, at which point Bach's figure should approach 100% and the constraint becomes
+usable.
+
+### 12.6 Where this leaves the programme
+
+- **Capacity is measured by density under the two-rule tier** (§12.1). §11.1's deadlock is resolved, with no rule
+  Bach violates and less proxy contamination than the clique measure it replaces.
+- **The melodic rule is restored** — to the hard tier for Renaissance repertoire, and dropped for Bach (§12.3). It
+  was never refuted, only mis-applied, and §9.4's language should be read accordingly.
+- **The two dissonance rules are my bugs**, demonstrated by their failing in the very repertoire they were written
+  for. They should be removed rather than demoted, and replaced.
+- **The replacement is harmonic** (§12.5), which promotes §2.3 — the one designed component never built — from
+  optional extension to next piece of work. It is also what Anders & Miranda name as the neglected field.
+- ~~**Step 4 is unblocked.**~~ **Wrong — see §13.** Density ranks subjects but its preferences run against
+  Bach's contours, because both surviving rules need a perfect consonance to fire and a fugal answer is at the
+  fifth. The measure penalises the interval the form is built on.
+
+---
+
+## 13. Step 4 result: the measure is valid for ranking and invalid for design
+
+`cargo run --release -- design`. Rhythm is held fixed from a real subject and only the pitch contour varies, with
+the head pinned — §3.2's weighting intuition surviving as a search order. The objective is §12.1's density under
+the two-rule tier, the measure §12 had just established. Hill-climbing with restarts, deterministic seed.
+
+### 13.1 Three optima, all anti-musical
+
+| | density | contour |
+|---|---:|---|
+| Bach's own subject (BWV 867) | 0.844 | 7 distinct degrees, no repeats, mean step 2.00 |
+| random contours, same rhythm (400) | 0.830 ± 0.060 | — |
+| **unconstrained optimum** | **1.000** | `[0,0,0,0,0,0,0,0,0,0]` — **one repeated note** |
+| constrained: ≥5 degrees, no triple repeat | 0.959 | `[0,0,1,0,−4,1,3,−4,2,−6]`, mean step 3.78 |
+
+**The unconstrained optimum is a monotone, and it is optimal by construction.** A static subject never moves, so
+every slice is `Motion::None`, so neither `ParallelPerfect` (which needs parallel motion) nor
+`DirectPerfectOnDownbeat` (which needs similar motion) can fire at all. Density 1.000, exactly, for every subject.
+**The optimiser beat Bach on 20 of 20 rhythms, and every winner was a single repeated pitch.**
+
+Constraining it to at least five distinct degrees with no triple repeat does not rescue it: the optimum simply
+becomes jagged instead of static, mean melodic step 3.78 — a contour of leaps that no one would sing.
+
+This is ricercar §5's warning arriving in the discrete setting, where that document had already stated it and then
+argued its way out: *"maximum distance from every rule boundary is the safest counterpoint, hence the blandest."*
+§5 rescued the maximin step by pointing out that circle packing *consumes* the clearance it finds. Nothing consumes
+it here, so the warning lands undiluted.
+
+### 13.2 The worse finding: Bach's contours score *below* random
+
+The decisive control is per-subject — the mean density of random contours **on Bach's own rhythm**, so rhythm is
+held exactly constant and only the pitch design varies.
+
+| | |
+|---|---:|
+| Bach's contour beats a random one on the same rhythm | **5 of 20** |
+| mean advantage of Bach's contour | **−0.0763** |
+| Bach density vs random-on-same-rhythm, across subjects | r = +0.375 |
+
+**Bach's contours are worse than random on this measure, on average and in three quarters of cases.** That is not
+blindness — `r = +0.375` shows the measure is sensitive to contour — it is a measure whose preferences run
+*against* Bach's, while §12.1's across-subject ranking still comes out musically right.
+
+### 13.3 Why, and it is structural rather than accidental
+
+Both surviving rules require a **perfect consonance** to fire: `ParallelPerfect` needs two of them in succession,
+`DirectPerfectOnDownbeat` needs one arrived at by similar motion. So maximising density means **minimising the
+perfect consonances a subject forms against its own transpositions**.
+
+And a fugal answer is at the fifth. The entire form is built on a subject sounding against itself at a perfect
+consonance — that is what an answer *is*, and §10 recovered exactly that from BWV 867's stretto: entries at
+`B♭ – F – B♭ – F – B♭`, tonic and dominant alternating.
+
+> **The measure penalises precisely the interval the form is built on.**
+
+A subject optimised for density is therefore a subject optimised to make a *bad answer*. That is not a defect in
+the implementation and no amount of constraint tuning will remove it; it follows from which two rules survived §9,
+and those two survived because they are the only ones Bach never breaks.
+
+### 13.4 What this settles
+
+- **Density is valid for ranking and invalid for design.** These are different uses with different validity, and
+  §12.1's claim to have resolved §11.1 stands only for the first. §12.6's last bullet — "step 4 is unblocked" —
+  was wrong, and this section is the correction.
+- **Across-subject ranking survives.** BWV 849 still comes first, and §12.1's numbers are unaffected: nothing here
+  touches the comparison between subjects, only the attempt to move within one.
+- **What a design objective would need** is something that *rewards* a subject working at the fifth rather than
+  penalising it — which is a harmonic statement, not a contrapuntal one. A fugal answer at the dominant is a
+  harmonic relationship, and §12.5 already identified harmony as the missing constraint on independent grounds.
+  Step 4 and step 6 therefore need the same thing, and it is §2.3.
+- **Step 4 is blocked, not failed.** It ran, it produced a clean answer, and the answer is that the objective is
+  wrong. Ricercar §6.2 anticipated the shape of this: *"If the optimized subject scores below Bach's, that is the
+  more interesting result and should be reported as such."* The optimised subject scores *above* Bach's, on a
+  measure that prefers monotones — which is the same finding with the sign flipped, and it is more interesting
+  than a ranking would have been.

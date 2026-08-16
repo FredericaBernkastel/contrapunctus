@@ -4,3 +4,6 @@
 [submodule "corpus/bach-wtc-fugues"]
 	path = corpus/bach-wtc-fugues
 	url = https://github.com/humdrum-tools/bach-wtc-fugues.git
+[submodule "corpus/jrp-scores"]
+	path = corpus/jrp-scores
+	url = https://github.com/josquin-research-project/jrp-scores.git
