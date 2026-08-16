@@ -1,0 +1,267 @@
+//! §2.3, built at last: harmony as a second automaton.
+//!
+//! Two independent findings converged on this file. §12.5 showed that a
+//! harmonic constraint is the only one Bach *satisfies* while arbitrary
+//! placements *violate* it — the property the contrapuntal rules lack — but
+//! that a bare chord-membership test tops out at 78% on Bach, because the
+//! missing 22% is suspensions and passing tones, which are non-chord tones by
+//! design. §13.3 showed that a purely contrapuntal objective penalises the
+//! perfect fifth, and a fugal answer *is* at the fifth, so no contrapuntal
+//! measure can serve as a design objective.
+//!
+//! Both need the same thing: a prevailing harmony, and a rule for what may
+//! sound against it. That is what this provides.
+//!
+//! The analysis is deliberately the simplest defensible one — segment at the
+//! notated beat, score every candidate chord by duration-weighted membership,
+//! take the best. It is not a theory of tonal function; §13.4 wanted the
+//! *relationship*, and the relationship is what a chord label carries.
+
+use crate::{kern, kern::Voice, pitch::Pitch};
+
+/// Chord qualities as pitch-class masks on a root of 0, with a name.
+pub const QUALITIES: [(&str, u16); 9] = [
+  ("", 0b0000_1001_0001),      // major triad   0 4 7
+  ("m", 0b0000_1000_1001),     // minor triad   0 3 7
+  ("dim", 0b0000_0100_1001),   // diminished    0 3 6
+  ("aug", 0b0001_0001_0001),   // augmented     0 4 8
+  ("7", 0b0100_1001_0001),     // dominant 7    0 4 7 10
+  ("m7", 0b0100_1000_1001),    // minor 7       0 3 7 10
+  ("ø7", 0b0100_0100_1001),    // half-dim 7    0 3 6 10
+  ("o7", 0b0010_0100_1001),    // dim 7         0 3 6 9
+  ("M7", 0b1000_1001_0001),    // major 7       0 4 7 11
+];
+
+const NAMES: [&str; 12] = ["C", "C#", "D", "E-", "E", "F", "F#", "G", "A-", "A", "B-", "B"];
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Chord {
+  pub root: u8,
+  pub quality: usize,
+}
+
+impl Chord {
+  pub fn mask(&self) -> u16 {
+    let m = QUALITIES[self.quality].1 as u32;
+    ((((m << self.root as u32) | (m >> (12 - self.root as u32))) & 0xFFF) as u16) as u16
+  }
+  pub fn contains(&self, p: Pitch) -> bool {
+    self.mask() & (1 << p.chroma().rem_euclid(12)) != 0
+  }
+  pub fn name(&self) -> String {
+    format!("{}{}", NAMES[self.root as usize], QUALITIES[self.quality].0)
+  }
+}
+
+#[derive(Clone, Debug)]
+pub struct Segment {
+  pub start: i64,
+  pub end: i64,
+  pub chord: Option<Chord>,
+  /// Fraction of the segment's sounding weight that the chord explains.
+  pub fit: f64,
+}
+
+/// Sounding pitches in `[t0, t1)` with the total time each is held, which is
+/// the weight a chord candidate is scored against. Duration matters: a
+/// semiquaver passing note should not outvote a minim.
+fn weights(voices: &[Voice], t0: i64, t1: i64) -> Vec<(Pitch, i64)> {
+  let mut out: Vec<(Pitch, i64)> = vec![];
+  for v in voices {
+    for n in &v.notes {
+      let a = n.onset.max(t0);
+      let b = (n.onset + n.dur).min(t1);
+      if b > a {
+        match out.iter_mut().find(|(p, _)| p.chroma().rem_euclid(12) == n.pitch.chroma().rem_euclid(12)) {
+          Some((_, w)) => *w += b - a,
+          None => out.push((n.pitch, b - a)),
+        }
+      }
+    }
+  }
+  out
+}
+
+/// The chord that best explains one span.
+pub fn best_chord(voices: &[Voice], t0: i64, t1: i64) -> (Option<Chord>, f64) {
+  let w = weights(voices, t0, t1);
+  let total: i64 = w.iter().map(|(_, x)| *x).sum();
+  if total == 0 {
+    return (None, 0.0);
+  }
+  let mut best: Option<(Chord, i64)> = None;
+  for root in 0..12u8 {
+    for quality in 0..QUALITIES.len() {
+      let c = Chord { root, quality };
+      let hit: i64 = w.iter().filter(|(p, _)| c.contains(*p)).map(|(_, x)| *x).sum();
+      // Prefer the simpler chord on ties: triads are listed before sevenths, so
+      // a plain `>` keeps the first (simplest) winner.
+      if best.map_or(true, |(_, h)| hit > h) {
+        best = Some((c, hit));
+      }
+    }
+  }
+  match best {
+    Some((c, hit)) => (Some(c), hit as f64 / total as f64),
+    None => (None, 0.0),
+  }
+}
+
+/// Segment a texture at the notated beat and analyse each span.
+pub fn analyse(voices: &[Voice], beat: i64, end: i64) -> Vec<Segment> {
+  let mut out = vec![];
+  let mut t = 0;
+  while t < end {
+    let (chord, fit) = best_chord(voices, t, t + beat);
+    out.push(Segment { start: t, end: t + beat, chord, fit });
+    t += beat;
+  }
+  out
+}
+
+/// How a non-chord tone is treated.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Nct {
+  Suspension,
+  Passing,
+  Neighbour,
+  Appoggiatura,
+  Escape,
+  /// Leapt into and leapt away from — the genuinely unexplained case.
+  Untreated,
+}
+
+/// Classify one note against the harmony prevailing where it sounds.
+fn classify(v: &Voice, i: usize, seg: &Segment) -> Option<Nct> {
+  let n = v.notes[i];
+  let c = seg.chord?;
+  if c.contains(n.pitch) {
+    return None; // a chord tone owes nothing
+  }
+  let prev = i.checked_sub(1).map(|j| v.notes[j].pitch);
+  let next = v.notes.get(i + 1).map(|m| m.pitch);
+  let step = |a: Option<Pitch>| {
+    a.map(|x| (x.step - n.pitch.step).abs() == 1).unwrap_or(false)
+  };
+  let in_step = step(prev);
+  let out_step = step(next);
+  // A note at the end of its voice is not left at all, so nothing is owed.
+  if next.is_none() {
+    return None;
+  }
+  Some(match (n.attack, in_step, out_step) {
+    (false, _, _) => Nct::Suspension, // tied over from the previous harmony
+    (true, true, true) => {
+      let (a, b) = (prev.unwrap().step, next.unwrap().step);
+      if (n.pitch.step - a).signum() == (b - n.pitch.step).signum() {
+        Nct::Passing
+      } else {
+        Nct::Neighbour
+      }
+    }
+    (true, false, true) => Nct::Appoggiatura,
+    (true, true, false) => Nct::Escape,
+    (true, false, false) => Nct::Untreated,
+  })
+}
+
+#[derive(Default, Debug, Clone)]
+pub struct Report {
+  pub chord_tones: usize,
+  pub suspension: usize,
+  pub passing: usize,
+  pub neighbour: usize,
+  pub appoggiatura: usize,
+  pub escape: usize,
+  pub untreated: usize,
+  /// Mean fit of the chord chosen for each segment.
+  pub mean_fit: f64,
+}
+
+impl Report {
+  pub fn total(&self) -> usize {
+    self.chord_tones + self.explained_ncts() + self.untreated
+  }
+  pub fn explained_ncts(&self) -> usize {
+    self.suspension + self.passing + self.neighbour + self.appoggiatura + self.escape
+  }
+  /// The measure §12.5 asked for: everything a chord explains, either as a
+  /// chord tone or as a properly treated dissonance against it.
+  pub fn explained(&self) -> f64 {
+    let t = self.total();
+    if t == 0 { 0.0 } else { (self.chord_tones + self.explained_ncts()) as f64 / t as f64 }
+  }
+  pub fn merge(&mut self, o: &Report) {
+    self.chord_tones += o.chord_tones;
+    self.suspension += o.suspension;
+    self.passing += o.passing;
+    self.neighbour += o.neighbour;
+    self.appoggiatura += o.appoggiatura;
+    self.escape += o.escape;
+    self.untreated += o.untreated;
+  }
+}
+
+/// Analyse a texture and account for every note.
+pub fn report(voices: &[Voice], beat: i64) -> Report {
+  let end = voices
+    .iter()
+    .flat_map(|v| v.notes.iter().map(|n| n.onset + n.dur))
+    .max()
+    .unwrap_or(0);
+  if end == 0 || beat == 0 {
+    return Report::default();
+  }
+  let segs = analyse(voices, beat, end);
+  let mut r = Report::default();
+  let mut fits = 0.0;
+  for s in &segs {
+    fits += s.fit;
+  }
+  r.mean_fit = fits / segs.len().max(1) as f64;
+
+  for v in voices {
+    for (i, n) in v.notes.iter().enumerate() {
+      let si = (n.onset / beat) as usize;
+      let Some(seg) = segs.get(si) else { continue };
+      match classify(v, i, seg) {
+        None => r.chord_tones += 1,
+        Some(Nct::Suspension) => r.suspension += 1,
+        Some(Nct::Passing) => r.passing += 1,
+        Some(Nct::Neighbour) => r.neighbour += 1,
+        Some(Nct::Appoggiatura) => r.appoggiatura += 1,
+        Some(Nct::Escape) => r.escape += 1,
+        Some(Nct::Untreated) => r.untreated += 1,
+      }
+    }
+  }
+  r
+}
+
+/// A functional progression automaton over scale degrees in a key.
+///
+/// The state is the degree of the prevailing chord; the edges are the standard
+/// functional moves. This is the part of §2.3 that makes a cadence a *labelled
+/// path* rather than a coincidence — `V → I` is an edge with a name, and a
+/// progression that never reaches it never cadences.
+pub fn degree_of(c: Chord, tonic: u8) -> u8 {
+  ((c.root as i16 - tonic as i16).rem_euclid(12)) as u8
+}
+
+/// Does `a → b` (as semitone degrees above the tonic) follow a standard
+/// functional progression? Root motion by fourth, fifth, second or third, which
+/// is the classical account, plus repetition.
+pub fn progression_ok(a: u8, b: u8) -> bool {
+  let d = (b as i16 - a as i16).rem_euclid(12);
+  matches!(d, 0 | 5 | 7 | 2 | 10 | 3 | 4 | 8 | 9)
+}
+
+/// The cadential figure: dominant to tonic.
+pub fn is_cadence(a: Chord, b: Chord, tonic: u8) -> bool {
+  degree_of(a, tonic) == 7 && degree_of(b, tonic) == 0
+}
+
+/// Convenience: analyse a whole parsed piece.
+pub fn report_piece(p: &kern::Piece) -> Report {
+  report(&p.voices, p.beat)
+}

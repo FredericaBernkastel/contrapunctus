@@ -7,6 +7,7 @@
 mod automaton;
 mod corpus;
 mod experiments;
+mod harmony;
 mod refdata;
 mod stretto;
 mod kern;
@@ -34,6 +35,10 @@ fn main() {
     "exp4" => exp_chromatic(),
     "exp5" => exp_harmony(),
     "design" => step4_design(),
+    "harmony" => { harmony_run(); harmony_design(); harmony_corpus(); }
+    "h1" => harmony_run(),
+    "h2" => harmony_design(),
+    "h3" => harmony_corpus(),
     _ => {
       states();
       verdict();
@@ -948,4 +953,252 @@ fn step4_design() {
   println!("\n  the optimiser beat Bach on {wins} of {} subjects", rows.len());
   let avg_d: f64 = rows.iter().map(|r| r.3 as f64).sum::<f64>() / rows.len() as f64;
   println!("  mean distinct degrees in an optimised contour: {avg_d:.1}");
+}
+
+// ---------------------------------------------------------------- §2.3 -----
+
+/// The decisive test for §12.5: does accounting for non-chord tones take Bach
+/// from 78% to something a hard rule could be built on?
+fn harmony_run() {
+  println!("\n== §2.3: harmony, with non-chord tones accounted for ==");
+  println!("  segmented at the notated beat; every note is a chord tone or a");
+  println!("  classified dissonance against the prevailing chord\n");
+  println!("  fugue        explained   fit   CT     susp  pass  neigh  app  esc  UNTREATED");
+  let mut tot = harmony::Report::default();
+  let mut fits = vec![];
+  for (id, p) in load_bach() {
+    let r = harmony::report_piece(&p);
+    println!(
+      "  {id:<12} {:>7.1}%  {:>4.2} {:>5}  {:>5} {:>5} {:>6} {:>4} {:>4} {:>10}",
+      100.0 * r.explained(), r.mean_fit, r.chord_tones,
+      r.suspension, r.passing, r.neighbour, r.appoggiatura, r.escape, r.untreated
+    );
+    fits.push(r.mean_fit);
+    tot.merge(&r);
+  }
+  println!(
+    "\n  Bach, all 24 fugues:      {:>6.1}%   ({} of {} notes)",
+    100.0 * tot.explained(), tot.chord_tones + tot.explained_ncts(), tot.total()
+  );
+  println!("  bare chord membership (§12.5):  78.0%");
+  println!("  chord tones alone:              {:>5.1}%",
+    100.0 * tot.chord_tones as f64 / tot.total().max(1) as f64);
+
+  // the control: the same measure on arbitrary strettos
+  let q = kern::TICKS_PER_QUARTER;
+  let mut ctl = harmony::Report::default();
+  for (_, p, sub, _) in &subjects() {
+    for d in [1i64, 2, 3, 5] {
+      for k in [-4i16, -2, 2, 4] {
+        let voices = vec![
+          sub.place_diatonic(0, 0, &p.key),
+          sub.place_diatonic(d * q, k, &p.key),
+          sub.place_diatonic(2 * d * q, 2 * k, &p.key),
+        ];
+        ctl.merge(&harmony::report(&voices, p.beat));
+      }
+    }
+  }
+  println!("\n  arbitrary 3-entry strettos:     {:>5.1}%   ({} untreated of {})",
+    100.0 * ctl.explained(), ctl.untreated, ctl.total());
+  println!("  -> separation on this measure:  {:.1} points", 100.0 * (tot.explained() - ctl.explained()));
+
+  // The binary measure saturates: widening the rule until Bach passes makes it
+  // pass almost anything, which is §11.1 arriving in the harmonic domain. The
+  // graded statistics underneath it are the ones to look at.
+  let ctfrac = |r: &harmony::Report| r.chord_tones as f64 / r.total().max(1) as f64;
+  let mut cfits = vec![];
+  let q2 = kern::TICKS_PER_QUARTER;
+  for (_, p, sub, _) in &subjects() {
+    for d in [1i64, 2, 3, 5] {
+      for k in [-4i16, -2, 2, 4] {
+        let voices = vec![
+          sub.place_diatonic(0, 0, &p.key),
+          sub.place_diatonic(d * q2, k, &p.key),
+          sub.place_diatonic(2 * d * q2, 2 * k, &p.key),
+        ];
+        cfits.push(harmony::report(&voices, p.beat).mean_fit);
+      }
+    }
+  }
+  let mf = |v: &Vec<f64>| v.iter().sum::<f64>() / v.len().max(1) as f64;
+  println!("\n  graded statistics            Bach    control   separation");
+  println!(
+    "  chord tones (not NCTs)      {:>5.1}%   {:>5.1}%     {:>5.1} pts",
+    100.0 * ctfrac(&tot),
+    100.0 * ctfrac(&ctl),
+    100.0 * (ctfrac(&tot) - ctfrac(&ctl))
+  );
+  println!(
+    "  mean chord fit              {:>6.3}   {:>6.3}     {:>5.3}",
+    mf(&fits),
+    mf(&cfits),
+    mf(&fits) - mf(&cfits)
+  );
+  let untr = |r: &harmony::Report| 1000.0 * r.untreated as f64 / r.total().max(1) as f64;
+  println!(
+    "  untreated per 1000 notes    {:>6.1}   {:>6.1}     {:>5.1}",
+    untr(&tot),
+    untr(&ctl),
+    untr(&ctl) - untr(&tot)
+  );
+}
+
+/// The test §13.3 asks for: an objective that *rewards* a subject working at
+/// the fifth, where the contrapuntal one penalised it.
+fn harmony_design() {
+  println!("\n== §2.3 as a design objective ==");
+  println!("  objective: fraction of notes explained when the subject sounds");
+  println!("  against its own answer at the fifth below\n");
+  let pieces = load_bach();
+  let Some(p) = pieces.get("wtc-i-22") else { return };
+  let q = kern::TICKS_PER_QUARTER;
+  let base = stretto::Subject::cut(&p.voices[p.voices.len() - 1], 0, 12 * q);
+  let n = base.notes.len();
+
+  // the answer enters half way through, a fifth below - the fugal relationship
+  let score = |c: &[i16]| {
+    let s = from_contour(&base, c, &p.key);
+    let voices = vec![s.place_diatonic(0, 0, &p.key), s.place_diatonic(4 * q, -4, &p.key)];
+    harmony::report(&voices, p.beat).explained()
+  };
+
+  let bach = contour_of(&base);
+  println!("  Bach's own subject      {:.3}", score(&bach));
+
+  let mut rng = Rng(0xC0FFEE);
+  let trials = 400;
+  let mut samples = Vec::with_capacity(trials);
+  for _ in 0..trials {
+    let mut c = vec![0i16; n];
+    for x in c.iter_mut().skip(1) {
+      *x = rng.below(15) as i16 - 7;
+    }
+    samples.push(score(&c));
+  }
+  let mean: f64 = samples.iter().sum::<f64>() / trials as f64;
+  let sd = (samples.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / trials as f64).sqrt();
+  println!("  random contours ({trials})   {mean:.3} +- {sd:.3}");
+  println!("  -> Bach sits {:+.2} standard deviations above random", (score(&bach) - mean) / sd.max(1e-9));
+
+  let mut best = (score(&bach), bach.clone());
+  for restart in 0..14 {
+    let mut c = bach.clone();
+    if restart > 0 {
+      for x in c.iter_mut().skip(1) {
+        *x = rng.below(15) as i16 - 7;
+      }
+    }
+    let mut cur = score(&c);
+    loop {
+      let mut improved = false;
+      for i in 1..n {
+        let old = c[i];
+        for d in -7i16..=7 {
+          if d == old {
+            continue;
+          }
+          c[i] = d;
+          let v = score(&c);
+          if v > cur + 1e-9 {
+            cur = v;
+            improved = true;
+          } else {
+            c[i] = old;
+          }
+        }
+      }
+      if !improved {
+        break;
+      }
+    }
+    if cur > best.0 {
+      best = (cur, c.clone());
+    }
+  }
+  let (d, h, m) = liveliness(&best.1);
+  println!("\n  best contour found      {:.3}", best.0);
+  println!("  degrees                 {:?}", best.1);
+  println!("  {d} distinct degrees, {h} repeated-note transitions, mean step {m:.2}");
+  let sub = from_contour(&base, &best.1, &p.key);
+  print!("  as pitches              ");
+  for note in &sub.notes {
+    print!("{} ", note.pitch.name());
+  }
+  println!();
+
+  // is a monotone still optimal?
+  let flat = vec![0i16; n];
+  println!("\n  a monotone scores       {:.3}   (it won outright under §13's objective)", score(&flat));
+}
+
+/// Per-subject: does Bach's contour beat random on the harmonic objective?
+fn harmony_corpus() {
+  println!("\n== §2.3 objective, all subjects ==");
+  println!("  fugue        Bach   random    best   distinct");
+  let q = kern::TICKS_PER_QUARTER;
+  let mut rng = Rng(0xBEEF);
+  let (mut nb, mut rows) = (0usize, vec![]);
+  for (id, pp, s, _) in &subjects() {
+    if s.notes.len() < 3 || s.notes.len() > 24 {
+      continue;
+    }
+    let sc = |c: &[i16]| {
+      let sub = from_contour(s, c, &pp.key);
+      let voices = vec![sub.place_diatonic(0, 0, &pp.key), sub.place_diatonic(s.len / 3, -4, &pp.key)];
+      harmony::report(&voices, pp.beat).explained()
+    };
+    let own = contour_of(s);
+    let b = sc(&own);
+    let mut rsum = 0.0;
+    for _ in 0..60 {
+      let mut rc = vec![0i16; s.notes.len()];
+      for x in rc.iter_mut().skip(1) {
+        *x = rng.below(15) as i16 - 7;
+      }
+      rsum += sc(&rc);
+    }
+    let rmean = rsum / 60.0;
+    let mut c = own.clone();
+    let mut cur = b;
+    loop {
+      let mut improved = false;
+      for i in 1..s.notes.len() {
+        let old = c[i];
+        for dd in -7i16..=7 {
+          if dd == old {
+            continue;
+          }
+          c[i] = dd;
+          let v = sc(&c);
+          if v > cur + 1e-9 {
+            cur = v;
+            improved = true;
+          } else {
+            c[i] = old;
+          }
+        }
+      }
+      if !improved {
+        break;
+      }
+    }
+    let (dd, _, _) = liveliness(&c);
+    if b > rmean {
+      nb += 1;
+    }
+    rows.push((id.clone(), b, rmean, cur, dd));
+    let _ = q;
+  }
+  for (id, b, r, c, dd) in &rows {
+    println!("  {id:<12} {b:.3}  {r:.3}   {c:.3}   {dd:>6}");
+  }
+  let bs: Vec<f64> = rows.iter().map(|r| r.1).collect();
+  let rs: Vec<f64> = rows.iter().map(|r| r.2).collect();
+  let md: f64 = rows.iter().map(|r| r.1 - r.2).sum::<f64>() / rows.len() as f64;
+  println!("\n  Bach's contour beats random on the same rhythm: {nb} of {}", rows.len());
+  println!("  mean advantage of Bach's contour: {md:+.4}   (§13 gave -0.0763)");
+  println!("  Bach vs random across subjects    r = {:+.3}", experiments::pearson(&bs, &rs));
+  let avg: f64 = rows.iter().map(|r| r.4 as f64).sum::<f64>() / rows.len() as f64;
+  println!("  mean distinct degrees in an optimised contour: {avg:.1}   (§13 gave 1.0)");
 }
