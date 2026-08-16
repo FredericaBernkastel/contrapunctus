@@ -265,3 +265,215 @@ pub fn is_cadence(a: Chord, b: Chord, tonic: u8) -> bool {
 pub fn report_piece(p: &kern::Piece) -> Report {
   report(&p.voices, p.beat)
 }
+
+// ------------------------------------------------- a real analyser ---------
+//
+// §16 killed the fixed-window analyser above on three counts: it identified
+// annotated cadences 38% of the time against a 23% baseline, it fitted *modal*
+// polyphony better than tonal — so it was measuring triadic consonance rather
+// than harmony — and every effect size it reported varied elevenfold with a
+// segmentation window nobody justified.
+//
+// The third is the one to fix first, because it is architectural. A fixed
+// window *imposes* the harmonic rhythm. Segmenting at every onset and paying a
+// penalty `lambda` to change chord lets the harmonic rhythm **emerge**: the
+// analysis holds a chord until the evidence for changing outweighs the cost of
+// doing so. The window parameter disappears and a change penalty replaces it —
+// which would be no gain at all if the penalty were then fitted, so §17 sweeps
+// it and reports the whole curve instead of choosing a value.
+//
+// The other two are addressed by scoring a chord properly rather than counting
+// membership: wrong notes are penalised rather than merely not rewarded, the
+// bass is privileged because it carries the root, and metrically strong notes
+// weigh more than ornamental ones.
+
+/// Weight of one sounding note: how long it is held, doubled if it is struck on
+/// a beat. An ornamental semiquaver should not outvote a minim.
+fn note_weight(n: &kern::Note, t0: i64, t1: i64, beat: i64) -> f64 {
+  let held = (n.onset + n.dur).min(t1) - n.onset.max(t0);
+  if held <= 0 {
+    return 0.0;
+  }
+  let strong = beat > 0 && n.onset % beat == 0;
+  held as f64 * if strong { 2.0 } else { 1.0 }
+}
+
+/// How well a chord explains one span: chord tones earn their weight, foreign
+/// notes lose it, and the bass earns extra for being the root.
+fn observation(voices: &[Voice], t0: i64, t1: i64, beat: i64, c: Chord) -> f64 {
+  let (mut score, mut total) = (0.0f64, 0.0f64);
+  let mut bass: Option<(Pitch, i16)> = None;
+  for v in voices {
+    for n in &v.notes {
+      if n.onset >= t1 || n.onset + n.dur <= t0 {
+        continue;
+      }
+      let w = note_weight(n, t0, t1, beat);
+      if w <= 0.0 {
+        continue;
+      }
+      total += w;
+      score += if c.contains(n.pitch) { w } else { -w };
+      let ch = n.pitch.chroma();
+      if bass.map_or(true, |(_, b)| ch < b) {
+        bass = Some((n.pitch, ch));
+      }
+    }
+  }
+  if total <= 0.0 {
+    return 0.0;
+  }
+  let mut s = score / total;
+  if let Some((p, _)) = bass {
+    // the lowest voice carries the root: a strong cue, worth a fifth of the
+    // whole segment's evidence
+    if p.chroma().rem_euclid(12) as u8 == c.root {
+      s += 0.2;
+    }
+  }
+  s
+}
+
+/// Analyse by Viterbi over every onset, with `lambda` charged for each change
+/// of chord. `lambda = 0` re-chooses freely at every note; large `lambda`
+/// forces one chord for the piece.
+///
+/// Linear in the number of chords rather than quadratic: the transition cost is
+/// zero to stay and `lambda` to move, so the best predecessor for any chord is
+/// either itself or the best of the whole previous column.
+pub fn analyse_viterbi(voices: &[Voice], beat: i64, lambda: f64) -> Vec<Segment> {
+  let mut times: Vec<i64> = voices.iter().flat_map(|v| v.notes.iter().map(|n| n.onset)).collect();
+  times.sort_unstable();
+  times.dedup();
+  if times.is_empty() {
+    return vec![];
+  }
+  let end = voices.iter().flat_map(|v| v.notes.iter().map(|n| n.onset + n.dur)).max().unwrap_or(0);
+  times.push(end);
+
+  let chords: Vec<Chord> =
+    (0..12u8).flat_map(|r| (0..QUALITIES.len()).map(move |q| Chord { root: r, quality: q })).collect();
+  let n = chords.len();
+  let steps = times.len() - 1;
+
+  let mut best = vec![f64::NEG_INFINITY; n];
+  let mut back: Vec<Vec<u16>> = Vec::with_capacity(steps);
+  let mut obs_all: Vec<Vec<f64>> = Vec::with_capacity(steps);
+
+  for s in 0..steps {
+    let (t0, t1) = (times[s], times[s + 1]);
+    let obs: Vec<f64> = chords.iter().map(|&c| observation(voices, t0, t1, beat, c)).collect();
+    let mut cur = vec![f64::NEG_INFINITY; n];
+    let mut bk = vec![0u16; n];
+    if s == 0 {
+      cur.copy_from_slice(&obs);
+    } else {
+      let (mut gi, mut gv) = (0usize, f64::NEG_INFINITY);
+      for (i, &v) in best.iter().enumerate() {
+        if v > gv {
+          gv = v;
+          gi = i;
+        }
+      }
+      for j in 0..n {
+        let stay = best[j];
+        let moved = gv - lambda;
+        if stay >= moved {
+          cur[j] = stay + obs[j];
+          bk[j] = j as u16;
+        } else {
+          cur[j] = moved + obs[j];
+          bk[j] = gi as u16;
+        }
+      }
+    }
+    best = cur;
+    back.push(bk);
+    obs_all.push(obs);
+  }
+
+  // trace back
+  let mut j = best.iter().enumerate().max_by(|a, b| a.1.partial_cmp(b.1).unwrap()).map(|(i, _)| i).unwrap_or(0);
+  let mut path = vec![0usize; steps];
+  for s in (0..steps).rev() {
+    path[s] = j;
+    j = back[s][j] as usize;
+  }
+
+  (0..steps)
+    .map(|s| Segment {
+      start: times[s],
+      end: times[s + 1],
+      chord: Some(chords[path[s]]),
+      // map [-1,1] onto [0,1]; the bass bonus can push the raw score past
+      // 1, so clamp rather than report a 'fraction' greater than one
+      fit: ((obs_all[s][path[s]] + 1.0) / 2.0).clamp(0.0, 1.0),
+    })
+    .collect()
+}
+
+/// Mean harmonic rhythm of an analysis, in ticks per chord — the quantity the
+/// fixed window used to dictate and this now reports as an outcome.
+pub fn harmonic_rhythm(segs: &[Segment]) -> f64 {
+  if segs.is_empty() {
+    return 0.0;
+  }
+  let mut changes = 1usize;
+  for w in segs.windows(2) {
+    if w[0].chord != w[1].chord {
+      changes += 1;
+    }
+  }
+  (segs.last().unwrap().end - segs[0].start) as f64 / changes as f64
+}
+
+/// The §14 note-accounting, over a Viterbi analysis instead of a fixed window.
+pub fn report_viterbi(voices: &[Voice], beat: i64, lambda: f64) -> Report {
+  let segs = analyse_viterbi(voices, beat, lambda);
+  let mut r = Report::default();
+  if segs.is_empty() {
+    return r;
+  }
+  r.mean_fit = segs.iter().map(|s| s.fit).sum::<f64>() / segs.len() as f64;
+  for v in voices {
+    for (i, n) in v.notes.iter().enumerate() {
+      let Some(seg) = segs.iter().find(|s| s.start <= n.onset && n.onset < s.end) else { continue };
+      match classify(v, i, seg) {
+        None => r.chord_tones += 1,
+        Some(Nct::Suspension) => r.suspension += 1,
+        Some(Nct::Passing) => r.passing += 1,
+        Some(Nct::Neighbour) => r.neighbour += 1,
+        Some(Nct::Appoggiatura) => r.appoggiatura += 1,
+        Some(Nct::Escape) => r.escape += 1,
+        Some(Nct::Untreated) => r.untreated += 1,
+      }
+    }
+  }
+  r
+}
+
+/// The fraction of chord *changes* that are standard functional progressions.
+///
+/// This is the test the modal control actually wants. Renaissance polyphony is
+/// genuinely more triadic than Bach, so a chord-fit comparison flatters it
+/// whatever the analyser does — that is a fact about the music. What should
+/// separate tonal from modal is not whether chords can be *named* but whether
+/// they *succeed each other functionally*. It is also the first thing to
+/// exercise `progression_ok`, written in §14 and untested until now.
+pub fn functional_rate(segs: &[Segment]) -> (usize, usize) {
+  let mut chords: Vec<Chord> = vec![];
+  for s in segs {
+    if let Some(c) = s.chord {
+      if chords.last() != Some(&c) {
+        chords.push(c);
+      }
+    }
+  }
+  let mut ok = 0;
+  for w in chords.windows(2) {
+    if progression_ok(w[0].root, w[1].root) {
+      ok += 1;
+    }
+  }
+  (ok, chords.len().saturating_sub(1))
+}

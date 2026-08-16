@@ -43,6 +43,11 @@ fn main() {
     "hren" => harmony_renaissance(),
     "seg" => segmentation_sensitivity(),
     "revisit" => step4_revisit(),
+    "sweep" => analyser_sweep(),
+    "holdout" => analyser_holdout(),
+    "hren2" => analyser_renaissance(),
+    "func" => functional_test(),
+    "s17" => { analyser_sweep(); analyser_holdout(); analyser_renaissance(); }
     "s16" => { cadence_check(); harmony_renaissance(); segmentation_sensitivity(); step4_revisit(); }
     _ => {
       states();
@@ -1517,4 +1522,213 @@ fn step4_revisit() {
   println!("  mean advantage of Bach's contour:     {md:+.4}   (§13: -0.0763, §14.3: +0.0552)");
   println!("  optimiser beats Bach on:              {beat_bach} of {}", rows.len());
   println!("  mean distinct degrees in an optimum:  {avg:.1}   (§13: 1.0, §14.3: 6.8)");
+}
+
+// ---------------------------------------------------------------- §17 ------
+
+/// Cadence accuracy of the Viterbi analyser, swept over the change penalty.
+///
+/// The penalty is not fitted. Fitting one scalar to the corpus would be exactly
+/// the thing this project was written to avoid, and testing on the data it was
+/// fitted to would be worse. The whole curve is reported instead, so a reader
+/// can see how much of the result is the parameter — which is the complaint
+/// §16.3 made about the window it replaces.
+fn analyser_sweep() {
+  println!("\n== §17 the Viterbi analyser, swept over the change penalty ==");
+  let pieces = load_bach();
+  let specs = specs_with(&pieces);
+  println!("  lambda   arrival  +dominant   chance   harm.rhythm   chord tones");
+  for &lambda in &[0.0f64, 0.05, 0.1, 0.2, 0.3, 0.5, 0.75, 1.0, 1.5, 2.0] {
+    let (mut hit, mut vi, mut tot) = (0usize, 0usize, 0usize);
+    let (mut chance_n, mut chance_d) = (0usize, 0usize);
+    let (mut hr, mut nhr) = (0.0f64, 0usize);
+    let mut rep = harmony::Report::default();
+    for spec in &specs {
+      let Some(p) = pieces.get(&spec.id) else { continue };
+      let Some((tonic, minor)) = p.tonic else { continue };
+      let segs = harmony::analyse_viterbi(&p.voices, p.beat, lambda);
+      if segs.is_empty() {
+        continue;
+      }
+      hr += harmony::harmonic_rhythm(&segs);
+      nhr += 1;
+      rep.merge(&harmony::report_viterbi(&p.voices, p.beat, lambda));
+      for (tick, label) in &spec.cadences {
+        let Some((deg, kind)) = label.split_once(':') else { continue };
+        let Some(off) = roman(deg, minor) else { continue };
+        tot += 1;
+        let local = (tonic as i16 + off).rem_euclid(12) as u8;
+        let arrival = match kind {
+          "HC" => (local as i16 + 7).rem_euclid(12) as u8,
+          "DC" => (local as i16 + 9).rem_euclid(12) as u8,
+          _ => local,
+        };
+        let dom = (local as i16 + 7).rem_euclid(12) as u8;
+        let at = segs.iter().position(|s| s.start <= *tick && *tick < s.end);
+        let found = at
+          .and_then(|i| segs.get(i))
+          .and_then(|s| s.chord)
+          .map(|c| c.root == arrival)
+          .unwrap_or(false);
+        if found {
+          hit += 1;
+          if let Some(i) = at {
+            let here = segs[i].chord;
+            let prev = segs[..i].iter().rev().find(|s| s.chord != here).and_then(|s| s.chord);
+            if prev.map(|c| c.root == dom).unwrap_or(false) {
+              vi += 1;
+            }
+          }
+        }
+        let n = segs.iter().filter(|s| s.chord.map(|c| c.root == arrival).unwrap_or(false)).count();
+        chance_n += n;
+        chance_d += segs.len();
+      }
+    }
+    println!(
+      "  {lambda:>6.2}   {:>6.0}%  {:>8.0}%  {:>6.0}%   {:>10.0}t   {:>10.1}%",
+      100.0 * hit as f64 / tot.max(1) as f64,
+      100.0 * vi as f64 / tot.max(1) as f64,
+      100.0 * chance_n as f64 / chance_d.max(1) as f64,
+      hr / nhr.max(1) as f64,
+      100.0 * rep.chord_tones as f64 / rep.total().max(1) as f64
+    );
+  }
+  println!("\n  (fixed-window analyser, §16.1: 38% arrival, 18% +dominant, 23% chance)");
+  println!("  a quarter note is {} ticks; the beat varies by piece", kern::TICKS_PER_QUARTER);
+}
+
+/// Held-out check: does the best lambda on one half of the corpus hold on the
+/// other? The sweep reports a curve; this asks whether picking a point on it
+/// generalises, which is the only honest way to quote a single number.
+fn analyser_holdout() {
+  println!("\n== §17.2 held-out validation ==");
+  let pieces = load_bach();
+  let specs = specs_with(&pieces);
+  let score = |lambda: f64, which: usize| {
+    let (mut hit, mut tot) = (0usize, 0usize);
+    for (k, spec) in specs.iter().enumerate() {
+      if k % 2 != which {
+        continue;
+      }
+      let Some(p) = pieces.get(&spec.id) else { continue };
+      let Some((tonic, minor)) = p.tonic else { continue };
+      let segs = harmony::analyse_viterbi(&p.voices, p.beat, lambda);
+      for (tick, label) in &spec.cadences {
+        let Some((deg, kind)) = label.split_once(':') else { continue };
+        let Some(off) = roman(deg, minor) else { continue };
+        tot += 1;
+        let local = (tonic as i16 + off).rem_euclid(12) as u8;
+        let arrival = match kind {
+          "HC" => (local as i16 + 7).rem_euclid(12) as u8,
+          "DC" => (local as i16 + 9).rem_euclid(12) as u8,
+          _ => local,
+        };
+        if segs
+          .iter()
+          .find(|s| s.start <= *tick && *tick < s.end)
+          .and_then(|s| s.chord)
+          .map(|c| c.root == arrival)
+          .unwrap_or(false)
+        {
+          hit += 1;
+        }
+      }
+    }
+    100.0 * hit as f64 / tot.max(1) as f64
+  };
+  let grid: Vec<f64> = vec![0.0, 0.05, 0.1, 0.2, 0.3, 0.5, 0.75, 1.0, 1.5, 2.0];
+  for (name, fit_on, test_on) in [("odd-numbered", 0usize, 1usize), ("even-numbered", 1, 0)] {
+    let mut best = (f64::NAN, -1.0f64);
+    for &l in &grid {
+      let v = score(l, fit_on);
+      if v > best.1 {
+        best = (l, v);
+      }
+    }
+    println!(
+      "  chosen on {name:<14} lambda = {:.2}  ({:.0}% there)  -> {:.0}% on the other half",
+      best.0, best.1, score(best.0, test_on)
+    );
+  }
+}
+
+/// Does the new analyser still prefer modal music? §16.2's falsification, re-run.
+fn analyser_renaissance() {
+  println!("\n== §17.3 modal control, on the new analyser ==");
+  let lambda = 0.3;
+  let mut files: Vec<std::path::PathBuf> = vec![];
+  for d in ["Jos", "Oke", "Obr", "Duf", "Bus", "Mar"] {
+    if let Ok(rd) = std::fs::read_dir(std::path::Path::new("corpus/jrp-scores").join(d)) {
+      files.extend(
+        rd.filter_map(|e| e.ok().map(|e| e.path()))
+          .filter(|p| p.extension().map(|x| x == "krn").unwrap_or(false)),
+      );
+    }
+  }
+  files.sort();
+  files.truncate(200);
+  let (mut ren, mut rf, mut rn) = (harmony::Report::default(), 0.0f64, 0usize);
+  for f in &files {
+    if let Ok(p) = kern::read(f) {
+      let r = harmony::report_viterbi(&p.voices, p.beat, lambda);
+      if r.total() > 0 {
+        rf += r.mean_fit;
+        rn += 1;
+        ren.merge(&r);
+      }
+    }
+  }
+  let (mut bach, mut bf, mut bn) = (harmony::Report::default(), 0.0f64, 0usize);
+  for (_, p) in load_bach() {
+    let r = harmony::report_viterbi(&p.voices, p.beat, lambda);
+    bf += r.mean_fit;
+    bn += 1;
+    bach.merge(&r);
+  }
+  let ct = |r: &harmony::Report| 100.0 * r.chord_tones as f64 / r.total().max(1) as f64;
+  let un = |r: &harmony::Report| 1000.0 * r.untreated as f64 / r.total().max(1) as f64;
+  println!("  at lambda = {lambda}\n");
+  println!("  statistic                    Renaissance     Bach   difference");
+  println!(
+    "  mean fit                         {:>7.3}  {:>7.3}   {:>+7.3}",
+    rf / rn.max(1) as f64, bf / bn.max(1) as f64, rf / rn.max(1) as f64 - bf / bn.max(1) as f64
+  );
+  println!("  chord tones                      {:>6.1}%  {:>6.1}%   {:>+7.1}", ct(&ren), ct(&bach), ct(&ren) - ct(&bach));
+  println!("  untreated per 1000 notes         {:>7.1}  {:>7.1}   {:>+7.1}", un(&ren), un(&bach), un(&ren) - un(&bach));
+  println!("\n  (§16.2, fixed window: fit +0.061, chord tones +7.0, untreated -3.3 - all wrong-signed)");
+}
+
+/// §17.4: the sharper modal test — functional progression, not chord fit.
+fn functional_test() {
+  println!("\n== §17.4 functional progression: the test the modal control wanted ==");
+  let lambda = 1.0;
+  let (mut bo, mut bt) = (0usize, 0usize);
+  for (_, p) in load_bach() {
+    let (o, t) = harmony::functional_rate(&harmony::analyse_viterbi(&p.voices, p.beat, lambda));
+    bo += o;
+    bt += t;
+  }
+  let mut files: Vec<std::path::PathBuf> = vec![];
+  for d in ["Jos", "Oke", "Obr", "Duf", "Bus", "Mar"] {
+    if let Ok(rd) = std::fs::read_dir(std::path::Path::new("corpus/jrp-scores").join(d)) {
+      files.extend(rd.filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.extension().map(|x| x == "krn").unwrap_or(false)));
+    }
+  }
+  files.sort();
+  files.truncate(200);
+  let (mut ro, mut rt) = (0usize, 0usize);
+  for f in &files {
+    if let Ok(p) = kern::read(f) {
+      let (o, t) = harmony::functional_rate(&harmony::analyse_viterbi(&p.voices, p.beat, lambda));
+      ro += o;
+      rt += t;
+    }
+  }
+  println!("  at lambda = {lambda}, root motion by 4th/5th/2nd/3rd counted as functional\n");
+  println!("  Bach        {:>6.1}%   ({bo} of {bt} chord changes)", 100.0 * bo as f64 / bt.max(1) as f64);
+  println!("  Renaissance {:>6.1}%   ({ro} of {rt})", 100.0 * ro as f64 / rt.max(1) as f64);
+  println!("  difference  {:>+6.1} points", 100.0 * bo as f64 / bt.max(1) as f64 - 100.0 * ro as f64 / rt.max(1) as f64);
+  println!("\n  prediction: tonal music should be MORE functional than modal.");
 }
