@@ -113,6 +113,11 @@ about.
 > dominant pitch maps to the tonic rather than the supertonic. Giraud names this as the reason their matcher works
 > on **diatonic** intervals rather than semitones — "a scale will always match only a scale."
 >
+> **The target fugue exhibits it in its first two notes.** BWV 867's subject opens B♭4 → F4, a descending fourth.
+> The answer at measure 3 opens F4 → B♭3 — a descending *fifth*. A real answer would have given F4 → C4; the
+> dominant has been mapped back to the tonic instead, altering the very interval that defines the subject's head.
+> The annotation marks the label `(tonal_answer)`, and Huron's encoding shows why.
+>
 > So `x + k` describes the *real* answer only. The repair is small and the parameterisation already has room for
 > it: the tonal answer is **its own transformation type `τ`**, not a value of `k`, and §3's compatibility table is
 > already indexed by `(τᵢ, τⱼ, …)`. But a subject stated with one `τ` and answered with another is the normal
@@ -339,9 +344,21 @@ Then:
 
 > **Densest stretto = maximum clique in the compatibility graph.**
 
-Within a single transformation class the graph is a Cayley graph on the shift group, and a legal stretto is a set
-of offsets whose pairwise differences all avoid the bad set — the same object as a Sidon set or a difference
-family, with the structure that implies. Across classes it is still one small explicit graph.
+Within a single transformation class the graph is a Cayley graph on the shift group, and a legal stretto is a set of
+offsets **whose difference set is contained in the good set `A`**. Across classes it is still one small explicit
+graph.
+
+> **Correction, from the corpus.** An earlier draft called that "the same object as a Sidon set or a difference
+> family." It is not, and the data supplies the counterexample immediately. A Sidon set requires all pairwise
+> differences to be *distinct*; the condition here is that they all *land in `A`*, which is a different constraint
+> and is satisfied by highly degenerate sets. Bach's own hyperstretto in BWV 867 is, in quarter notes from the
+> first entry, `{0, 2, 4, 6, 8}` — **an arithmetic progression**, whose difference set `{2, 4, 6, 8}` repeats the
+> step four times over. That is as far from a Sidon set as five points can be.
+>
+> The correction is worth more than the erratum: **the densest strettos are expected to be regular, not clever.**
+> A canon at a fixed time interval is an AP by construction, and if the step is legal then every multiple of it
+> tends to be legal too. So the clique search should look for structure, not scatter — which is also a hint that
+> the search will be easier than a general max-clique instance suggests.
 
 Three consequences.
 
@@ -366,14 +383,21 @@ Ricercar §7.6 had to pin `θ` against Bach's own hyperstretto, found `θ_pair �
 throughout step 4, and concluded that *"the measurement became intractable at the moment the threshold stopped
 being wrong."*
 
-Here there is no threshold. The calibration becomes a **yes-or-no test**:
+Here there is no threshold. The calibration becomes a **yes-or-no test**, and since §8's step 0 the target is an
+exact set of integers rather than a description:
 
-> Does BWV 867's Stretto II appear as a clique in its own compatibility graph?
+> The subject of BWV 867 is 12 quarters long. Its five final entries entries stand at quarters
+> **`{266, 268, 270, 272, 274}`** — one per voice, `{0, 2, 4, 6, 8}` from the first.
+> **Does `{0, 2, 4, 6, 8}` come out as a clique in that subject's compatibility graph?**
 
 If yes, the automaton is calibrated — by construction, since Bach's five-voice hyperstretto is acceptable
 counterpoint. If no, the automaton is too strict and *that is the finding*, exactly as ricercar argued for its own
 falsification, but without a constant to fit. Nothing is tuned, and the corpus ranking of §6.1 becomes a loop over
 subjects at milliseconds each.
+
+Note how much the test tightened by having the data. Ricercar spent §7.5 and §7.6 establishing this passage from a
+score by hand and arrived at a real-valued threshold that then made the computation intractable. The same passage
+is four lines of a public annotation file, and the test it supports is integer equality.
 
 ### 3.2 And §6.2 gets easier, not harder
 
@@ -395,6 +419,12 @@ Capacity is a function of the subject. §3 assumes the subject is given. Giraud 
 report that **in eight of the twenty-four, at least two sources disagree about where the subject ends**, sometimes
 by several notes. On Fugue No. 9 they quote Tovey to the effect that it is not worth settling where the subject
 ends and the countersubject begins; the flow between them is continuous.
+
+**Step 0 turns that from a warning into a list.** The disagreement is recorded in the data as `S alternative`
+labels carrying the dissenting source, and it falls in fugues **5, 7, 9, 10, 11, 18, 19 and 22** — eight, as
+claimed. The spread is not uniform: No. 19 carries three alternatives (Prout at `−5/8`, Bruhn at `−2/8`, Tovey and
+Keller at `0`), No. 9 two, and **the target fugue is one of the eight** — BWV 867's subject is 3 measures for
+Keller and Bruhn's "female ending" and 2 for Prout and Bruhn's "male", a difference of a third of the subject.
 
 A subject four notes longer overlaps more, forbids more offsets, and has lower capacity. So **a single capacity
 number silently encodes an editorial decision**, and a corpus ranking built from single numbers would be measuring
@@ -584,13 +614,56 @@ Each step is decidable, and each produces a number or a verdict rather than a de
 literature**: step 0 is new, step 3 acquires a real corpus, and step 5 acquires an escalation ladder and an honest
 expectation of cost.
 
-0. **Take the corpus, do not build one.** Giraud et al. published the ground truth for **36 fugues — 24 from WTC I
-   and 12 from Shostakovich's op. 87 — as machine-readable annotations under an open licence** (`algomus.fr`,
-   release 2015.01, >1000 annotations): subject and countersubject positions, alternative subject-ends where the
-   sources disagree, cadences, pedals. Their note representation is `(pitch, onset, duration)` with onsets and
-   durations in sixteenths, which is §2.1's lattice arrived at independently. **This removes the corpus from the
-   critical path entirely** and gives step 3 its input and step 1 its test cases. First job: parse it, and check the
-   BWV 867 subject already entered in [`ricercar/src/main.rs`](ricercar/src/main.rs) against their annotation.
+0. ~~**Take the corpus, do not build one.**~~ **Done.** Cloned to
+   [`corpus/algomus-data`](corpus/algomus-data) from `gitlab.com/algomus.fr/algomus-data` — 17 MB, **ODbL 1.0** with
+   contents under DbCL 1.0, so it is usable and must be attributed to Giraud, Groult and Levé.
+
+   **What is there.** All 36 fugues in one 27 kB file, [`fugues/fugues.ref`](corpus/algomus-data/fugues/fugues.ref)
+   — 24 Bach WTC I and 12 Shostakovich, with `S`, `S-inc` (incomplete statements), `Sinv`, `Saug`, `CS`, `CS2`,
+   cadences typed in Hepokoski–Darcy notation, and pedals. Plus 23 per-piece `.dez` files (JSON, Bach only, one
+   fugue missing) and `synchro` files aligning labels to particular recordings. The `.ref` form gives offsets in
+   **measures** with exact fractional extras (`29-1/16`); the `.dez` form gives them in **quarters** as plain
+   integers, which is the one to parse. `syntax.ref` documents the format completely.
+
+   **Three things worth having found.**
+   - The BWV 867 stretto extracted cleanly and now anchors §3.1: five entries at quarters
+     `{266, 268, 270, 272, 274}`, one per voice, against a subject 12 quarters long. Ricercar spent two sections
+     establishing this by hand from a score.
+   - The eight contested subject-ends of §3.3 are named, with dissenting source attached — and the target fugue is
+     one of them.
+   - It refuted §3's Sidon-set framing outright, which no amount of further reasoning would have done.
+
+   **The corpus contains no notes** — every label is an offset into a score held elsewhere. Bach's scores are
+   David Huron's Humdrum encodings, and the voice-separated edition is cloned to
+   [`corpus/bach-wtc-fugues`](corpus/bach-wtc-fugues) (`github.com/humdrum-tools/bach-wtc-fugues`, 16 MB, all 48
+   fugues of both books, one part per spine — which is what the annotations assume, since Giraud's system starts
+   *"from a symbolic score that was already separated into voices"*). `kern.humdrum.org` itself was returning 503;
+   the GitHub mirror is the reliable route. Shostakovich still needs Marques' MIDI, so the corpus is Bach-only for
+   now — 24 fugues, which is enough for steps 1 and 3.
+
+   **Cross-check: voice counts agree on all 24.** Huron's `!!!parts` matches the algomus voice count fugue for
+   fugue. (No. 24 declares four and its own note records that *"the texture increases to five voices in the final
+   two measures"* — the annotation agrees, so this is a real musical fact rather than a disagreement.)
+
+   **And the hand transcription survives its first falsification test.** BWV 867's subject was entered into
+   [`ricercar/src/main.rs`](ricercar/src/main.rs) by reading a score. Huron's top spine gives
+   `2b- 2f 4r 4gg- 4ff 4ee- 4dd-` — B♭4 half, F4 half, quarter rest, then G♭5 F5 E♭5 D♭5 as quarters. That is the
+   transcription **note for note and offset for offset**, including the descending fourth that ricercar §7.5 warns
+   memory inverts, and the minor ninth from F4 to G♭5.
+
+   > **But it is the *short* reading, and nobody knew that.** The next event in the spine is `4cc` — C5, continuing
+   > past where the transcription stops. Ricercar's six notes end at 8 quarters, which is Prout and Bruhn's
+   > two-measure "male ending"; the algomus ground truth takes Keller and Bruhn's three-measure "female ending" as
+   > primary. So the existing capacity work sits on one side of a documented editorial dispute, chosen by accident.
+   > §3.3's capacity-over-length profile is not a refinement for this fugue — it is the only honest way to report it.
+
+   **One more integration hazard, from Huron's own note:** *"The alto and second-soprano parts exchange registers
+   between measures 29 and 37."* Spine index is therefore **not** a stable voice identity, while the annotations
+   are keyed to voice letters (SATBC). Any parser that assumes spine `i` is voice `i` throughout will mislabel
+   entries in exactly the register-crossing passages that matter most here.
+
+   *(Erratum worth carrying: the dataset README, the `fugues.ref` header and the project page all give Shostakovich
+   as "op. 57, 1952". It is op. 87, 1950–51 — op. 57 is the Piano Quintet. The journal paper has it right.)*
 1. **The two-voice automaton.** Build it, minimise it, **report the reachable state count**, and split the rules
    **hard versus soft** in Komosinski & Szachewicz's manner — the automaton takes the hard ones, §5's Pareto front
    takes the rest. Verdict tests, in order of how much they would hurt to fail:

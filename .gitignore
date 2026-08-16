@@ -1,0 +1,6 @@
+# Third-party corpora, cloned rather than vendored — see readme §8 step 0.
+# `corpus/algomus-data` is ODbL 1.0 and has its own history; re-fetch with
+#     git clone https://gitlab.com/algomus.fr/algomus-data corpus/algomus-data
+# Make it a submodule instead if the exact revision ever needs pinning.
+# Holds: algomus-data (ODbL 1.0), bach-wtc-fugues (Humdrum).
+corpus/
