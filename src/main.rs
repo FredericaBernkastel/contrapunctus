@@ -6,6 +6,7 @@
 
 mod automaton;
 mod corpus;
+mod stretto;
 mod kern;
 mod pitch;
 
@@ -21,10 +22,12 @@ fn main() {
     "verdict" => verdict(),
     "corpus" => corpus_run(),
     "diag" => diag(),
+    "stretto" => stretto(),
     _ => {
       states();
       verdict();
       corpus_run();
+      stretto();
     }
   }
 }
@@ -254,5 +257,110 @@ mod tests {
     let (reachable, crude) = automaton::reachable_states();
     assert!(reachable.len() < crude, "reachability bought nothing");
     assert!(reachable.len() > 1);
+  }
+}
+
+// ---------------------------------------------------------------- step 2 ---
+
+/// BWV 867's five final entries, in quarters from the start of the fugue,
+/// straight from the algomus ground truth (`22-bwv867-ref.dez`). One per voice.
+const STRETTO_Q: [i64; 5] = [266, 268, 270, 272, 274];
+/// The subject's two contested lengths, in quarters — readme §3.3. Keller and
+/// Bruhn read three measures ("female ending"), Prout and Bruhn two ("male").
+const LEN_FEMALE_Q: i64 = 12;
+const LEN_MALE_Q: i64 = 8;
+
+fn stretto() {
+  let path = std::path::Path::new(KERN).join("wtc1f22.krn");
+  let p = match kern::read(&path) {
+    Ok(p) => p,
+    Err(e) => return println!("{e}"),
+  };
+  let q = kern::TICKS_PER_QUARTER;
+  println!("
+== step 2: BWV 867, the clique test ==");
+  println!("{} voices, measure {} ticks, entries at quarters {:?}", p.voices.len(), p.measure, STRETTO_Q);
+
+  for (label, len_q) in
+    [("female (Keller, Bruhn), 3 measures", LEN_FEMALE_Q), ("male (Prout, Bruhn), 2 measures", LEN_MALE_Q)]
+  {
+    let top = p.voices.len() - 1;
+    let sub = stretto::Subject::cut(&p.voices[top], 0, len_q * q);
+    println!("
+-- subject read as {label} --");
+    print!("   ");
+    for n in &sub.notes {
+      print!("{} ", n.pitch.name());
+    }
+    println!("({} notes)", sub.notes.len());
+
+    let mut entries = vec![];
+    for (i, &sq) in STRETTO_Q.iter().enumerate() {
+      let t = sq * q;
+      let v = p.voices.len() - 1 - i;
+      let Some(n) = p.voices[v].notes.iter().find(|n| n.onset >= t) else { continue };
+      let (ds, dc) = stretto::interval_from(&sub, n.pitch);
+      entries.push(stretto::Entry { d: t - STRETTO_Q[0] * q, dsteps: ds, dsemis: dc });
+      println!("   +{:>2}q  voice {}  {}  ({:+} steps)", (t - STRETTO_Q[0] * q) / q, v, n.pitch.name(), ds);
+    }
+
+    let ix: Vec<usize> = (0..entries.len()).collect();
+    for (tier_name, tier) in
+      [("full hard tier (5 rules)", automaton::HARD), ("confirmed tier (2 rules, §9.4)", automaton::CONFIRMED)]
+    {
+      let table = stretto::build(&sub, &entries, p.measure, tier);
+      let ok = table.is_clique(&ix);
+      println!("
+   {tier_name:<32} clique: {}   max {} of {}",
+        yes(ok), table.max_clique(p.voices.len()).len(), entries.len());
+      if !ok {
+        for i in 0..entries.len() {
+          for j in (i + 1)..entries.len() {
+            if !table.ok[i][j] {
+              let a = sub.place(entries[i].d, entries[i].dsteps, entries[i].dsemis);
+              let b = sub.place(entries[j].d, entries[j].dsteps, entries[j].dsemis);
+              let v = stretto::compatible(&a, &b, p.measure, tier);
+              let why: Vec<String> =
+                v.worst.iter().map(|(n, c)| format!("{n} x{c}")).collect();
+              println!("      {} vs {}  {}", entries[i].label(), entries[j].label(), why.join(", "));
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // The control. The table above places an idealised *template*; Bach wrote
+  // actual notes. If the template fails where the real passage passes, the
+  // fault is in the model of an entry, not in the rulebook.
+  println!("
+-- control: Bach's actual notes, measures 67.5-71 --");
+  let (t0, t1) = (STRETTO_Q[0] * q, (STRETTO_Q[4] + LEN_FEMALE_Q) * q);
+  let mut worst_full = 0usize;
+  let mut worst_conf = 0usize;
+  let mut named: Vec<String> = vec![];
+  for a in 0..p.voices.len() {
+    for b in (a + 1)..p.voices.len() {
+      let (va, vb) = (window(&p.voices[a], t0, t1), window(&p.voices[b], t0, t1));
+      worst_full += stretto::compatible(&va, &vb, p.measure, automaton::HARD).hard;
+      let c = stretto::compatible(&va, &vb, p.measure, automaton::CONFIRMED);
+      worst_conf += c.hard;
+      for (n, k) in &c.worst {
+        if *k > 0 {
+          named.push(format!("voices {a}-{b}: {n} x{k}"));
+        }
+      }
+    }
+  }
+  println!("   10 real voice pairs: {worst_full} violations on the full tier, {worst_conf} on the confirmed tier");
+  for n in &named {
+    println!("      {n}");
+  }
+}
+
+fn window(v: &kern::Voice, t0: i64, t1: i64) -> kern::Voice {
+  kern::Voice {
+    notes: v.notes.iter().filter(|n| n.onset >= t0 && n.onset < t1)
+      .map(|n| kern::Note { onset: n.onset - t0, ..*n }).collect(),
   }
 }

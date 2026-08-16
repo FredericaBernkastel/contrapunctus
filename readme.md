@@ -4,7 +4,7 @@
 
 ### Fugue on the lattice: 513 states, a clique, and what Bach says about the rulebook
 
-*Design document. **Step 0 and step 1 of §8 are built and measured — see §9.** Steps 2 onward are not.*
+*Design document. **Steps 0, 1 and 2 of §8 are built and measured — see §9 and §10.** Steps 3 onward are not.*
 
 ---
 
@@ -29,10 +29,10 @@ on the next event. Harmony is a second automaton over functional progressions; f
 realising free voices against fixed entries is a shortest path, escalating to a CDCL solver at four or more free
 voices, where layering is known to fail. Densest stretto becomes **maximum clique in a Cayley graph** on the shift
 group, exactly computable, where the continuous formulation of the same question was killed at thirty minutes
-without a single placement. Bach's own five-voice hyperstretto in BWV 867 is such a clique, and it is an arithmetic
-progression — which refutes this document's earlier guess that the object was a Sidon set.
+without a single placement. Bach's own five-voice hyperstretto in BWV 867 is such a clique — and it is an arithmetic
+progression, `{0, 2, 4, 6, 8}` quarters, which refutes this document's earlier guess that the object was a Sidon set.
 
-Two components are built and measured against the 24 fugues of the Well-Tempered Clavier, Book I, using published
+Three steps are built and measured against the 24 fugues of the Well-Tempered Clavier, Book I, using published
 ground-truth annotations and Huron's Humdrum encodings. The automaton has **513 reachable states** against a crude
 product of 1280, and it distinguishes a prepared suspension from the same interval struck on the same beat — the
 distinction a field over instantaneous pitch is structurally unable to make, and the device most of the repertoire
@@ -41,6 +41,13 @@ perfect consonances and direct motion to a perfect consonance on a downbeat occu
 and are confirmed; the dissonance and melodic prohibitions fire two orders of magnitude more often and are
 refuted.** The surviving pair is precisely the pair a roughness field cannot express at all, since a perfect fifth
 is among the smoothest intervals it knows.
+
+The clique test then selects the same rulebook a second time, by a different route. **Under the full five-rule
+tier Bach's hyperstretto is not a clique; under the two-rule tier it is**, on both contested readings of the
+subject, and a control on the written notes rather than on idealised transpositions confirms that the fault lies
+with the rulebook rather than with the model of an entry. That two independent tests — one counting rule
+frequencies across a book, one asking whether a single passage is mutually compatible — converge on the same two
+rules is the strongest result here, because neither was designed to check the other.
 
 What the method does not do is decide whether the result is good, and its failure mode is the inverse of the usual
 one: a complete search does not fail by finding nothing but by finding far too much — on the order of `10⁵`–`10⁶`
@@ -732,7 +739,8 @@ expectation of cost.
      Bach on every page is the Schottstaedt failure of §5 arriving early and cheaply, and it is far better to learn
      that from a checker than from a composition. This test costs almost nothing and is the single most
      informative thing in the roadmap.
-2. **The compatibility table and the clique**, on BWV 867's subject. Carry the **tonal answer as its own `τ`** from
+2. ~~**The compatibility table and the clique**, on BWV 867's subject.~~ **Done — see §10.** The full tier
+   rejects Bach's hyperstretto; the two-rule tier of §9.4 accepts it, under both readings of the subject. Carry the **tonal answer as its own `τ`** from
    the start (§2.1). Verdict test, per §3.1: *does Bach's Stretto II come out as a clique?* Pass calibrates the
    automaton; fail falsifies it. No constant is fitted either way.
 3. **The corpus ranking.** Ricercar §6.1, blocked twice there, at milliseconds per subject here — over 36 real
@@ -853,3 +861,74 @@ pairwise checking here is too **strict**, not too loose.
 - **Step 5's solver has less to prove.** A hard tier of two rules is a far smaller constraint than five, so the
   five-voice realisation of §2.7 is a lighter problem than Schottstaedt's — but for the same reason it constrains
   less, and the burden shifts onto the soft criteria and their ordering.
+
+---
+
+## 10. Step 2 result: the clique test passes, on the tier Bach chose
+
+`cargo run --release -- stretto`. The subject is cut from Huron's encoding; the five entry offsets come from the
+algomus ground truth; the transpositions are **recovered from the score** rather than assumed, and come out
+`B♭ – F – B♭ – F – B♭` descending across five octaves — tonic and dominant alternating, which is what a stretto
+layout is supposed to be, and a check on the extraction rather than a result.
+
+### 10.1 The verdict
+
+§3.1 promised integer equality rather than a fitted threshold, and that is what it is: are the five entries at
+`{0, 2, 4, 6, 8}` quarters mutually compatible?
+
+| subject reading | full hard tier (5 rules) | confirmed tier (2 rules, §9.4) |
+|---|---|---|
+| female, 3 measures (Keller, Bruhn) | **fail** — max clique 4 of 5 | **pass** — 5 of 5 |
+| male, 2 measures (Prout, Bruhn) | **fail** — max clique 4 of 5 | **pass** — 5 of 5 |
+
+**The full rulebook rejects Bach's own hyperstretto; the tier Bach confirmed accepts it.** Both failures are the
+same rule, `unresolved dissonance`, on the pair `+0q` against `+6q` — and that is the rule §9.4 had already
+measured firing 91.8 times per thousand slices across the whole book. Two independent tests, on different data
+and asking different questions, **select the same rulebook**: §9 by counting how often each rule fires in 24
+fugues, §10 by asking whether one passage is a clique. That convergence is the strongest thing in this document,
+because neither test was designed to check the other.
+
+The result also does not depend on the editorial dispute of §3.3. Both readings of the subject give the same
+verdict under both tiers, which is worth recording because §3.3 predicted the opposite — that the contested ending
+would be load-bearing. Here it is not.
+
+### 10.2 The control, which is what makes the verdict mean anything
+
+A clique test on *templates* proves nothing about Bach if the template is a bad model of an entry: exact
+transposition is an idealisation, and a failure could be the model's fault rather than the rulebook's. So the same
+window of the **actual score** — all five voices, measures 67.5 to 71, ten real pairs — is checked directly.
+
+| | full tier | confirmed tier |
+|---|---:|---:|
+| Bach's actual notes, 10 pairs | **15** | **1** |
+
+The real passage fails the full tier too, and by more than the template does. So the template is not the problem
+and the rulebook is: §3.1's falsification branch, taken.
+
+The single confirmed-tier violation is worth naming rather than rounding away. It is a **direct motion to a
+perfect consonance on a downbeat, between the two middle voices**, and it is in Bach and not in the template —
+the idealised exact transpositions avoid it, the written music does not. One violation in ten voice pairs of the
+densest passage in the book is close enough to zero to call the two-rule tier confirmed, and honest enough to say
+it is not literally zero.
+
+### 10.3 A defect the test caught in the reading of the corpus
+
+The first run reported the male ending as a clique and the female as a failure — an apparently sharp result about
+the editorial dispute, and an artefact. The subject window was cut with an **exclusive** end, and the corpus's own
+`syntax.ref` defines a length as measured "between the offsets of the start and the end", where "the end of the
+pattern denotes the impact of the last note" — inclusive.
+
+It was caught by a cross-check rather than by reading the code: the two-measure cut produced a five-note subject
+where ricercar's hand transcription of the same span has six. That transcription was made independently from a
+score, and disagreeing with it was the signal. Corrected, the two readings agree, and the apparent finding about
+the subject boundary evaporated.
+
+### 10.4 What this settles, and what it does not
+
+- **The hard tier is two rules.** Measured in §9, confirmed here. `UnpreparedDissonance`, `UnresolvedDissonance`
+  and `ForbiddenMelodic` move to the soft tier and go to §5's Pareto front, where they can be ranked without
+  anyone having to claim Bach is wrong.
+- **The compatibility table works**, and the clique formulation of §3 is now demonstrated rather than argued.
+- **It does not show the method can compose.** A two-rule hard tier admits Bach's stretto, and it will admit an
+  enormous amount of bad counterpoint too — §5's inverted failure mode, arriving on schedule. Everything now rests
+  on the soft criteria, which is exactly where this document has always said the difficulty lives.

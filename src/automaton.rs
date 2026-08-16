@@ -167,6 +167,13 @@ pub const HARD: &[Rule] = &[
   Rule::ForbiddenMelodic,
 ];
 
+/// The hard rules **Bach confirms** — §9.4 measured these at about one per
+/// thousand slices across the whole book, where the other three fire two
+/// orders of magnitude more often and are refuted by him. Step 2 tests the
+/// stretto against both tiers, because which tier is "the rulebook" is exactly
+/// what is in question.
+pub const CONFIRMED: &[Rule] = &[Rule::ParallelPerfect, Rule::DirectPerfectOnDownbeat];
+
 pub const SOFT: &[Rule] = &[
   Rule::DirectToPerfect,
   Rule::PerfectConsonance,

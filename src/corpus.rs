@@ -52,7 +52,12 @@ impl Tally {
 
 /// Walk one pair of voices and tally every rule that fires.
 pub fn check_pair(p: &Piece, a: usize, b: usize) -> Tally {
-  let (va, vb) = (&p.voices[a], &p.voices[b]);
+  check_voices(&p.voices[a], &p.voices[b], p.measure)
+}
+
+/// The same, on two voices that need not come from a parsed piece — which is
+/// what step 2 needs, since it checks *placements* rather than scores.
+pub fn check_voices(va: &kern::Voice, vb: &kern::Voice, measure: i64) -> Tally {
   let mut t = Tally { pairs: 1, ..Default::default() };
   let mut st = State::default();
   // **Per voice**, not per role. An earlier version tracked the previous
@@ -84,7 +89,7 @@ pub fn check_pair(p: &Piece, a: usize, b: usize) -> Tally {
       hi: hi_m,
       lo_tied: lo_t,
       hi_tied: hi_t,
-      downbeat: p.measure > 0 && time % p.measure == 0,
+      downbeat: measure > 0 && time % measure == 0,
       crossed,
     };
     let (fired, next) = automaton::step(st, sym);

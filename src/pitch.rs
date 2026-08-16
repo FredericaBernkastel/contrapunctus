@@ -38,6 +38,30 @@ impl Pitch {
   pub fn midi(&self) -> i16 {
     self.chroma() + 12
   }
+
+  /// Transpose by a **named** interval — so many diatonic steps and so many
+  /// semitones — which is the only kind of transposition that preserves the
+  /// spelling a fugue depends on. Adding semitones alone would turn a
+  /// diminished fifth into an augmented fourth somewhere down the subject.
+  pub fn transpose(&self, dsteps: i16, dsemis: i16) -> Pitch {
+    let target = Pitch::new(self.step + dsteps, 0);
+    let natural = target.chroma() - Pitch::new(self.step, 0).chroma();
+    Pitch::new(self.step + dsteps, self.alter + (dsemis - natural) as i8)
+  }
+
+  /// Spelled name, for reporting: `B-4`, `F#5`.
+  pub fn name(&self) -> String {
+    let deg = "CDEFGAB".as_bytes()[self.step.rem_euclid(7) as usize] as char;
+    let acc = match self.alter {
+      -2 => "--",
+      -1 => "-",
+      0 => "",
+      1 => "#",
+      2 => "##",
+      _ => "?",
+    };
+    format!("{deg}{acc}{}", self.step.div_euclid(7))
+  }
 }
 
 /// A directed interval, kept as the pair that determines its quality: how many
