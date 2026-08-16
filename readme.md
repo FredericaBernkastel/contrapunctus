@@ -614,9 +614,24 @@ Each step is decidable, and each produces a number or a verdict rather than a de
 literature**: step 0 is new, step 3 acquires a real corpus, and step 5 acquires an escalation ladder and an honest
 expectation of cost.
 
-0. ~~**Take the corpus, do not build one.**~~ **Done.** Cloned to
-   [`corpus/algomus-data`](corpus/algomus-data) from `gitlab.com/algomus.fr/algomus-data` — 17 MB, **ODbL 1.0** with
-   contents under DbCL 1.0, so it is usable and must be attributed to Giraud, Groult and Levé.
+0. ~~**Take the corpus, do not build one.**~~ **Done.** Both corpora are **git submodules** under `corpus/`, so the
+   exact revision each result was computed against is recorded rather than merely fetched. Clone this repository
+   with
+
+   ```
+   git clone --recurse-submodules <this repo>
+   ```
+
+   or run `git submodule update --init` in an existing checkout.
+
+   | submodule | source | pinned | licence |
+   |---|---|---|---|
+   | [`corpus/algomus-data`](corpus/algomus-data) | `gitlab.com/algomus.fr/algomus-data` | `a1801b5` | **ODbL 1.0**, contents DbCL 1.0 — attribute Giraud, Groult and Levé |
+   | [`corpus/bach-wtc-fugues`](corpus/bach-wtc-fugues) | `github.com/humdrum-tools/bach-wtc-fugues` | `5095752` | Humdrum edition by David Huron |
+
+   Pinning matters more here than it usually does. Both are living annotation projects, a subject boundary is an
+   editorial judgement that can be revised (§3.3), and **capacity is a function of the subject** — so a corpus
+   ranking is only reproducible against a stated revision of the ground truth.
 
    **What is there.** All 36 fugues in one 27 kB file, [`fugues/fugues.ref`](corpus/algomus-data/fugues/fugues.ref)
    — 24 Bach WTC I and 12 Shostakovich, with `S`, `S-inc` (incomplete statements), `Sinv`, `Saug`, `CS`, `CS2`,
@@ -633,13 +648,13 @@ expectation of cost.
      one of them.
    - It refuted §3's Sidon-set framing outright, which no amount of further reasoning would have done.
 
-   **The corpus contains no notes** — every label is an offset into a score held elsewhere. Bach's scores are
-   David Huron's Humdrum encodings, and the voice-separated edition is cloned to
-   [`corpus/bach-wtc-fugues`](corpus/bach-wtc-fugues) (`github.com/humdrum-tools/bach-wtc-fugues`, 16 MB, all 48
-   fugues of both books, one part per spine — which is what the annotations assume, since Giraud's system starts
-   *"from a symbolic score that was already separated into voices"*). `kern.humdrum.org` itself was returning 503;
-   the GitHub mirror is the reliable route. Shostakovich still needs Marques' MIDI, so the corpus is Bach-only for
-   now — 24 fugues, which is enough for steps 1 and 3.
+   **The annotations contain no notes** — every label is an offset into a score held elsewhere, which is why the
+   second submodule exists. It is 16 MB, all 48 fugues of both books, **one part per spine**, which is what the
+   annotations assume: Giraud's system starts *"from a symbolic score that was already separated into voices."*
+   (The sibling repository `humdrum-tools/bach-wtc` is the two-staff keyboard layout and would need voice
+   separation first — the wrong one to take.) `kern.humdrum.org` was returning 503; the GitHub mirror is the
+   reliable route. Shostakovich still needs Marques' MIDI, so the corpus is Bach-only for now — 24 fugues, which is
+   enough for steps 1 and 3.
 
    **Cross-check: voice counts agree on all 24.** Huron's `!!!parts` matches the algomus voice count fugue for
    fugue. (No. 24 declares four and its own note records that *"the texture increases to five voices in the final

@@ -1,0 +1,6 @@
+[submodule "corpus/algomus-data"]
+	path = corpus/algomus-data
+	url = https://gitlab.com/algomus.fr/algomus-data.git
+[submodule "corpus/bach-wtc-fugues"]
+	path = corpus/bach-wtc-fugues
+	url = https://github.com/humdrum-tools/bach-wtc-fugues.git
