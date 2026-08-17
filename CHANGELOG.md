@@ -99,6 +99,9 @@ the two-rule tier, so the fault is the rulebook's rather than the template's.
   difference family". A Sidon set requires all pairwise differences to be *distinct*; the condition here is that
   they all land in the good set. Bach's own is an arithmetic progression, which is as far from Sidon as five points
   can be. The useful form of the correction: **densest strettos are expected to be regular, not clever.**
+- **"Descending across five octaves"** — the five entry heads are `B♭4 F4 B♭3 F3 B♭2`, which descend **two**
+  octaves; the whole texture spans a little over three. Five entries, not five octaves. Corrected when the entries
+  were rendered to MIDI in step 5 and the pitches could be counted off the file.
 
 ---
 

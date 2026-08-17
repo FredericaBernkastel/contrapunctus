@@ -790,7 +790,8 @@ A control on the obvious confound: chromaticism explains 6% of the melodic rule'
 
 Bach's five final entries in BWV 867 stand at quarters `{266, 268, 270, 272, 274}` — `{0, 2, 4, 6, 8}` from the
 first, one per voice. The transpositions are recovered from the score rather than assumed, and come out
-`B♭ – F – B♭ – F – B♭` descending across five octaves, tonic and dominant alternating.
+`B♭4 – F4 – B♭3 – F3 – B♭2`, tonic and dominant alternating, the five heads descending **two octaves** and the
+whole texture spanning a little over three.
 
 | subject reading | full 5-rule tier | 2-rule tier |
 |---|---|---|
