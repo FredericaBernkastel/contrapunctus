@@ -1102,8 +1102,26 @@ order.
    `10¹²` to `10¹⁸` legal fills of a three-bar span, and agreement with Bach that does not respond to anything the
    rulebook does. The table there is unambiguous about which direction *not* to go: more of the same kind of
    constraint buys tractability and nothing else, and optimising the soft criteria is worse than not optimising.
-   Three things bear on it instead, in increasing order of ambition.
+   Five things bear on it instead, the first two cheapest and both owed to
+   [§11](#11-parallels-within-the-same-algorithmic-family).
 
+   - **Sample the legal set instead of optimising over it.** [§8.6](#86-realisation-and-the-first-notes)'s own
+     reversed-sign control already says a random legal choice beats both ends of the objective, by a factor of
+     two; WaveFunctionCollapse's **Weak C2** says the same thing as a design principle — aim to be *typical*, not
+     optimal. **Uniform** sampling asserts nothing and needs no data, and is most of the way built: the search
+     computes exact path counts through the DAG and they are already checked against brute-force enumeration, so
+     drawing a uniformly random legal fill is a backward walk weighting each predecessor by its count. That is the
+     smallest change on this list with a measured reason to expect it to work, and it turns a baseline column into
+     a generator. Frequency-weighted sampling would be better still and needs frequencies; a treatise may state
+     them, a corpus may not supply them.
+   - **Enumerate the species as a whitelist**, rather than only the prohibitions as a blacklist. This is
+     [§11.1](#111-c1-is-a-whitelist-and-fux-is-a-blacklist), and it is the only proposal here that attacks `10¹⁵`
+     at its root instead of choosing better within it: *only these configurations may occur* is enormously tighter
+     than *these five may not*, which is why WFC's practical failure is running out of options and this project's
+     has never once been. Fux sets the permitted note-against-note figures out species by species; transcribing
+     them is the same book and the same unfitted position as transcribing the prohibitions was. Expect it to bite
+     the two dissonance rules first, since those are where the blacklist is loosest
+     ([§8.2](#82-the-rulebook-stratified-by-two-corpora)).
    - **A criterion that is not local**, which the same table points at twice, and which the first listening test
      ([§8.6](#86-realisation-and-the-first-notes)) suggests is a question of *stylistic identity* rather than of
      rescuing the output. Pitch class is recovered about twice as often as pitch, so what is missing is
@@ -1137,7 +1155,8 @@ order.
 - **Key-finding.** A real functional test needs degree successions relative to a *local* key, and fugues modulate
   constantly. Without it [§2.3](#23-harmony-is-a-second-automaton)'s functional half cannot be built or tested.
 - **A replacement for the two dissonance rules**, which fail in both centuries ([§8.2](#82-the-rulebook-stratified-by-two-corpora)).
-  They are also two of the few remaining candidates for constraining a fill.
+  They are also where the blacklist is loosest, so they are the first thing step 6's whitelist would replace rather
+  than repair.
 - **A design objective**, still open after two attempts ([§3.2](#32-capacity-is-a-density-and-it-cannot-be-optimised)).
   It has to reward a subject working at the fifth, which is a harmonic statement.
 - **The right rulebook for the right repertoire.** Fux is 1725 and Palestrina-style vocal; the WTC is 1722 and
