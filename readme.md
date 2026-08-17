@@ -891,6 +891,12 @@ as track *n* of the other, which is the only property that makes a two-file comp
 the property the first version lacked: tracks came out in `**kern` spine order, lowest first, named by that index,
 so the top voice of three arrived as `voice 2` and `entry 1` of the idealisation paired with `voice 4` of Bach.
 
+Both were reported from a DAW rather than found here, as was a third: the division was 240 ticks per quarter, which
+is legal, uncommon, and came back at exactly half length — the signature of a host substituting an assumed timebase
+for the one in the header. It is now 960, an exact `×4` of the internal lattice, and the **time signature** is
+written from the score's own `*M` interpretation instead of left to the host to guess. None of this is a fact about
+music, and all of it is the difference between a file that can be compared and one that cannot.
+
 **Four things are verified rather than asserted**, by `cargo test --release`:
 
 - the generator and the checker assemble a slice's symbol through **one shared function**, and a test asserts the
@@ -1041,10 +1047,39 @@ changes when the *only* thing that changes is which soft criterion the sum is ta
 that no such sum is defensible. The Pareto front is not a refinement to add later; it is what is left once the
 scalarisation is admitted to be arbitrary, and the front here is not a single point.
 
-The lines are also poor music, in a way the table does not capture and the MIDI does: several are nearly static,
-because repeating a note is cheap under most of these objectives and the rulebook has nothing to say against a
-voice that does almost nothing. **No further measurement resolves this.** The output has to be listened to, and
-that is now possible for the first time in either document.
+Several of these lines are also nearly static, because repeating a note is cheap under most of these objectives and
+the rulebook has nothing to say against a voice that does almost nothing. **No further measurement resolves this.**
+The output has to be listened to, and that is now possible for the first time in either document.
+
+#### The first listening test disagrees with the numbers, and it is worth recording that it does
+
+`out/fill.mid` against `out/fill-bach.mid`, one listener, unblinded, the passage tabulated above. The report:
+
+> voice 2 [the inner voice] spans a smaller pitch range compared to fill-bach — but overall the result is on par,
+> nothing is better or worse than Bach himself.
+
+The first half confirms the register finding by ear; the compasses printed in the track names say the same thing.
+**The second half contradicts what the agreement figures might be taken to imply, and the contradiction is the
+useful part.** These two statements are both true and not in tension:
+
+- the search reproduces Bach's *particular notes* at half the rate of a random legal choice;
+- the notes it picks instead are, to one listener, no worse.
+
+What that pulls apart is the assumption quietly linking them. `exact` measures **identity with Bach**, which is a
+proxy for quality and not quality itself, and a proxy is only as good as the assumption that the target is the
+unique good answer. The median span under this tier and plan admits about `10¹⁵` legal fills; if even a small
+fraction of those are musically acceptable, a low agreement rate is a fact about *how many acceptable answers
+there are* and not about how bad the chosen one is.
+
+So the honest reading of this section is narrower than it first appears: **the rulebook plus a harmonic plan is
+enough to write acceptable counterpoint and nowhere near enough to write Bach's.** That relocates the open problem
+in [§9](#9-roadmap) from *quality* to *stylistic identity*, and makes a criterion that is not local the thing which
+would distinguish a composer rather than the thing which rescues the output.
+
+The obvious cautions, stated because one listener on six seconds is thin evidence in both directions: unblinded,
+one passage, one listener, a flat MIDI piano with no dynamics, and a texture in which the top voice is Bach's in
+both files and one of the three parts is therefore identical. A real test is an A/B over many spans with the
+sources hidden, and it has not been run.
 
 ---
 
@@ -1059,9 +1094,11 @@ order.
    constraint buys tractability and nothing else, and optimising the soft criteria is worse than not optimising.
    Three things bear on it instead, in increasing order of ambition.
 
-   - **A criterion that is not local**, which the same table points at twice. Pitch class is recovered about twice
-     as often as pitch, so what is missing is **register** — a property of a line over a phrase, invisible to every
-     criterion in the tier because they all look at one slice or two.
+   - **A criterion that is not local**, which the same table points at twice, and which the first listening test
+     ([§8.6](#86-realisation-and-the-first-notes)) suggests is a question of *stylistic identity* rather than of
+     rescuing the output. Pitch class is recovered about twice as often as pitch, so what is missing is
+     **register** — a property of a line over a phrase, invisible to every criterion in the tier because they all
+     look at one slice or two.
      [§2.5](#25-the-search-is-a-shortest-path) already identifies the machinery: the shape accumulators, finite-
      state but long-range. Schottstaedt implemented all three and still concluded his program *"makes no decisions
      about overall melodic shapes"*, so this is known to be hard rather than merely unattempted.
@@ -1159,6 +1196,7 @@ seconds, and the reason is the subject of [§8.6](#86-realisation-and-the-first-
 | realiser plan | `λ = 1.0`, the middle of [§8.5](#85-the-harmonic-analyser)'s plausible band |
 | realiser compass | each voice's range over the **whole piece**, which a form grammar would supply; never the passage's own range, which would be circular |
 | realiser budgets | 60 000 states per layer, 4 000 000 edges per span — both refusals, never beams ([`realise.rs`](src/realise.rs)) |
+| MIDI output | format 1, **960 ticks per quarter** (an exact ×4 of the internal lattice), tempo and time signature from the score, tracks top voice first ([`midi.rs`](src/midi.rs)) |
 | PRNG | SplitMix64 inline; seeds `0x5EED`, `0xC0FFEE`, `0xBEEF`, `0xF00D`, `0xD00D` |
 | trials | 400 random contours for single-subject figures, 60 per subject for corpus tables |
 | hill-climbing | 12–16 restarts, first improvement accepted, one note changed at a time |

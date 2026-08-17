@@ -339,6 +339,33 @@ Two further findings. **The melodic rule is repertoire-specific as a description
 is at two free voices rather than four**, because the multiplier is the compounding obligation state and not the
 product of pitch domains, which §2.7 had assumed.
 
+### The first listening test, and what it narrows
+
+Reported by one listener on `fill.mid` against `fill-bach.mid`, unblinded: the filled inner voice covers a smaller
+range than Bach's — confirming the register finding by ear — but *"overall the result is on par, nothing is better
+or worse than Bach himself."*
+
+Both halves are consistent with the table and the second half narrows what the table licenses. `exact` measures
+identity with Bach, which is a proxy for quality only under the assumption that Bach's notes are the unique good
+answer; the median span admits about `10¹⁵` legal fills, so a low agreement rate can be a fact about how many
+acceptable answers exist rather than about the quality of the chosen one. **The claim §8.6 supports is that the
+rulebook plus a plan writes acceptable counterpoint and not Bach's**, which moves step 6's open problem from
+quality to stylistic identity.
+
+Recorded with its limits rather than as a result: one listener, one six-second passage, no blinding, a flat MIDI
+piano, and one of the three voices identical between the two files.
+
+### Two defects in the output files, both found in a DAW rather than here
+
+- **Tracks were written in `**kern` spine order and named by that index**, so the top voice of three arrived as
+  `voice 2`, and `stretto.mid`'s `entry 1` was `stretto-bach.mid`'s `voice 4` with nothing saying so. Files are now
+  written top voice first, ordered by *measured* mean pitch, each track named with its position, compass and role.
+- **The division was 240 ticks per quarter** — legal, uncommon, and reported back by a DAW at exactly half length,
+  the signature of a host substituting an assumed timebase. Now 960, an exact `×4` of the internal lattice, with a
+  **time signature** taken from the score's own `*M` interpretation rather than assumed. Two tests assert the
+  timebase stays a whole multiple of the lattice, since a fractional one would round every onset in every file and
+  §2.1 exists to prevent exactly that.
+
 ---
 
 ## Recurring pattern

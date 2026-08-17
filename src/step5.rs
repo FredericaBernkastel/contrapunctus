@@ -77,6 +77,16 @@ fn out_dir() -> std::path::PathBuf {
   d
 }
 
+/// The score's own time signature, recovered from the tick counts the reader
+/// took off the `*M` interpretation: a bar of `measure` ticks divided into notes
+/// of `beat` ticks each, with the whole note as the unit.
+fn meter(p: &Piece) -> (u8, u8) {
+  if p.beat <= 0 {
+    return (4, 4);
+  }
+  (((p.measure / p.beat).max(1)) as u8, ((crate::kern::TICKS_PER_WHOLE / p.beat).max(1)) as u8)
+}
+
 /// Write a texture as MIDI **in score order**, top voice first, with each track
 /// named by where it sits and what it is.
 ///
@@ -93,7 +103,13 @@ fn out_dir() -> std::path::PathBuf {
 /// index, so the label is a description of what will be heard rather than a
 /// restatement of an assumption about the file. The range in each name makes the
 /// pairing checkable by eye between two files without playing either.
-fn write_score(path: &std::path::Path, voices: &[Voice], roles: &[String], qpm: u32) -> std::io::Result<()> {
+fn write_score(
+  path: &std::path::Path,
+  voices: &[Voice],
+  roles: &[String],
+  qpm: u32,
+  sig: (u8, u8),
+) -> std::io::Result<()> {
   let mean = |v: &Voice| -> f64 {
     if v.notes.is_empty() {
       return f64::MIN;
@@ -120,7 +136,7 @@ fn write_score(path: &std::path::Path, voices: &[Voice], roles: &[String], qpm: 
     names.push(format!("{} {where_} {span} {}", pos + 1, roles.get(v).map(|s| s.as_str()).unwrap_or("")));
     out.push(voices[v].clone());
   }
-  crate::midi::write(path, &out, &names, qpm)
+  crate::midi::write(path, &out, &names, qpm, sig)
 }
 
 // --------------------------------------------------------------- the demo ---
@@ -153,7 +169,7 @@ pub fn render_stretto() {
   println!("  violations: {hard} on the full tier, {conf} on the confirmed tier");
 
   let d = out_dir();
-  match write_score(&d.join("stretto.mid"), &voices, &names, 66) {
+  match write_score(&d.join("stretto.mid"), &voices, &names, 66, meter(&p)) {
     Ok(()) => println!("  wrote {}", d.join("stretto.mid").display()),
     Err(e) => println!("  {e}"),
   }
@@ -170,7 +186,7 @@ pub fn render_stretto() {
       format!("- carries entry {e} of 5, at +{}q, among everything else", (entries_q[e - 1] - entries_q[0]))
     })
     .collect();
-  if write_score(&d.join("stretto-bach.mid"), &bach, &bn, 66).is_ok() {
+  if write_score(&d.join("stretto-bach.mid"), &bach, &bn, 66, meter(&p)).is_ok() {
     println!("  wrote {}  (the same bars as Bach wrote them)", d.join("stretto-bach.mid").display());
   }
 }
@@ -600,8 +616,8 @@ pub fn reconstruct() {
       })
       .collect();
     let bach: Vec<Voice> = p.voices.iter().map(|v| clip(v, start, start + fill_len(&fill))).collect();
-    let _ = write_score(&d.join("fill.mid"), &fill, &roles, 76);
-    let _ = write_score(&d.join("fill-bach.mid"), &bach, &bach_roles, 76);
+    let _ = write_score(&d.join("fill.mid"), &fill, &roles, 76, meter(p));
+    let _ = write_score(&d.join("fill-bach.mid"), &bach, &bach_roles, 76, meter(p));
     println!("\n  {id} at bar {}, two free voices, conf+melodic:", start / p.measure + 1);
     // The percentages above are worth nothing without one instance shown whole.
     for &v in &sp2.free {
