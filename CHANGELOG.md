@@ -368,7 +368,28 @@ piano, and one of the three voices identical between the two files.
 
 ---
 
-## Recurring pattern
+## §11 — the prior art that was found last, from outside the field
+
+Readme §11. **WaveFunctionCollapse** (Gumin, 2016) is texture synthesis for images and is the same object as this
+document in a different category — constraint propagation over a discrete lattice with local compatibility rules,
+arrived at independently and from the opposite direction. Its own README states §2.2's bounded-order automaton for
+pixels: *"the overlapping model relates to the simple tiled model the same way higher order Markov chains relate to
+order one Markov chains."*
+
+Two things came out of the comparison that were not visible from inside the project.
+
+- **C1 is a whitelist and Fux is a blacklist.** WFC admits only configurations it has seen; this project forbids
+  five things and admits the rest. That difference is the whole of §8.6's `10¹⁵` legal fills, and it inverts the
+  failure mode — WFC's practical problem is contradictions, and this project has never once failed for being
+  over-constrained. The unfitted route to a whitelist is already in the source: species counterpoint *is* an
+  enumeration of permitted figures, and only the prohibitions were transcribed.
+- **Weak C2 answers §8.6's question by not forming an objective.** WFC samples proportionally to pattern frequency
+  — typical rather than optimal — and §8.6's own control already showed typical beating extremal by a factor of
+  two. The unfitted version, uniform sampling from the legal set, is mostly built: the exact path counts are
+  already computed and already checked against enumeration.
+
+Recorded as a section rather than folded into §7 because none of the work is about music, and with its own DOI
+table on the same Crossref standard §7 uses.
 
 Three constraints in this project have turned out too permissive to bind — the two-rule hard tier, the
 non-chord-tone categories, and the functional progression rule — and all three were caught after the fact.
