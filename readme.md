@@ -1009,6 +1009,32 @@ for the one in the header. It is now 960, an exact `×4` of the internal lattice
 written from the score's own `*M` interpretation instead of left to the host to guess. None of this is a fact about
 music, and all of it is the difference between a file that can be compared and one that cannot.
 
+**The round trip was then checked against an independent implementation**, which is the only way any of the
+exactness claims above stop being self-reports. `fill.mid` was imported into FL Studio and its top voice read back
+out of the piano roll:
+
+| | |
+|---|---|
+| notes | 20 out of 20 identical in **pitch, onset and duration** |
+| timebase | 960 ticks per quarter in the file, 96 in the host — an exact `÷10` |
+| onsets | every one still exactly on the semiquaver grid: **no rounding anywhere** |
+| velocity | written 80, reported `0.625` = 80/128 exactly |
+| span | exactly 8.0 quarters |
+
+**And one thing does not survive, which is worth more than the five that do.** A MIDI note number is a semitone
+integer — precisely the representation [§2.1](#21-exact-arithmetic-and-therefore-no-certificates) exists to reject
+— so the diatonic spelling is destroyed at the file boundary. The passage is in C minor, and **13 of those same 20
+notes come back under the wrong name**: `D#5` for E♭, `A#4` for B♭, `G#4` for A♭. Nothing is broken and no host is
+at fault; there is no spelling in the file to read, so it guesses sharps, which in a three-flat key is the worst
+guess available.
+
+That fixes the status of these files. **MIDI is an output format here and never an interchange one**: nothing may
+be read back from one into the model, because a round trip would re-spell every accidental by the reader's
+convention rather than the key's, and the interval qualities [§2.2](#22-counterpoint-is-a-finite-automaton)'s
+automaton switches on would return decided by a coin flip. The corpus is read from `**kern`, which spells its
+pitches, for exactly this reason. The one consolation is that the *track names* keep what the note data loses —
+`1 top A♭4..F5` is correctly spelled above notes that are not.
+
 **Four things are verified rather than asserted**, by `cargo test --release`:
 
 - the generator and the checker assemble a slice's symbol through **one shared function**, and a test asserts the

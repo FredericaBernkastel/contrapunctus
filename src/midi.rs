@@ -20,6 +20,34 @@
 //! has them and seeing them wherever the host guesses — which matters when the
 //! whole point of the file is comparing two versions of the same bars.
 //!
+//! # Time is exact here and spelling is not
+//!
+//! Everything above is about *time*, where the conversion is exact and provably
+//! so. **Pitch is the opposite, and this is the one lossy step in the project.**
+//! A MIDI note number is a semitone integer, which is precisely the
+//! representation readme §2.1 exists to reject: `Pitch { step, alter }` carries
+//! a diatonic degree *and* an alteration, and `midi()` throws the first away.
+//! An augmented fourth and a diminished fifth leave here as the same byte.
+//!
+//! Measured rather than asserted. Read back out of FL Studio's piano roll, the
+//! top voice of `fill.mid` — BWV 847, C minor, three flats — returns every pitch
+//! at the right height and **13 of its 20 notes under the wrong name**: `D#5`
+//! for E flat, `A#4` for B flat, `G#4` for A flat. Nothing is broken; the host
+//! has no spelling to read and guesses sharps, which is the worst available
+//! guess in a flat key.
+//!
+//! Two consequences, and the second is the one that matters.
+//!
+//! - The **track name** written by `step5::write_score` keeps the spelling the
+//!   note data cannot: `1 top A-4..F5` is correct where the notes under it are
+//!   not. That is a consolation and not a fix.
+//! - **This is an output format and never an interchange one.** Nothing may be
+//!   read back from a file written here into the model. A round trip through
+//!   MIDI would re-spell every accidental by the reader's convention rather than
+//!   the key's, so the interval qualities §2.2's automaton switches on would come
+//!   back decided by a coin flip. The corpus is read from `**kern`, which spells
+//!   its pitches, for exactly this reason.
+//!
 //! Written by hand rather than taken from a crate, because the whole encoder is
 //! shorter than the dependency's documentation and this project has no
 //! dependencies to keep the build honest.
