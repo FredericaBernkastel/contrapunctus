@@ -33,6 +33,7 @@ are built and measured — [§8](#8-what-is-built-and-what-it-measures). Realisa
 - [5. What this will not do](#5-what-this-will-not-do)
 - [6. What ricercar still owns](#6-what-ricercar-still-owns)
 - [7. Prior art](#7-prior-art)
+  - [7.1 Parallels within the same algorithmic family](#71-parallels-within-the-same-algorithmic-family)
 - [8. What is built, and what it measures](#8-what-is-built-and-what-it-measures)
   - [8.1 The automaton](#81-the-automaton)
   - [8.2 The rulebook, stratified by two corpora](#82-the-rulebook-stratified-by-two-corpora)
@@ -47,11 +48,6 @@ are built and measured — [§8](#8-what-is-built-and-what-it-measures). Realisa
   - [10.3 Parameters](#103-parameters)
   - [10.4 How the samples were taken](#104-how-the-samples-were-taken)
   - [10.5 What is not reproducible from this repository](#105-what-is-not-reproducible-from-this-repository)
-- [11. Parallels within the same algorithmic family](#11-parallels-within-the-same-algorithmic-family)
-  - [11.1 C1 is a whitelist and Fux is a blacklist](#111-c1-is-a-whitelist-and-fux-is-a-blacklist)
-  - [11.2 Weak C2 answers §8.6's question, and answers it by not optimising](#112-weak-c2-answers-86s-question-and-answers-it-by-not-optimising)
-  - [11.3 Where the analogy breaks, and in which direction](#113-where-the-analogy-breaks-and-in-which-direction)
-  - [11.4 What it changes](#114-what-it-changes)
 ---
 
 ## Abstract
@@ -693,9 +689,12 @@ the two were not distinguished when the domain was chosen.
 ## 7. Prior art
 
 None of this is novel, and that is a feature — the components are known-good and the risk sits in the composition
-rather than in the parts. Rows marked ✔ are in [`literature/`](literature/) and were read in full; the rest are cited from those five.
-**Every DOI here was resolved against Crossref**, and the two secondary citations that could not be (Schottstaedt's
-technical report and Vuza's four-part article) are marked as having none rather than given a plausible-looking one.
+rather than in the parts. Rows marked ✔ are in [`literature/`](literature/) and were read in full; the music rows
+below them are cited from those five, and the last seven — which are not about music at all — from the
+WaveFunctionCollapse README and its own bibliography, for the reasons
+[§7.1](#71-parallels-within-the-same-algorithmic-family) gives. **Every DOI here was resolved against Crossref**,
+and the three citations that have none (Schottstaedt's technical report, Vuza's four-part article, and Gumin's
+repository) say so rather than carry a plausible-looking one.
 
 | source | identifier | what it gives |
 |---|---|---|
@@ -712,14 +711,16 @@ technical report and Vuza's four-part article) are marked as having none rather 
 | Laurson, PWConstraints / Score-PMC (1996); Anders, Strasheela (2007) | — | the two ends of the design space: fixed rhythm with a fast static ordering, versus arbitrary score topology |
 | Vuza, "Supplementary Sets and Regular Complementary Unending Canons", *Perspectives of New Music*, 1991–93; Andreatta, Amiot, Agon | — | tiling rhythmic canons — [§4](#4-space-filling-in-the-right-category) |
 | Fux, *Gradus ad Parnassum* (1725) | — | the rulebook itself, and — per [§8.2](#82-the-rulebook-stratified-by-two-corpora) — a book about a repertoire this project mostly did not test it on |
+| Gumin, *WaveFunctionCollapse*, 2016 | no DOI — [github.com/mxgmn/WaveFunctionCollapse](https://github.com/mxgmn/WaveFunctionCollapse) | the whitelist/blacklist contrast of [§7.1](#c1-is-a-whitelist-and-fux-is-a-blacklist), and Weak C2 |
+| Karth & Smith, "WaveFunctionCollapse is Constraint Solving in the Wild", *FDG 2017* | [10.1145/3102071.3110566](https://doi.org/10.1145/3102071.3110566) | the CSP reading made explicit, with backtracking and global constraints |
+| Karth & Smith, "WaveFunctionCollapse: Content Generation via Constraint Solving and Machine Learning", *IEEE Trans. Games* **14**(3):364–376, 2022 | [10.1109/TG.2021.3076368](https://doi.org/10.1109/TG.2021.3076368) | the same argument at journal length |
+| Merrell, "Example-Based Model Synthesis", *I3D 2007*, 105–112 | [10.1145/1230100.1230119](https://doi.org/10.1145/1230100.1230119) | the predecessor WFC generalises; adjacency by AC-3 |
+| Mackworth, "Consistency in Networks of Relations", *Artificial Intelligence* **8**(1):99–118, 1977 | [10.1016/0004-3702(77)90007-8](https://doi.org/10.1016/0004-3702(77)90007-8) | arc consistency |
+| Mohr & Henderson, "Arc and Path Consistency Revisited", *Artificial Intelligence* **28**(2):225–233, 1986 | [10.1016/0004-3702(86)90083-4](https://doi.org/10.1016/0004-3702(86)90083-4) | AC-4, the propagator WFC uses |
+| Efros & Leung, "Texture Synthesis by Non-parametric Sampling", *ICCV 1999*, 1033–1038 | [10.1109/ICCV.1999.790383](https://doi.org/10.1109/ICCV.1999.790383) | the texture-synthesis line WFC descends from |
 
 Deliberately excluded: Cope's EMI and everything downstream of it. Recombinant methods are fitted to a corpus by
 construction, which is the constraint this document was written under.
-
-**A second table sits in [§11](#11-parallels-within-the-same-algorithmic-family)** rather than here, because the
-work in it is not about music: WaveFunctionCollapse and the constraint-propagation and texture-synthesis line
-behind it. It is the closest prior art this document has to its own central difficulty and it was found last, from
-outside the field.
 
 **Two things the survey says that bear directly on [§2.3](#23-harmony-is-a-second-automaton) and [§2.4](#24-form-is-a-grammar).** Its conclusion names the gaps: *"Other
 neglected fields include harmonic counterpoint, and the modeling of melody and musical form."* And, more precisely,
@@ -738,6 +739,107 @@ open rather than as more of the same.
 problem of overfitting, a concern for data sets as small as these are prone."* Thirty-six fugues is not a corpus
 you can fit anything to. The no-fitting constraint this document was written under has an empirical justification
 as well as an aesthetic one.
+
+### 7.1 Parallels within the same algorithmic family
+
+**[WaveFunctionCollapse](https://github.com/mxgmn/WaveFunctionCollapse)** (Gumin, 2016) synthesises images: given a
+small bitmap it produces larger ones locally indistinguishable from it. It is the same object as this document in a
+different category, it was arrived at independently and from the opposite direction, and **one difference between
+the two explains [§8.6](#86-realisation-and-the-first-notes)'s central number in a sentence**. Its own README says
+as much in the vocabulary used here — *"WFC translates a texture synthesis problem into a constraint satisfaction
+problem"*, and *"the overlapping model relates to the simple tiled model the same way higher order Markov chains
+relate to order one Markov chains"*, which is [§2.2](#22-counterpoint-is-a-finite-automaton)'s bounded-order
+automaton stated for pixels. Gumin also notes that *"one of the dimensions can be time"*, and the ports list
+includes a piano-roll application.
+
+| WaveFunctionCollapse | this document |
+|---|---|
+| cell of the output grid | slice on the tick lattice ([§2.6](#26-what-is-not-a-variable-rhythm)) |
+| `N × N` pattern | order-*N* window — the automaton state, order ≤ 3 ([§2.2](#22-counterpoint-is-a-finite-automaton)) |
+| adjacency data | the compatibility table ([§3](#3-stretto-capacity-and-the-subject), [`stretto.rs`](src/stretto.rs)) |
+| the *wave*: a superposition per cell | the live state set of a DP layer ([§8.6](#86-realisation-and-the-first-notes)) |
+| propagation, by AC-4 | forward propagation along the layered DAG |
+| *observe*: collapse the minimal-entropy cell | **nothing** — the DP is exact and left to right, so it needs no variable ordering |
+| contradiction, then restart | the `dead` column of [§8.6](#86-realisation-and-the-first-notes) |
+| **(C1)** *"the output should contain only those `N×N` patterns of pixels that are present in the input"* | the hard tier: only the transitions the automaton permits |
+| **(Weak C2)**, the distribution condition | **nothing whatever** — and that is the finding |
+
+#### C1 is a whitelist and Fux is a blacklist
+
+WFC's constraint says *only these configurations may occur*. This project's says *these five things may not*. A
+whitelist drawn from a real artefact is enormously tighter than a handful of prohibitions, and that difference is
+the whole of `10¹⁵` legal fills of three bars.
+
+It also inverts the failure mode, which is the clue that the difference is structural rather than one of degree.
+Gumin's practical problem is running out of options: *"it may happen that during propagation all the coefficients
+for a certain pixel become zero"*, and the algorithm restarts. The search here has **never once failed for being
+over-constrained** — across every row of [§8.6](#86-realisation-and-the-first-notes) the `dead` column tops out at
+eight of 117, while `refused`, which counts searches abandoned for having too many states, reaches 81.
+
+**The unfitted route to a whitelist is already in the source material.** Species counterpoint *is* an enumeration:
+Fux sets out the permitted note-against-note configurations species by species, and this project transcribed the
+prohibitions while leaving the enumeration on the table. Transcribing the species as permitted figures is exactly
+as unfitted as transcribing the prohibitions — it is the same book — and it is the structural change most likely to
+move `10¹⁵` toward a number at which choosing means anything.
+
+#### Weak C2 answers §8.6's question, and answers it by not optimising
+
+[§8.6](#86-realisation-and-the-first-notes) measured that minimising the soft criteria scores 7.8%, maximising them
+4.9%, and **a random legal choice 16.2%** — that the extremum of a nearly orthogonal objective is worse than the
+middle of the legal set. It reported that as an open problem.
+
+WFC does not have the problem, because it never forms an objective. Its answer to *which of the many legal outputs*
+is **(Weak C2)**: *"probability to meet a particular pattern in the output should be close to the density of such
+patterns in the input"*, implemented as *"collapse this element into a definite state according to its coefficients
+and the distribution of `N×N` patterns in the input."* Sample proportionally; aim to be **typical** rather than
+optimal. The measurement above already says typical beats extremal by a factor of two here, and the conclusion had
+simply not been drawn.
+
+Two versions of that are available and only one is permitted by this project's founding constraint.
+
+- **Uniform sampling from the legal set** asserts nothing and needs no data. It is also nearly built: the search
+  computes exact path counts through the DAG, checked against brute-force enumeration
+  ([§8.6](#86-realisation-and-the-first-notes)), so drawing a uniformly random legal fill is a backward walk
+  weighting each predecessor by its count. That turns the 16.2% column from a baseline into a generator.
+- **Frequency weighting proper** needs frequencies. Taking them from a corpus is what [§0](#0-where-this-comes-from)
+  rules out; taking them from a treatise is not, since Fux states preferences — imperfect consonances over perfect,
+  and so on — and transcribing a stated preference is not fitting.
+
+WFC's *overlapping* model learns both C1 and Weak C2 from a bitmap and is therefore fitted by construction. Its
+**simple tiled** model is not: *"it's convenient to initialize the simple tiled model with a list of tiles and their
+adjacency data"*, authored by hand. Structurally this project is already the simple tiled model, with the adjacency
+table transcribed from treatises instead of drawn by an artist.
+
+#### Where the analogy breaks, and in which direction
+
+**Time's arrow is worth a great deal.** Two-dimensional texture has no canonical order, which is why WFC needs a
+variable-ordering heuristic — Gumin's minimal-entropy rule, minimum-remaining-values by another name — and
+bidirectional arc consistency. Music is ordered, so an exact left-to-right dynamic programme is available, and it
+buys something WFC structurally cannot have: **WFC cannot say how many outputs satisfy its constraints, and the DP
+here can, exactly.** That count is the whole of [§8.6](#86-realisation-and-the-first-notes).
+
+**The backtracking contrast supports [§2.7](#27-where-a-solver-takes-over-from-the-dp) rather than undermining it.**
+WFC as published has no backtracking at all — contradiction, restart — and Gumin reports that working because *"in
+practice, however, the algorithm runs into contradictions surprisingly rarely."* That holds when the constraint
+graph is two-dimensional and local. [§8.6](#86-realisation-and-the-first-notes) measured this project's state
+explosion as driven by **obligations compounding across voice pairs**, which is precisely the regime in which
+restart-on-failure thrashes; and every serious derivative — Karth & Smith, and the community ports — has added
+backtracking. The complexity claim is the one [§2.7](#27-where-a-solver-takes-over-from-the-dp) makes: deciding
+whether a bitmap admits nontrivial outputs satisfying C1 *"is NP-hard, so it's impossible to create a fast solution
+that always finishes."*
+
+#### What it changes
+
+Two entries for [§9](#9-roadmap)'s step 6, neither of which was visible from inside this project.
+
+1. **Transcribe the species as a whitelist**, not only the prohibitions as a blacklist. Same book, same no-fitting
+   position, and the only proposal so far that attacks `10¹⁵` at its root rather than choosing better within it.
+2. **Sample uniformly from the legal set** instead of optimising over it — the one thing
+   [§8.6](#86-realisation-and-the-first-notes)'s own control already shows to be better, and mostly built.
+
+Neither is an argument for adopting WFC. It is an argument that a difficulty which looked specific to counterpoint
+— a complete search over a permissive rulebook returning far too much — has a well-studied shape, a name, and at
+least one answer that costs nothing this document is unwilling to spend.
 
 ---
 
@@ -1103,7 +1205,7 @@ order.
    rulebook does. The table there is unambiguous about which direction *not* to go: more of the same kind of
    constraint buys tractability and nothing else, and optimising the soft criteria is worse than not optimising.
    Five things bear on it instead, the first two cheapest and both owed to
-   [§11](#11-parallels-within-the-same-algorithmic-family).
+   [§7.1](#71-parallels-within-the-same-algorithmic-family).
 
    - **Sample the legal set instead of optimising over it.** [§8.6](#86-realisation-and-the-first-notes)'s own
      reversed-sign control already says a random legal choice beats both ends of the objective, by a factor of
@@ -1115,7 +1217,7 @@ order.
      a generator. Frequency-weighted sampling would be better still and needs frequencies; a treatise may state
      them, a corpus may not supply them.
    - **Enumerate the species as a whitelist**, rather than only the prohibitions as a blacklist. This is
-     [§11.1](#111-c1-is-a-whitelist-and-fux-is-a-blacklist), and it is the only proposal here that attacks `10¹⁵`
+     [§7.1](#c1-is-a-whitelist-and-fux-is-a-blacklist), and it is the only proposal here that attacks `10¹⁵`
      at its root instead of choosing better within it: *only these configurations may occur* is enormously tighter
      than *these five may not*, which is why WFC's practical failure is running out of options and this project's
      has never once been. Fux sets the permitted note-against-note figures out species by species; transcribing
@@ -1258,118 +1360,3 @@ benchmarks.
   [§7](#7-prior-art) gives DOIs so each can be obtained independently.
 - **The Shostakovich annotations**, which have no scores here.
 - **The functional-harmony layer**, which compiles but is not exercised by any reported number.
-
----
-
-## 11. Parallels within the same algorithmic family
-
-**[WaveFunctionCollapse](https://github.com/mxgmn/WaveFunctionCollapse)** (Gumin, 2016) synthesises images: given a
-small bitmap it produces larger ones locally indistinguishable from it. It is the same object as this document in a
-different category, it was arrived at independently and from the opposite direction, and **one difference between
-the two explains [§8.6](#86-realisation-and-the-first-notes)'s central number in a sentence**. Its own README says
-as much in the vocabulary used here — *"WFC translates a texture synthesis problem into a constraint satisfaction
-problem"*, and *"the overlapping model relates to the simple tiled model the same way higher order Markov chains
-relate to order one Markov chains"*, which is [§2.2](#22-counterpoint-is-a-finite-automaton)'s bounded-order
-automaton stated for pixels. Gumin also notes that *"one of the dimensions can be time"*, and the ports list
-includes a piano-roll application.
-
-| WaveFunctionCollapse | this document |
-|---|---|
-| cell of the output grid | slice on the tick lattice ([§2.6](#26-what-is-not-a-variable-rhythm)) |
-| `N × N` pattern | order-*N* window — the automaton state, order ≤ 3 ([§2.2](#22-counterpoint-is-a-finite-automaton)) |
-| adjacency data | the compatibility table ([§3](#3-stretto-capacity-and-the-subject), [`stretto.rs`](src/stretto.rs)) |
-| the *wave*: a superposition per cell | the live state set of a DP layer ([§8.6](#86-realisation-and-the-first-notes)) |
-| propagation, by AC-4 | forward propagation along the layered DAG |
-| *observe*: collapse the minimal-entropy cell | **nothing** — the DP is exact and left to right, so it needs no variable ordering |
-| contradiction, then restart | the `dead` column of [§8.6](#86-realisation-and-the-first-notes) |
-| **(C1)** *"the output should contain only those `N×N` patterns of pixels that are present in the input"* | the hard tier: only the transitions the automaton permits |
-| **(Weak C2)**, the distribution condition | **nothing whatever** — and that is the finding |
-
-### 11.1 C1 is a whitelist and Fux is a blacklist
-
-WFC's constraint says *only these configurations may occur*. This project's says *these five things may not*. A
-whitelist drawn from a real artefact is enormously tighter than a handful of prohibitions, and that difference is
-the whole of `10¹⁵` legal fills of three bars.
-
-It also inverts the failure mode, which is the clue that the difference is structural rather than one of degree.
-Gumin's practical problem is running out of options: *"it may happen that during propagation all the coefficients
-for a certain pixel become zero"*, and the algorithm restarts. The search here has **never once failed for being
-over-constrained** — across every row of [§8.6](#86-realisation-and-the-first-notes) the `dead` column tops out at
-eight of 117, while `refused`, which counts searches abandoned for having too many states, reaches 81.
-
-**The unfitted route to a whitelist is already in the source material.** Species counterpoint *is* an enumeration:
-Fux sets out the permitted note-against-note configurations species by species, and this project transcribed the
-prohibitions while leaving the enumeration on the table. Transcribing the species as permitted figures is exactly
-as unfitted as transcribing the prohibitions — it is the same book — and it is the structural change most likely to
-move `10¹⁵` toward a number at which choosing means anything.
-
-### 11.2 Weak C2 answers §8.6's question, and answers it by not optimising
-
-[§8.6](#86-realisation-and-the-first-notes) measured that minimising the soft criteria scores 7.8%, maximising them
-4.9%, and **a random legal choice 16.2%** — that the extremum of a nearly orthogonal objective is worse than the
-middle of the legal set. It reported that as an open problem.
-
-WFC does not have the problem, because it never forms an objective. Its answer to *which of the many legal outputs*
-is **(Weak C2)**: *"probability to meet a particular pattern in the output should be close to the density of such
-patterns in the input"*, implemented as *"collapse this element into a definite state according to its coefficients
-and the distribution of `N×N` patterns in the input."* Sample proportionally; aim to be **typical** rather than
-optimal. The measurement above already says typical beats extremal by a factor of two here, and the conclusion had
-simply not been drawn.
-
-Two versions of that are available and only one is permitted by this project's founding constraint.
-
-- **Uniform sampling from the legal set** asserts nothing and needs no data. It is also nearly built: the search
-  computes exact path counts through the DAG, checked against brute-force enumeration
-  ([§8.6](#86-realisation-and-the-first-notes)), so drawing a uniformly random legal fill is a backward walk
-  weighting each predecessor by its count. That turns the 16.2% column from a baseline into a generator.
-- **Frequency weighting proper** needs frequencies. Taking them from a corpus is what [§0](#0-where-this-comes-from)
-  rules out; taking them from a treatise is not, since Fux states preferences — imperfect consonances over perfect,
-  and so on — and transcribing a stated preference is not fitting.
-
-WFC's *overlapping* model learns both C1 and Weak C2 from a bitmap and is therefore fitted by construction. Its
-**simple tiled** model is not: *"it's convenient to initialize the simple tiled model with a list of tiles and their
-adjacency data"*, authored by hand. Structurally this project is already the simple tiled model, with the adjacency
-table transcribed from treatises instead of drawn by an artist.
-
-### 11.3 Where the analogy breaks, and in which direction
-
-**Time's arrow is worth a great deal.** Two-dimensional texture has no canonical order, which is why WFC needs a
-variable-ordering heuristic — Gumin's minimal-entropy rule, minimum-remaining-values by another name — and
-bidirectional arc consistency. Music is ordered, so an exact left-to-right dynamic programme is available, and it
-buys something WFC structurally cannot have: **WFC cannot say how many outputs satisfy its constraints, and the DP
-here can, exactly.** That count is the whole of [§8.6](#86-realisation-and-the-first-notes).
-
-**The backtracking contrast supports [§2.7](#27-where-a-solver-takes-over-from-the-dp) rather than undermining it.**
-WFC as published has no backtracking at all — contradiction, restart — and Gumin reports that working because *"in
-practice, however, the algorithm runs into contradictions surprisingly rarely."* That holds when the constraint
-graph is two-dimensional and local. [§8.6](#86-realisation-and-the-first-notes) measured this project's state
-explosion as driven by **obligations compounding across voice pairs**, which is precisely the regime in which
-restart-on-failure thrashes; and every serious derivative — Karth & Smith, and the community ports — has added
-backtracking. The complexity claim is the one [§2.7](#27-where-a-solver-takes-over-from-the-dp) makes: deciding
-whether a bitmap admits nontrivial outputs satisfying C1 *"is NP-hard, so it's impossible to create a fast solution
-that always finishes."*
-
-| source | identifier | what it gives |
-|---|---|---|
-| Gumin, *WaveFunctionCollapse*, 2016 | no DOI — [github.com/mxgmn/WaveFunctionCollapse](https://github.com/mxgmn/WaveFunctionCollapse) | the whitelist/blacklist contrast of [§11.1](#111-c1-is-a-whitelist-and-fux-is-a-blacklist), and Weak C2 |
-| Karth & Smith, "WaveFunctionCollapse is Constraint Solving in the Wild", *FDG 2017* | [10.1145/3102071.3110566](https://doi.org/10.1145/3102071.3110566) | the CSP reading made explicit, with backtracking and global constraints |
-| Karth & Smith, "WaveFunctionCollapse: Content Generation via Constraint Solving and Machine Learning", *IEEE Trans. Games* **14**(3):364–376, 2022 | [10.1109/TG.2021.3076368](https://doi.org/10.1109/TG.2021.3076368) | the same argument at journal length |
-| Merrell, "Example-Based Model Synthesis", *I3D 2007*, 105–112 | [10.1145/1230100.1230119](https://doi.org/10.1145/1230100.1230119) | the predecessor WFC generalises; adjacency by AC-3 |
-| Mackworth, "Consistency in Networks of Relations", *Artificial Intelligence* **8**(1):99–118, 1977 | [10.1016/0004-3702(77)90007-8](https://doi.org/10.1016/0004-3702(77)90007-8) | arc consistency |
-| Mohr & Henderson, "Arc and Path Consistency Revisited", *Artificial Intelligence* **28**(2):225–233, 1986 | [10.1016/0004-3702(86)90083-4](https://doi.org/10.1016/0004-3702(86)90083-4) | AC-4, the propagator WFC uses |
-| Efros & Leung, "Texture Synthesis by Non-parametric Sampling", *ICCV 1999*, 1033–1038 | [10.1109/ICCV.1999.790383](https://doi.org/10.1109/ICCV.1999.790383) | the texture-synthesis line WFC descends from |
-
-Every DOI above was resolved against Crossref, on the standard [§7](#7-prior-art) sets.
-
-### 11.4 What it changes
-
-Two entries for [§9](#9-roadmap)'s step 6, neither of which was visible from inside this project.
-
-1. **Transcribe the species as a whitelist**, not only the prohibitions as a blacklist. Same book, same no-fitting
-   position, and the only proposal so far that attacks `10¹⁵` at its root rather than choosing better within it.
-2. **Sample uniformly from the legal set** instead of optimising over it — the one thing
-   [§8.6](#86-realisation-and-the-first-notes)'s own control already shows to be better, and mostly built.
-
-Neither is an argument for adopting WFC. It is an argument that a difficulty which looked specific to counterpoint
-— a complete search over a permissive rulebook returning far too much — has a well-studied shape, a name, and at
-least one answer that costs nothing this document is unwilling to spend.

@@ -368,9 +368,9 @@ piano, and one of the three voices identical between the two files.
 
 ---
 
-## §11 — the prior art that was found last, from outside the field
+## §7.1 — the prior art that was found last, from outside the field
 
-Readme §11. **WaveFunctionCollapse** (Gumin, 2016) is texture synthesis for images and is the same object as this
+Readme §7.1. **WaveFunctionCollapse** (Gumin, 2016) is texture synthesis for images and is the same object as this
 document in a different category — constraint propagation over a discrete lattice with local compatibility rules,
 arrived at independently and from the opposite direction. Its own README states §2.2's bounded-order automaton for
 pixels: *"the overlapping model relates to the simple tiled model the same way higher order Markov chains relate to
@@ -388,8 +388,9 @@ Two things came out of the comparison that were not visible from inside the proj
   two. The unfitted version, uniform sampling from the legal set, is mostly built: the exact path counts are
   already computed and already checked against enumeration.
 
-Recorded as a section rather than folded into §7 because none of the work is about music, and with its own DOI
-table on the same Crossref standard §7 uses.
+Written first as a standalone §11 and then moved inside §7, where it belongs: its seven sources merged into that
+section's table rather than standing in a second one making the same Crossref claim, which turned up a stale count
+— three citations now carry no DOI, not two.
 
 Three constraints in this project have turned out too permissive to bind — the two-rule hard tier, the
 non-chord-tone categories, and the functional progression rule — and all three were caught after the fact.
