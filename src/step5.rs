@@ -30,7 +30,7 @@
 
 use crate::{
   automaton::{self, Move, Rule, CONFIRMED, HARD, SOFT},
-  corpus, harmony, kern, midi,
+  corpus, harmony, kern,
   kern::{Note, Piece, Voice, TICKS_PER_QUARTER},
   pitch::{Interval, Pitch},
   realise::{self, Problem},
@@ -77,6 +77,52 @@ fn out_dir() -> std::path::PathBuf {
   d
 }
 
+/// Write a texture as MIDI **in score order**, top voice first, with each track
+/// named by where it sits and what it is.
+///
+/// Both halves of this matter, and both were wrong first time. The tracks were
+/// emitted in `**kern` spine order — lowest voice first — and named `voice 0`,
+/// `voice 1`, `voice 2` after that index. Two consequences, both reported from a
+/// DAW rather than found here. The top voice of three arrives as *voice 2*,
+/// which reads as reversed to anyone expecting the ground truth's own top-down
+/// `S A T B C`; and `stretto.mid` numbered its entries downward from the top
+/// while `stretto-bach.mid` numbered its voices upward from the bottom, so
+/// `entry 1` and `voice 4` were the same line and nothing said so.
+///
+/// The order is taken from the **mean sounding pitch**, not from the spine
+/// index, so the label is a description of what will be heard rather than a
+/// restatement of an assumption about the file. The range in each name makes the
+/// pairing checkable by eye between two files without playing either.
+fn write_score(path: &std::path::Path, voices: &[Voice], roles: &[String], qpm: u32) -> std::io::Result<()> {
+  let mean = |v: &Voice| -> f64 {
+    if v.notes.is_empty() {
+      return f64::MIN;
+    }
+    v.notes.iter().map(|n| n.pitch.chroma() as f64).sum::<f64>() / v.notes.len() as f64
+  };
+  let mut order: Vec<usize> = (0..voices.len()).collect();
+  order.sort_by(|&a, &b| mean(&voices[b]).partial_cmp(&mean(&voices[a])).unwrap());
+
+  let n = order.len();
+  let (mut out, mut names) = (Vec::with_capacity(n), Vec::with_capacity(n));
+  for (pos, &v) in order.iter().enumerate() {
+    let where_ = match pos {
+      0 => "top",
+      p if p + 1 == n => "bass",
+      _ => "inner",
+    };
+    let lo = voices[v].notes.iter().map(|x| x.pitch).min_by_key(|p| p.chroma());
+    let hi = voices[v].notes.iter().map(|x| x.pitch).max_by_key(|p| p.chroma());
+    let span = match (lo, hi) {
+      (Some(a), Some(b)) => format!("{}..{}", a.name(), b.name()),
+      _ => "silent".into(),
+    };
+    names.push(format!("{} {where_} {span} {}", pos + 1, roles.get(v).map(|s| s.as_str()).unwrap_or("")));
+    out.push(voices[v].clone());
+  }
+  crate::midi::write(path, &out, &names, qpm)
+}
+
 // --------------------------------------------------------------- the demo ---
 
 /// BWV 867's five entries, placed as §8.3's clique, written as sound.
@@ -98,7 +144,7 @@ pub fn render_stretto() {
     let Some(n) = p.voices[v].notes.iter().find(|n| n.onset >= t) else { continue };
     let (ds, dc) = stretto::interval_from(&sub, n.pitch);
     voices.push(sub.place((sq - entries_q[0]) * q, ds, dc));
-    names.push(format!("entry {} at +{}q", i + 1, sq - entries_q[0]));
+    names.push(format!("- entry {} of 5, enters +{}q", i + 1, sq - entries_q[0]));
   }
 
   let hard = pairs_violating(&voices, p.measure, HARD);
@@ -107,15 +153,24 @@ pub fn render_stretto() {
   println!("  violations: {hard} on the full tier, {conf} on the confirmed tier");
 
   let d = out_dir();
-  match midi::write(&d.join("stretto.mid"), &voices, &names, 66) {
+  match write_score(&d.join("stretto.mid"), &voices, &names, 66) {
     Ok(()) => println!("  wrote {}", d.join("stretto.mid").display()),
     Err(e) => println!("  {e}"),
   }
-  // Bach's own bars, for the comparison to be listenable rather than asserted
+  // Bach's own bars, for the comparison to be listenable rather than asserted.
+  // The entry each voice carries is named here so that track `k` of one file and
+  // track `k` of the other are the same line — which is the whole point of
+  // writing both.
   let (t0, t1) = (entries_q[0] * q, (entries_q[4] + 12) * q);
   let bach: Vec<Voice> = p.voices.iter().map(|v| clip(v, t0, t1)).collect();
-  let bn: Vec<String> = (0..bach.len()).map(|i| format!("voice {i}")).collect();
-  if midi::write(&d.join("stretto-bach.mid"), &bach, &bn, 66).is_ok() {
+  let bn: Vec<String> = (0..bach.len())
+    .map(|v| {
+      // voice index runs low to high, entries are numbered from the top
+      let e = bach.len() - v;
+      format!("- carries entry {e} of 5, at +{}q, among everything else", (entries_q[e - 1] - entries_q[0]))
+    })
+    .collect();
+  if write_score(&d.join("stretto-bach.mid"), &bach, &bn, 66).is_ok() {
     println!("  wrote {}  (the same bars as Bach wrote them)", d.join("stretto-bach.mid").display());
   }
 }
@@ -529,13 +584,26 @@ pub fn reconstruct() {
   if let Some((fill, pi, id, start)) = best {
     let d = out_dir();
     let p = &pieces[pi];
-    let names: Vec<String> = (0..fill.len()).map(|i| format!("voice {i}")).collect();
+    // Which line is Bach's and which the program's is the one thing a listener
+    // must not have to guess, so the track says it. The same roles are used for
+    // both files: in `fill-bach.mid` every voice is Bach's, and saying which
+    // *would have been* filled is what makes the pair comparable track by track.
+    let sp2 = sp.iter().find(|s| s.piece == pi && s.start == start).unwrap();
+    let roles: Vec<String> = (0..fill.len())
+      .map(|v| {
+        if sp2.freeflag[v] { "- FILLED by the search".into() } else { "- Bach's subject entry, held fixed".into() }
+      })
+      .collect();
+    let bach_roles: Vec<String> = (0..fill.len())
+      .map(|v| {
+        if sp2.freeflag[v] { "- Bach (this is the line the search replaces)".into() } else { "- Bach's subject entry".into() }
+      })
+      .collect();
     let bach: Vec<Voice> = p.voices.iter().map(|v| clip(v, start, start + fill_len(&fill))).collect();
-    let _ = midi::write(&d.join("fill.mid"), &fill, &names, 76);
-    let _ = midi::write(&d.join("fill-bach.mid"), &bach, &names, 76);
+    let _ = write_score(&d.join("fill.mid"), &fill, &roles, 76);
+    let _ = write_score(&d.join("fill-bach.mid"), &bach, &bach_roles, 76);
     println!("\n  {id} at bar {}, two free voices, conf+melodic:", start / p.measure + 1);
     // The percentages above are worth nothing without one instance shown whole.
-    let sp2 = sp.iter().find(|s| s.piece == pi && s.start == start).unwrap();
     for &v in &sp2.free {
       let got: Vec<String> =
         bach[v].notes.iter().filter(|n| n.attack).take(16).map(|n| {

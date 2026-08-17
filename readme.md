@@ -885,6 +885,12 @@ verdict the clique test gives. No search was involved: with five entries in five
 all, which is §2.5's cost profile arriving exactly as predicted. `out/stretto-bach.mid` is the same bars as Bach
 wrote them, so the idealisation and the original can be compared by ear rather than by table.
 
+Each pair of files is written **in score order, top voice first**, and every track is named with its register, its
+compass and its role — `1 top F4..G♭5 — entry 1 of 5, enters +0q`. Track *n* of one file is therefore the same line
+as track *n* of the other, which is the only property that makes a two-file comparison worth writing. It is also
+the property the first version lacked: tracks came out in `**kern` spine order, lowest first, named by that index,
+so the top voice of three arrived as `voice 2` and `entry 1` of the idealisation paired with `voice 4` of Bach.
+
 **Four things are verified rather than asserted**, by `cargo test --release`:
 
 - the generator and the checker assemble a slice's symbol through **one shared function**, and a test asserts the
