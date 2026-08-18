@@ -436,6 +436,8 @@ further tests assert that every sampled fill passes the checker and that more th
 
 ## Step 6b — a treatise weighting, measured against two corpora and rolled back
 
+[`2d8cd4a`](../../commit/2d8cd4a)
+
 Readme §8.6. §7.1 asked whether WaveFunctionCollapse's **Weak C2** could be had without a corpus. Fux supplies the
 directions — the six soft criteria are the things he says to avoid — and no magnitudes, so the unfitted form is a
 single swept inverse temperature `β`, drawing each fill in proportion to `exp(−β × soft cost)`. `β = 0` is the
