@@ -36,6 +36,7 @@ use crate::{
   realise::{self, Problem},
   answer,
   cli::{self, CONF_MEL},
+  episode,
   plan, refdata, shape, species, stretto,
 };
 
@@ -2466,5 +2467,128 @@ pub fn fourth_test() {
       100.0 * drop / blunt.max(f64::EPSILON)
     );
     println!("               them and the rest are against the bass, where the rule is right to fire.");
+  }
+}
+
+// ------------------------------------------- step 7: are episodes sequences? ---
+
+/// **§2.4's one specific production, checked before anything is built on it.**
+///
+/// The grammar reads `Episode → Sequence(motive, transposition pattern, n)`.
+/// `Exposition` is now backed by §8.11 and `Middle+` says almost nothing, but
+/// this is a claim about the music, and step 7 would inherit it unexamined.
+/// §8.6 and §8.10 are both cases where a claim went unexamined for several
+/// steps; checking this one costs an afternoon.
+///
+/// **Episodes are where no subject is sounding** — the gaps between the
+/// annotated entries, which is the definition the ground truth supports without
+/// any judgement of mine. The control is the entry spans themselves, run through
+/// the identical detector: if episodes are not more sequential than the passages
+/// that are *not* episodes, the production is decoration.
+pub fn episode_test() {
+  println!("\n== step 7: are episodes sequences? ==");
+  println!("  §2.4 says `Episode -> Sequence(motive, transposition pattern, n)`. That is the one");
+  println!("  production in the grammar that claims something about the music rather than about");
+  println!("  structure, and step 7 would build on it. So it is checked first.\n");
+  println!("  An episode is a span where no annotated entry sounds. A sequence is the whole texture");
+  println!("  restated after a fixed period, every voice moved the same non-zero number of diatonic");
+  println!("  steps, rhythm exact. That is strict, so the figures are a floor — which is why the");
+  println!("  entry spans are run through the same detector as the control.\n");
+
+  let dir = kern_dir();
+  let mut pieces = std::collections::BTreeMap::new();
+  for n in 1..=24 {
+    if let Ok(p) = kern::read(&dir.join(format!("wtc1f{n:02}.krn"))) {
+      pieces.insert(format!("wtc-i-{n:02}"), p);
+    }
+  }
+  let specs = refdata::read(
+    std::path::Path::new("corpus/algomus-data/fugues/fugues.ref"),
+    &|id| pieces.get(id).map(|p| p.measure),
+  )
+  .unwrap_or_default();
+  if pieces.is_empty() || specs.is_empty() {
+    return println!("  (corpus or ground truth missing)");
+  }
+
+  let (mut ep_cov, mut en_cov): (Vec<f64>, Vec<f64>) = (vec![], vec![]);
+  let (mut ep_ticks, mut piece_ticks, mut ep_lens) = (0i64, 0i64, Vec::<f64>::new());
+  let mut per_piece: Vec<(String, usize, f64)> = vec![];
+
+  for spec in &specs {
+    let Some(p) = pieces.get(&spec.id) else { continue };
+    if spec.len == 0 || p.measure == 0 {
+      continue;
+    }
+    let end = p.voices.iter().flat_map(|v| v.notes.iter().map(|n| n.onset + n.dur)).max().unwrap_or(0);
+    piece_ticks += end;
+
+    // the entry-occupied intervals, merged
+    let mut busy: Vec<(i64, i64)> =
+      spec.entries.iter().filter(|e| e.1 >= 0).map(|e| (e.1, e.1 + spec.len)).collect();
+    busy.sort();
+    let mut merged: Vec<(i64, i64)> = vec![];
+    for (a, b) in busy {
+      match merged.last_mut() {
+        Some(last) if a <= last.1 => last.1 = last.1.max(b),
+        _ => merged.push((a, b)),
+      }
+      en_cov.push(episode::sequenced(p, a, b, p.beat));
+    }
+
+    // and the gaps between them: an episode is a bar or more with no subject
+    let mut here = 0usize;
+    let mut t = 0i64;
+    for &(a, b) in &merged {
+      if a - t >= p.measure {
+        ep_cov.push(episode::sequenced(p, t, a, p.beat));
+        ep_ticks += a - t;
+        ep_lens.push((a - t) as f64 / p.measure as f64);
+        here += 1;
+      }
+      t = t.max(b);
+    }
+    if end - t >= p.measure {
+      ep_cov.push(episode::sequenced(p, t, end, p.beat));
+      ep_ticks += end - t;
+      ep_lens.push((end - t) as f64 / p.measure as f64);
+      here += 1;
+    }
+    per_piece.push((spec.id.clone(), here, 100.0 * (end - t) as f64 / end.max(1) as f64));
+  }
+
+  if ep_cov.is_empty() {
+    return println!("  (no episodes found)");
+  }
+  let m = |v: &[f64]| -> f64 { v.iter().sum::<f64>() / v.len().max(1) as f64 };
+  let none = |v: &[f64]| -> f64 { 100.0 * v.iter().filter(|x| **x <= 0.0).count() as f64 / v.len() as f64 };
+
+  println!("   {} episodes over {} fugues, {:.0}% of the book by duration, median {:.1} bars long",
+    ep_cov.len(),
+    per_piece.len(),
+    100.0 * ep_ticks as f64 / piece_ticks.max(1) as f64,
+    median(&ep_lens));
+  println!("   {} entry spans as the control, through the identical detector\n", en_cov.len());
+
+  println!("                    mean of the span   spans with none at all");
+  println!("   episodes                  {:>5.1}%                  {:>5.1}%", 100.0 * m(&ep_cov), none(&ep_cov));
+  println!("   entry spans               {:>5.1}%                  {:>5.1}%", 100.0 * m(&en_cov), none(&en_cov));
+
+  // paired is not available — an episode and an entry span are different
+  // objects — so this is an unpaired difference and is reported as one
+  let se = |v: &[f64]| -> f64 {
+    let mu = m(v);
+    (v.iter().map(|x| (x - mu).powi(2)).sum::<f64>() / (v.len().max(2) - 1) as f64 / v.len() as f64).sqrt()
+  };
+  let d = 100.0 * (m(&ep_cov) - m(&en_cov));
+  let sd = 100.0 * (se(&ep_cov).powi(2) + se(&en_cov).powi(2)).sqrt();
+  println!("\n   difference {d:+.1} +/- {sd:.1} points, unpaired — an episode and an entry span are");
+  println!("   different objects and there is no pairing between them.");
+  if d > 2.0 * sd {
+    println!("\n   VERDICT: episodes are more sequential than the passages that are not episodes, by");
+    println!("   more than twice the standard error. §2.4's production stands as a claim about Bach.");
+  } else {
+    println!("\n   VERDICT: the difference does not clear twice its standard error. §2.4's production");
+    println!("   is not supported by this measurement and step 7 should not assume it.");
   }
 }

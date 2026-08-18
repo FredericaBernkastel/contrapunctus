@@ -47,6 +47,7 @@ are built and measured — [§8](#8-what-is-built-and-what-it-measures). Realisa
   - [8.10 Replacing the soft tier, and the degenerate optimum of every positive criterion](#810-replacing-the-soft-tier-and-the-degenerate-optimum-of-every-positive-criterion)
   - [8.11 Marpurg's tonal answer: one rule exact, one wrong, and the treatise knew which](#811-marpurgs-tonal-answer-one-rule-exact-one-wrong-and-the-treatise-knew-which)
   - [8.12 The fourth, and the scope a dissonance is judged in](#812-the-fourth-and-the-scope-a-dissonance-is-judged-in)
+  - [8.13 Are episodes sequences, and how much of a fugue is episode](#813-are-episodes-sequences-and-how-much-of-a-fugue-is-episode)
 - [9. Roadmap](#9-roadmap)
 - [10. Reproducing the results](#10-reproducing-the-results)
   - [10.1 Environment and data](#101-environment-and-data)
@@ -1868,6 +1869,54 @@ the record of the runs as made, the two rules are already outside the endorsed t
 that rests on them. It is measured, kept runnable, and left off — and what it establishes is that **the fourth was
 never the whole of the problem**, so the replacement §9 still wants has to explain the other 90% too.
 
+### 8.13 Are episodes sequences, and how much of a fugue is episode
+
+`src/episode.rs`. [§2.4](#24-form-is-a-grammar)'s grammar has exactly one production that claims something about
+the music rather than about structure:
+
+```
+Episode → Sequence(motive, transposition pattern, n)
+```
+
+`Exposition` is now backed by [§8.11](#811-marpurgs-tonal-answer-one-rule-exact-one-wrong-and-the-treatise-knew-which)
+and `Middle+` says almost nothing, but this one step 7 would inherit unexamined —
+[§8.6](#86-realisation-and-the-first-notes) and [§8.10](#810-replacing-the-soft-tier-and-the-degenerate-optimum-of-every-positive-criterion)
+are both cases where a claim went several steps before anyone checked it.
+
+**An episode is a span where no annotated entry sounds**, which is the definition the ground truth supports without
+any judgement added. **A sequence** is the whole texture restated after a fixed period with every voice moved the
+same non-zero number of diatonic steps and the rhythm exact — a restatement at the *same* pitch is a repetition,
+not a sequence, so zero is excluded. That is strict: a sequence Bach decorates or reharmonises on its second
+statement is not found, so every figure below is a **floor**. Which is why the entry spans go through the identical
+detector as the control.
+
+| | mean of the span | spans with none at all |
+|---|---:|---:|
+| **episodes** (154) | **13.3%** | 70.8% |
+| entry spans (284) | 1.3% | 95.4% |
+
+Difference **+12.0 ± 2.0** points, unpaired — an episode and an entry span are different objects and there is no
+pairing to be had. Six standard errors.
+
+**The production is directionally right and quantitatively weak.** Episodes are where sequences live, at **ten
+times** the rate of the passages that are not episodes, and that is not in doubt. But 70.8% of episodes contain no
+strict sequence at all, so `Episode → Sequence` is not a definition. **A grammar that emitted every episode as a
+sequence would be wrong about seven episodes in ten** — and the honest form of the production is a *tendency with a
+rate*, not a rewrite rule. Some of that 70.8% is the detector's strictness and some of it is Bach, and this
+measurement cannot separate them; what it can say is that the strict reading is not available.
+
+**And the number that was not being asked for.** Episodes are **54% of the book by duration**, 154 of them across
+24 fugues, median **3.0 bars** long. More than half of a fugue is not subject.
+
+That is the largest single fact about fugal form this document has, and it lands on
+[§8.6](#86-realisation-and-the-first-notes) rather than on §2.4. The realiser fills free voices **against a held
+entry**; in a little over half the music there is no entry to hold. Step 7 therefore cannot be a matter of
+scheduling entries and calling the existing search between them — the majority case is a passage with nothing
+fixed in it at all, which is a different problem from the one
+[§8.6](#86-realisation-and-the-first-notes) solves and a harder one, since
+[§8.9](#89-a-better-plan-and-the-first-lever-that-moves-more-than-a-point) showed that what makes a fill agree with
+Bach is mostly the harmony under it and an episode has to supply its own.
+
 ---
 
 ## 9. Roadmap
@@ -1955,6 +2004,14 @@ order.
    It must emit an **answer**, not a placement, so `Entry` is not one production. And [§8.9](#89-a-better-plan-and-the-first-lever-that-moves-more-than-a-point)'s
    requirement stands beside it: the harmony has to be scheduled **per beat**, since a chord per bar loses more
    than half of what a correct plan is worth.
+
+   **And the grammar's one substantive production has been checked** ([§8.13](#813-are-episodes-sequences-and-how-much-of-a-fugue-is-episode)). Episodes really
+   are where sequences live — ten times the rate of the passages that are not episodes, six standard errors — but
+   **seven episodes in ten contain no strict sequence at all**, so `Episode → Sequence` is a tendency with a rate
+   and not a rewrite rule. The same measurement produced the largest single fact about fugal form this document
+   has: **episodes are 54% of the book by duration**. The realiser fills free voices against a *held entry*, and in
+   more than half the music there is no entry to hold, so step 7 cannot be a matter of scheduling entries and
+   calling [§8.6](#86-realisation-and-the-first-notes)'s search between them.
 
 8. Optional: **double fugue** — two shapes that must tile, which is where the shape-catalogue reading earns its
    keep.
@@ -2071,6 +2128,7 @@ the Josquin Research Project for the Renaissance scores.
 | [§8.10](#810-replacing-the-soft-tier-and-the-degenerate-optimum-of-every-positive-criterion) the objective, paired | `cargo run --release -- objective` |
 | [§8.11](#811-marpurgs-tonal-answer-one-rule-exact-one-wrong-and-the-treatise-knew-which) Marpurg's tonal answer | `cargo run --release -- answer` |
 | [§8.12](#812-the-fourth-and-the-scope-a-dissonance-is-judged-in) the fourth's scope | `cargo run --release -- fourth` |
+| [§8.13](#813-are-episodes-sequences-and-how-much-of-a-fugue-is-episode) episodes and sequences | `cargo run --release -- episode` |
 | every cross-reference in the repository | `cargo test --release --test references` |
 
 **This table is checked against the program.** `tests/references.rs` runs `list` and fails the build if a row here
