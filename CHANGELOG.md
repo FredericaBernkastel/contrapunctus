@@ -552,9 +552,52 @@ Renaissance doctrine.
 narrowness — the fill covers `F3..C4` where Bach covers `F3..A♭4` — so ranking by it selects for exactly the fault
 being treated.
 
+## Step 6e — a better plan, and the largest effect this project has measured
+
+[`b3668d5`](../../commit/b3668d5)
+
+Readme §8.9, `src/plan.rs`. Step 6's fourth proposal began with a number already on the table — §8.6's `leaky` row
+is three points above its `clean` row — and two faults in how that number was being read. The rows are **not
+paired**: a plan that solves one span refuses another, so `9.3%` against `7.8%` compares two sets of notes. And the
+oracle is **not a plan any grammar could emit**, since §2.4's productions cannot name a chord per onset when the
+onsets belong to the notes being asked for. Nine plans, both corpora, §8.8's windows, every gain a paired per-span
+difference.
+
+**The plan §8.6 has been writing against names the right chord one time in six.** 16% of the span in Bach, 20% in
+the Renaissance, against the analyser's own full-texture reading. §8.5 measured 70–80% on cadence arrivals *with
+the whole texture in front of it*; from one or two voices out of three or four it is mostly guessing. Nobody had
+measured this. In the Renaissance the plan is worth **nothing at all** — `none` and `clean` differ by
+`+0.47 ± 0.70`.
+
+**A correct plan is worth `+2.36` in Bach and `+3.74` in the Renaissance** — the only condition in the whole of
+step 6 to move more than a point in the same direction in both centuries. It is a **ceiling, not a candidate**:
+neither honest repair helps. Retuning `λ` for the thinner texture loses on both. Gating the plan on the analyser's
+own `fit` does nothing, because on a thin texture confidence is **uncorrelated with correctness** — high
+confidence on 95% of a span whose chords are 15% right — which closes every repair built on that statistic rather
+than one.
+
+**The gain survives coarsening to a beat and not to a bar.** `oracle/beat` keeps `+1.73` and `+3.77`; `oracle/bar`
+keeps `+2.77` in the Renaissance but falls to `+0.88 ± 0.46` in Bach, inside two standard errors. So a form
+grammar has to schedule harmony **per beat** — the first quantitative requirement step 7 has been handed from
+outside itself.
+
+**And `λ = 0` removes four orders of magnitude of legal fills for `−0.32 ± 0.42`.** It is tight and it is wrong:
+4% right against `clean`'s 16%. Set beside an oracle that admits *twenty times more* fills than the plan it beats
+by two points:
+
+> **Neither tightness nor looseness predicts agreement. Correctness does.**
+
+Which is §8.6's thesis with the confound removed. That section watched constraint raise `chance` without raising
+`exact`; this watches a *correct* constraint raise `exact` by two to four points while making the legal set
+**larger**. Constraint was never the variable.
+
+The price is quotable: **0.024 points of note agreement per point of chord agreement in Bach, 0.045 in the
+Renaissance**, near enough constant across all three ceilings. A perfect analyser is 84 points above the present
+one, so `+2.4` is the entire envelope for this lever.
+
 ### What step 6 established
 
-Four experiments, four failures, one reading that fits all of them:
+Five experiments. Four failures against the rulebook, and one measurement that moved the problem to another step:
 
 > **The treatise is a list of prohibitions against excess. The generator's failure is deficiency.**
 
@@ -564,6 +607,12 @@ criterion from the same source pushes the wrong way. Nothing transcribed from Fu
 should *do* — the book assumes a writer who knows, and constrains what they must not. That is an argument for
 reading **Marpurg** and **Kirnberger**, who write about Bach's practice, and it is the first time this project has
 had a measured reason to prefer one unread treatise over another.
+
+The fifth says where the missing selectivity actually is, and it is not in a rulebook of any kind. It is the
+harmony under the line, it is worth two to four points on both corpora, and the instrument that supplies it is not
+a better analyser — the analyser cannot see it from the fixed voices and cannot tell when it is guessing — but
+§2.4's grammar, which never has to infer the harmony because it decides it. **Step 6's open problem is answered by
+step 7.**
 
 ---
 
@@ -600,6 +649,17 @@ Two further patterns have appeared alongside it.
 built from the true harmony, including the rows that were run without one. A baseline that does not vary with the
 condition is not a control; it is a constant, and subtracting a constant from every row hides exactly the
 comparison the table exists to make.
+
+Step 6e adds two more, both about reading a table rather than building one.
+
+> **Two conditions that solve different subsets of the problem cannot be compared by their averages.** §8.6's
+> `clean` and `leaky` rows are scored over 99 and 110 spans, and the gap between them was quoted as the worth of a
+> harmonic plan from step 5 until it was paired per span. Paired, it is smaller — and most of what remains turns
+> out to be the difference between a right plan and a wrong one rather than between having one and not.
+
+> **A statistic that says how well the data fit the model says nothing about whether the model is right.** The
+> analyser's `fit` sits at 95% on spans whose chords are 15% correct, because two voices are easy to explain with
+> many chords. Every repair that gates on such a number fails for the same reason, so the family closes together.
 
 **Three separate defects have been argument-order or identity confusions in code that looked symmetric and was
 not** — the swapped checker arguments here, the lo/hi role tracking of step 1, and the duplicate spellings. Two of
