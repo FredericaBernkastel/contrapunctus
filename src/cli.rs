@@ -264,6 +264,8 @@ pub enum Cmd {
   /// What the objective is worth, on §8.6's own spans and paired
   #[command(alias = "obj")]
   Objective,
+  /// Marpurg's tonal answer, against Bach's own
+  Answer,
   /// Render, reconstruct and scalarisations together
   Realise,
   /// All five of the tier-deadlock experiments
@@ -300,6 +302,7 @@ impl Cmd {
       Shape => "§8.8",
       Plan => "§8.9",
       Soft | Objective => "§8.10",
+      Answer => "§8.11",
       _ => "",
     }
   }
@@ -326,7 +329,7 @@ impl Cmd {
       // reported, in section order
       States, Verdict, Corpus, Diag, Renaissance, Chromatic, Stretto, Density, Design, Sweep,
       Holdout, Render, Reconstruct, Scalarisations, Generality, Species, Shape, Plan, Soft,
-      Objective,
+      Objective, Answer,
       // superseded, kept reproducible
       Rank, Probe, Pareto, Revisit, Ncts, HarmonyDesign, HarmonyCorpus, Cadence, Hren, Seg,
       ModalControl, Func, BindingHarmony,
@@ -413,6 +416,7 @@ fn about(c: Cmd) -> &'static str {
     Plan => "harmonic plans, priced paired and on both corpora",
     Soft => "the soft tier ablated, and three positive criteria in its place",
     Objective => "what the objective is worth, on §8.6's own spans and paired",
+    Answer => "Marpurg's tonal answer, against Bach's own",
     Realise => "render, reconstruct and scalarisations together",
     Exp => "all five of the tier-deadlock experiments",
     Harmony => "the three first-attempt harmony runs together",

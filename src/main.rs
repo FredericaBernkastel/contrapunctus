@@ -7,6 +7,7 @@
 //! tree and the parameters; §10.2 of the readme maps each section to its command
 //! and `list` prints the same map from the code.
 
+mod answer;
 mod automaton;
 mod cli;
 mod corpus;
@@ -79,6 +80,7 @@ fn main() {
     Cmd::Plan => step5::plan_test(),
     Cmd::Soft => step5::soft_test(),
     Cmd::Objective => step5::objective_check(),
+    Cmd::Answer => step5::answer_test(),
     Cmd::Realise => step5::run(),
     Cmd::Exp => { exp_density(); exp_pareto(); exp_renaissance(); exp_chromatic(); exp_harmony(); }
     Cmd::Harmony => { harmony_run(); harmony_design(); harmony_corpus(); }

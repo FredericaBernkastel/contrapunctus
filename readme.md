@@ -45,6 +45,7 @@ are built and measured — [§8](#8-what-is-built-and-what-it-measures). Realisa
   - [8.8 A criterion that is not local, and the shape of every step-6 failure](#88-a-criterion-that-is-not-local-and-the-shape-of-every-step-6-failure)
   - [8.9 A better plan, and the first lever that moves more than a point](#89-a-better-plan-and-the-first-lever-that-moves-more-than-a-point)
   - [8.10 Replacing the soft tier, and the degenerate optimum of every positive criterion](#810-replacing-the-soft-tier-and-the-degenerate-optimum-of-every-positive-criterion)
+  - [8.11 Marpurg's tonal answer: one rule exact, one wrong, and the treatise knew which](#811-marpurgs-tonal-answer-one-rule-exact-one-wrong-and-the-treatise-knew-which)
 - [9. Roadmap](#9-roadmap)
 - [10. Reproducing the results](#10-reproducing-the-results)
   - [10.1 Environment and data](#101-environment-and-data)
@@ -1680,6 +1681,108 @@ object and it is the one that wins.
 decision rule, and it arrives by retracting a claim rather than by adding a criterion.
 
 
+### 8.11 Marpurg's tonal answer: one rule exact, one wrong, and the treatise knew which
+
+`src/answer.rs`. The first thing this project has transcribed from a treatise of **Bach's own circle** rather than
+from Fux, and [§9](#9-roadmap)'s standing open problem — Fux is 1725 and Palestrina-style vocal, the WTC is 1722
+and keyboard — is why. Marpurg, *Abhandlung von der Fuge* (1753), drittes Hauptstück, *"Vom Gefährten"*.
+
+The chapter rests on **two Grundsätze**. The answer's melody must be made *similar* to the subject's — same figure,
+same note values, same intervals in the same proportion. And *"es muß recht moduliert werden"*: it must not carry
+the music into a foreign key. **The two conflict**, because *"die Octave aus zwey ungleichen Hälften besteht"* —
+tonic up to dominant is five notes and dominant up to tonic is four — so a subject crossing between the halves
+cannot both keep every interval and stay in the key.
+
+Marpurg's resolution is a *Vertauschung*: skipping a degree in the larger half or doubling one in the smaller,
+which he tabulates as a substitution of melodic intervals — a unison for a second, a second for a third, up to a
+seventh for an octave, and the reverse. **One interval changes, by exactly one degree.** That is what the
+transcription models: transposing one note up a fifth and the next up a fourth widens or narrows the interval
+between them by one degree and by nothing else, so a single change of leg along the subject *is* a single
+*Vertauschung*.
+
+Where the change falls, Marpurg settles by a rule of thumb — look forward rather than back — and then by thirty
+worked examples on his plates. **A rule of thumb is not transcribable and worked examples are not a rule**, so
+`answer.rs` does not pick a point: it enumerates every point the stated rules leave open, and what it returns is a
+set. [§8.7](#87-the-species-as-a-whitelist-and-why-it-does-not-tighten-anything)'s question then applies unchanged
+— a whitelist is worth having only if the music stays inside it *and* staying inside it means something — so the
+set's size is reported beside its coverage.
+
+**One instance first**, since a percentage over 24 cases is worth nothing without a case a reader can check. BWV
+856, F major, by scale degree with 1 the tonic:
+
+| | | |
+|---|---|---|
+| Führer | `5 6 5 4 5 7 1 2 3 4 5 4` | opens on the **dominant** |
+| Gefährte, Bach's | `1 3 2 1 2 4 5 6 7 1 2 1` | |
+| plain fifth | `2 3 2 1 2 4 5 6 7 1 2 1` | wrong on the first note |
+| Marpurg | `1 3 2 1 2 4 5 6 7 1 2 1` | right, and 1 of the 11 answers his rules admit |
+
+The subject opens on the dominant; Bach answers on the tonic, which transposition does not do. The mutation falls
+at the first interval, where a second becomes a third — a line of Marpurg's own substitution table — and everything
+after it is a plain fifth. This is the thing the chapter is about, reproduced.
+
+#### The two rules, each on the note it is about
+
+The unit is the exposition's `Führer`/`Gefährte` pair, the first two annotated entries, compared **by scale
+degree** since the answer sits in another voice at another octave. All 24 fugues yield a usable pair.
+
+| | all cases | where it differs from a plain fifth |
+|---|---:|---:|
+| **Rule I** — first note: tonic and dominant answer each other | **100.0%** of 21 | **100.0%** of 7 |
+| **Rule II** — last note: tonic/dominant, and third for third | 66.7% of 24 | **0.0%** of 4 |
+| Rule II, retried at every subject end the ground truth offers | — | **0.0%** of 4 |
+
+**The right-hand column is the whole measurement.** Where a rule says *answer at the fifth* it is saying what
+transposition does anyway; only where it says *answer at the fourth* is it earning anything. Read that way:
+
+**Rule I is exact.** Seven WTC subjects open on the dominant, and in all seven Bach answers on the tonic — not on
+the supertonic that transposing up a fifth would give. Zero exceptions. Set beside
+[§8.2](#82-the-rulebook-stratified-by-two-corpora), where Fux's transcribed rules were measured at 8.0, 21.4, 71.1
+and 90.9 violations per thousand, **this is the first rule this project has transcribed that Bach does not break
+once.**
+
+**Rule II is not weak but wrong.** Its 66.7% is entirely the free cases; in all four where it says something, Bach
+does the opposite. And that is not an artefact of where the subject is cut, which
+[§3.3](#33-the-subject-is-input-and-its-boundary-is-contested) would otherwise be entitled to object: the ground
+truth records dissenting readings of every subject's end, the rule was retried at each of them, and it fails at
+every one.
+
+**And Marpurg knew.** He states Rule I flatly — *"die Haupttonsnote und die Dominante müssen allezeit einander
+antworten auf der ersten Note"*. He hedges Rule II himself, in the sentence that states it: it *"öfters nach
+Beschaffenheit der Umstände ihre Ausnahmen leiden kann"*. **The treatise's own confidence tracks the measurement,
+rule for rule**, which is not something Fux's text ever did here — §8.2 had to discover the stratification from
+outside, because the *Gradus* asserts its melodic prohibition exactly as firmly as its parallel-fifth one.
+
+#### Whole answers, and what is still missing
+
+| condition | agrees with Bach | median set |
+|---|---:|---:|
+| real answer, up a fifth | 41.7% | 1 |
+| real answer, up a fourth | 4.2% | 1 |
+| Marpurg, Rules I and II | 41.7% | 1 |
+| **Marpurg, Rule I only** | **62.5%** | 14 |
+
+Thirteen of the 24 answers are neither plain transposition — the tonal ones, which are the only place a treatise
+can earn anything — and Marpurg's set contains three of them.
+
+**Applying Rule II as a filter costs more than it buys.** It leaves coverage exactly where transposition already
+was, because it gains three tonal answers and **refuses four that Bach wrote as plain transpositions** — BWV 848,
+854, 863 and 865. A rule that admits too little is wrong in a way a loose one is not, and dropping it takes
+coverage from 41.7% to **62.5%**.
+
+**What remains is the mutation's place, and it is exactly what Marpurg declined to state as a rule.** With Rule I
+alone the admissible set has a median of **14** members and contains Bach's answer five times in eight. So the
+transcription localises the answer from the whole space of transpositions to a shortlist of about fourteen, and
+then stops — because the chapter stops, and hands the reader thirty worked examples instead. That is a
+**fourteen-fold** shortlist against [§8.6](#86-realisation-and-the-first-notes)'s `10¹²`, and it is the first time
+in this document that a transcribed rulebook has narrowed anything to a number a person could read.
+
+**Two things this does not claim.** It is not tested on two corpora, and cannot be: the tonal answer is a device of
+tonal fugue and the 15th-century control has neither the annotations nor the exposition
+([§10.4](#104-how-the-samples-were-taken)). And 24 pairs is a small sample — Rule I's seven discriminating cases
+are seven, not seven hundred. What makes them worth reporting is that they are **seven out of seven**, on a rule
+stated before they were looked at, in the one place the rule makes a claim transposition does not.
+
 ---
 
 ## 9. Roadmap
@@ -1758,6 +1861,16 @@ order.
 7. **Form**, per [§2.4](#24-form-is-a-grammar) — which Anders & Miranda name as unsupported by any existing
    system, so expect to build rather than borrow. The packing question lives inside the stretto block.
 
+   **Started, from the outside in.** The grammar's `Exposition` rule reads `Entry (Countersubject Entry){V−1}`,
+   and the second `Entry` is an *answer* rather than a transposition — a distinction this document did not have
+   until [§8.11](#811-marpurgs-tonal-answer-one-rule-exact-one-wrong-and-the-treatise-knew-which), since
+   [§8.3](#83-the-clique-test) places every entry by plain diatonic transposition. Marpurg's Rule I now supplies
+   it and is exact on Bach; his Rule II is measured and rejected; and what is still missing is where the mutation
+   falls, which narrows the answer to about fourteen candidates and no further. Two things follow for the grammar.
+   It must emit an **answer**, not a placement, so `Entry` is not one production. And [§8.9](#89-a-better-plan-and-the-first-lever-that-moves-more-than-a-point)'s
+   requirement stands beside it: the harmony has to be scheduled **per beat**, since a chord per bar loses more
+   than half of what a correct plan is worth.
+
 8. Optional: **double fugue** — two shapes that must tile, which is where the shape-catalogue reading earns its
    keep.
 
@@ -1783,7 +1896,12 @@ order.
 - **The right rulebook for the right repertoire.** Fux is 1725 and Palestrina-style vocal; the WTC is 1722 and
   keyboard. **Marpurg's *Abhandlung von der Fuge*** (1753) is the fugue treatise of Bach's own circle and
   **Kirnberger** studied with him directly. Transcribing either is exactly as unfitted as transcribing Fux — it is
-  transcribing the right explicit theory. Marpurg is [freely available](https://archive.org/details/abhandlungvonder00marp); the
+  transcribing the right explicit theory. **Its third chapter is now transcribed and measured**
+  ([§8.11](#811-marpurgs-tonal-answer-one-rule-exact-one-wrong-and-the-treatise-knew-which)), and it is the first
+  rulebook this project has read that Bach does not break: Marpurg's rule for the answer's *first* note holds in
+  every case where it says anything, seven of seven. His rule for the *last* note fails in every such case, and he
+  is the one who hedged it. What remains unread is the rest of him, and Kirnberger entirely. Marpurg is
+  [freely available](https://archive.org/details/abhandlungvonder00marp); the
   engraved examples are a separate volume from the text in every edition, so both are needed. Three things in it
   answer questions open here — **surveyed from the scans, not read in full**, which is why the row in
   [§7](#7-prior-art) says located rather than read. **Hauptstück 3, *Vom
@@ -1865,6 +1983,7 @@ the Josquin Research Project for the Renaissance scores.
 | [§8.9](#89-a-better-plan-and-the-first-lever-that-moves-more-than-a-point) harmonic plans | `cargo run --release -- plan` |
 | [§8.10](#810-replacing-the-soft-tier-and-the-degenerate-optimum-of-every-positive-criterion) tier ablation and prescriptions | `cargo run --release -- soft` |
 | [§8.10](#810-replacing-the-soft-tier-and-the-degenerate-optimum-of-every-positive-criterion) the objective, paired | `cargo run --release -- objective` |
+| [§8.11](#811-marpurgs-tonal-answer-one-rule-exact-one-wrong-and-the-treatise-knew-which) Marpurg's tonal answer | `cargo run --release -- answer` |
 | every cross-reference in the repository | `cargo test --release --test references` |
 
 **This table is checked against the program.** `tests/references.rs` runs `list` and fails the build if a row here

@@ -34,6 +34,7 @@ use crate::{
   kern::{Note, Piece, Voice, TICKS_PER_QUARTER},
   pitch::{Interval, Pitch},
   realise::{self, Problem},
+  answer,
   cli::{self, CONF_MEL},
   plan, refdata, shape, species, stretto,
 };
@@ -2049,4 +2050,269 @@ pub fn objective_check() {
   println!("  weights a span by its note count — and, for the sampled row, counts all eight draws.");
   println!("  `PAIRED` is the mean of the per-span differences, with the span as the unit of");
   println!("  replication. The bracketed figure is the unweighted mean of the per-span rates.");
+}
+
+// --------------------------------------- step 7: Marpurg's tonal answer, tested ---
+
+/// **Does the treatise of Bach's own circle predict Bach's own answers?**
+///
+/// §9's standing open problem is that Fux is 1725 and Palestrina-style vocal
+/// while the WTC is 1722 and keyboard, and that the fugue treatise of Bach's
+/// circle had never been read. `answer.rs` transcribes its third chapter. This
+/// measures it, on §8.2's instrument and §8.7's question: **a rule is worth
+/// having only if the music stays inside it, and only if staying inside it means
+/// something.**
+///
+/// The unit is the exposition's `Führer`/`Gefährte` pair — the first two
+/// annotated entries of each fugue, which is the object Marpurg's chapter is
+/// about. They are compared **by scale degree**, since an answer sits in another
+/// voice at another octave and only its degrees are the claim.
+///
+/// Three conditions, and the first is the null the other two must beat:
+///
+/// - `real 5th` — the subject transposed bodily up a fifth, which needs no
+///   treatise at all and is what [§8.3](../readme.md)'s stretto placement
+///   already does;
+/// - `real 4th` — the same up a fourth, the other plain transposition;
+/// - `Marpurg` — the set his stated rules admit, which contains both of those
+///   and at most `2n` sequences besides.
+///
+/// The set's **size** is reported beside its coverage for the reason §8.7 gives:
+/// a whitelist that admits everything explains nothing.
+pub fn answer_test() {
+  println!("\n== step 7: Marpurg's tonal answer, against Bach's own ==");
+  println!("  Hauptstück 3 of the Abhandlung von der Fuge (1753), transcribed in `answer.rs`:");
+  println!("  two Grundsätze, two rules pinning the ends of the subject, and one Vertauschung that");
+  println!("  changes exactly one melodic interval by exactly one degree. Where Marpurg settles the");
+  println!("  mutation's place by worked example rather than by rule, this enumerates the places.\n");
+  println!("  The unit is the exposition's Führer/Gefährte pair — the first two annotated entries —");
+  println!("  compared by scale degree, since the answer sits in another voice at another octave.\n");
+
+  let dir = kern_dir();
+  let mut pieces = std::collections::BTreeMap::new();
+  for n in 1..=24 {
+    if let Ok(p) = kern::read(&dir.join(format!("wtc1f{n:02}.krn"))) {
+      pieces.insert(format!("wtc-i-{n:02}"), p);
+    }
+  }
+  if pieces.is_empty() {
+    return println!("  (corpus missing)");
+  }
+  let specs = refdata::read(
+    std::path::Path::new("corpus/algomus-data/fugues/fugues.ref"),
+    &|id| pieces.get(id).map(|p| p.measure),
+  )
+  .unwrap_or_default();
+  if specs.is_empty() {
+    return println!("  (ground truth missing)");
+  }
+
+  let (mut pairs, mut no_tonic, mut ragged) = (0usize, 0usize, 0usize);
+  let (mut fifth, mut fourth, mut marpurg) = (0usize, 0usize, 0usize);
+  // the case that says the rules are not merely loose but *wrong*: Bach wrote a
+  // plain transposition and Marpurg's rules refuse it
+  let mut excluded: Vec<String> = vec![];
+  let mut sizes: Vec<f64> = vec![];
+  let mut open_sizes: Vec<f64> = vec![];
+  let (mut loose, mut r1_n, mut r1_ok, mut r2_ok) = (0usize, 0usize, 0usize, 0usize);
+  // A rule only earns anything where it *differs* from plain transposition. For
+  // a subject opening on the tonic, Rule I says the answer opens on the fifth —
+  // which is what transposing up a fifth does anyway, so those cases are free.
+  // The discriminating ones are where the rule says `Fourth`.
+  let (mut r1_d, mut r1_d_ok, mut r2_d, mut r2_d_ok) = (0usize, 0usize, 0usize, 0usize);
+  // §3.3: where the subject *ends* is an annotation choice and the ground truth
+  // records the dissenting readings. Rule II is a claim about that very note, so
+  // it is tested at every boundary offered rather than at one of them.
+  let (mut r2_any_n, mut r2_any_ok) = (0usize, 0usize);
+  let mut shown = false;
+  // the discriminating cases: those a plain transposition gets wrong
+  let mut tonal: Vec<(String, bool, usize)> = vec![];
+
+  for spec in &specs {
+    let Some(p) = pieces.get(&spec.id) else { continue };
+    if spec.len == 0 || spec.entries.len() < 2 {
+      continue;
+    }
+    let Some((pc, _)) = p.tonic else {
+      no_tonic += 1;
+      continue;
+    };
+    let Some(tonic) = answer::tonic_letter(pc, &p.key) else {
+      no_tonic += 1;
+      continue;
+    };
+    let mut ents = spec.entries.clone();
+    ents.sort_by_key(|e| e.1);
+    let ents: Vec<&(char, i64)> = ents.iter().filter(|e| e.1 >= 0).take(2).collect();
+    if ents.len() < 2 {
+      continue;
+    }
+    let cut_at = |e: &(char, i64), l: i64| clip(&p.voices[voice_of(p, e.0)], e.1, e.1 + l);
+    let cut = |e: &(char, i64)| cut_at(e, spec.len);
+    let (dux, comes) = (cut(ents[0]), cut(ents[1]));
+    let want = answer::degrees(&comes, tonic);
+    if want.is_empty() || want.len() != answer::degrees(&dux, tonic).len() {
+      // the annotation's window does not bracket the two entries alike; a
+      // comparison note for note would be comparing different numbers of notes
+      ragged += 1;
+      continue;
+    }
+    pairs += 1;
+
+    let hit = |v: &Voice| answer::degrees(v, tonic) == want;
+    let is5 = hit(&answer::real(&dux, answer::Leg::Fifth, &p.key));
+    let is4 = hit(&answer::real(&dux, answer::Leg::Fourth, &p.key));
+    let set = answer::admissible(&dux, &p.key, tonic);
+    let inset = set.iter().any(hit);
+    sizes.push(set.len() as f64);
+    // Rule II is hedged in the source, so the same set without it
+    let open = answer::admissible_opt(&dux, &p.key, tonic, false);
+    open_sizes.push(open.len() as f64);
+    loose += open.iter().any(hit) as usize;
+
+    // and each rule checked on the one note it is about, which is the claim
+    // Marpurg actually makes and is independent of where a mutation falls
+    let dd = answer::degrees(&dux, tonic);
+    if let Some(l) = answer::first_leg(dd[0]) {
+      let ok = answer::answered(dd[0], l) == want[0];
+      r1_n += 1;
+      r1_ok += ok as usize;
+      if l == answer::Leg::Fourth {
+        r1_d += 1;
+        r1_d_ok += ok as usize;
+      }
+    }
+    if let Some(l) = answer::last_leg(dd[dd.len() - 1]) {
+      let ok = answer::answered(dd[dd.len() - 1], l) == want[want.len() - 1];
+      r2_ok += ok as usize;
+      if l == answer::Leg::Fourth {
+        r2_d += 1;
+        r2_d_ok += ok as usize;
+      }
+    }
+    for &l in std::iter::once(&spec.len).chain(spec.alternatives.iter()) {
+      if l <= 0 {
+        continue;
+      }
+      let (a, b) = (cut_at(ents[0], l), cut_at(ents[1], l));
+      let (da, db) = (answer::degrees(&a, tonic), answer::degrees(&b, tonic));
+      if da.is_empty() || da.len() != db.len() {
+        continue;
+      }
+      if answer::last_leg(da[da.len() - 1]) == Some(answer::Leg::Fourth) {
+        r2_any_n += 1;
+        r2_any_ok +=
+          (answer::answered(da[da.len() - 1], answer::Leg::Fourth) == db[db.len() - 1]) as usize;
+      }
+    }
+    fifth += is5 as usize;
+    fourth += is4 as usize;
+    marpurg += inset as usize;
+    if (is5 || is4) && !inset {
+      excluded.push(spec.id.clone());
+    }
+    if !is5 && !is4 {
+      tonal.push((spec.id.clone(), inset, set.len()));
+    }
+    // one pair shown whole, because a percentage over 24 cases is worth nothing
+    // without an instance a reader can check by eye
+    if !shown && !is5 && inset {
+      shown = true;
+      let row = |label: &str, v: &[usize]| {
+        let cells: Vec<String> = v.iter().take(18).map(|d| format!("{:>3}", d + 1)).collect();
+        println!("     {label:<22}{}", cells.join(""));
+      };
+      println!("   {} in {}, degrees of the subject and of the answer:", spec.id, spec.id);
+      row("Fuhrer", &answer::degrees(&dux, tonic));
+      row("Gefahrte, Bach's", &want);
+      row("plain fifth", &answer::degrees(&answer::real(&dux, answer::Leg::Fifth, &p.key), tonic));
+      let k = set.iter().position(hit).unwrap();
+      row("Marpurg, member", &answer::degrees(&set[k], tonic));
+      println!("     ({} of {} members matches; degrees are 1-based, 1 the tonic)
+", k + 1, set.len());
+    }
+  }
+
+  if pairs == 0 {
+    return println!("  (no usable Führer/Gefährte pairs)");
+  }
+  let pct = |k: usize| 100.0 * k as f64 / pairs as f64;
+  println!("   {pairs} usable pairs of the {} annotated fugues", specs.len());
+  if no_tonic + ragged > 0 {
+    println!("   ({no_tonic} without a key interpretation, {ragged} whose two entries are annotated to");
+    println!("    different note counts and cannot be compared note for note)\n");
+  }
+  println!("
+   Each rule on the one note it is about — the claim Marpurg makes, independent of");
+  println!("   where a mutation falls:
+");
+  let rate = |k: usize, n: usize| 100.0 * k as f64 / n.max(1) as f64;
+  println!("                                                        all cases      where it differs");
+  println!("                                                                       from a plain fifth");
+  println!(
+    "   Rule I,  first note: tonic and dominant answer      {:>5.1}%  of {r1_n:<4}    {:>5.1}%  of {r1_d}",
+    rate(r1_ok, r1_n),
+    rate(r1_d_ok, r1_d)
+  );
+  println!(
+    "   Rule II, last note:  tonic/dominant, third/third    {:>5.1}%  of {pairs:<4}    {:>5.1}%  of {r2_d}",
+    rate(r2_ok, pairs),
+    rate(r2_d_ok, r2_d)
+  );
+  println!(
+    "   Rule II again, at every subject end the ground truth offers    {:>5.1}%  of {r2_any_n}",
+    rate(r2_any_ok, r2_any_n)
+  );
+  println!("
+   The right-hand column is the one that counts. Where a rule says `answer at the fifth`");
+  println!("   it is saying what transposition does anyway, and only the cases where it says");
+  println!("   `answer at the fourth` are the rule earning something. The last line answers the");
+  println!("   objection §3.3 raises against the one before it: Rule II is a claim about the");
+  println!("   subject's final note, and where that note falls is a reading rather than a fact, so");
+  println!("   the rule is retried at every reading the ground truth records.");
+
+  println!("
+   And whole answers, note for note:
+");
+  println!("   condition                          agrees with Bach   median set");
+  println!("   real answer, up a fifth                     {:>5.1}%            1", pct(fifth));
+  println!("   real answer, up a fourth                    {:>5.1}%            1", pct(fourth));
+  println!(
+    "   Marpurg, Rules I and II                     {:>5.1}%         {:>4.0}",
+    pct(marpurg),
+    median(&sizes)
+  );
+  println!(
+    "   Marpurg, Rule I only (II is hedged)         {:>5.1}%         {:>4.0}",
+    pct(loose),
+    median(&open_sizes)
+  );
+  if !excluded.is_empty() {
+    println!(
+      "
+   And the set **refuses** {} answer(s) Bach wrote as a plain transposition: {}.",
+      excluded.len(),
+      excluded.join(", ")
+    );
+    println!("   A rule that admits too little is wrong in a way a loose one is not, and this is the");
+    println!("   figure that keeps the row above from being read as coverage.");
+  }
+
+  println!("\n   {} answers are neither plain transposition — the tonal ones, which are the whole", tonal.len());
+  println!("   point of the chapter and the only place a treatise can earn anything:");
+  if tonal.is_empty() {
+    println!("     (none)");
+  } else {
+    let got = tonal.iter().filter(|t| t.1).count();
+    for (id, ok, n) in &tonal {
+      println!("     {id}   {}   set of {n}", if *ok { "inside Marpurg's set" } else { "OUTSIDE it" });
+    }
+    println!(
+      "\n   {got} of {} inside, which is {:.0}% of the cases the null cannot reach.",
+      tonal.len(),
+      100.0 * got as f64 / tonal.len() as f64
+    );
+  }
+  println!("\n  `median set` is how many answers the rules admit for one subject, against §8.6's");
+  println!("  10^12 fills of three bars. A set of one is a prediction; a set of ten is a shortlist.");
 }
