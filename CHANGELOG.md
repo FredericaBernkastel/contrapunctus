@@ -837,6 +837,57 @@ which is not the problem §8.6 solved.
 
 ---
 
+## Step 7 — the grammar, parsed against the book
+
+[`c815f94`](../../commit/c815f94)
+
+Readme §8.15, `src/form.rs`. §2.4 writes ten lines of productions and asserts that form is a grammar. §8.13 checked
+one of them; this checks the rest, in the only way a grammar can be checked — **does it derive the sentences it
+claims to be a grammar of?** What is parsed is the **plan** rather than the notes: the annotated entries with their
+voices and degrees, the typed cadences, and the length, which is exactly what the non-terminals range over and what
+a form grammar would have to emit.
+
+**It derives 3 fugues of 22, and the failure is in one production.**
+
+**What holds, holds completely.** All 22 end with their last annotated cadence in the home key — a production that
+never fails once. Twenty-one of 22 have a middle. `Middle+` runs 0 to 9 with a median of 3, `Stretto?` is taken by
+5, and the episodes between entry groups have a median of **3.0 bars** — the same median §8.13 reached by an
+unrelated route, which is the cross-check that the two sections measure one object.
+
+**`Exposition` is wrong on every count**, and it is both the only production with any detail in it and the one
+§8.11 was written to serve. 59.1% state the subject once in each voice, 40.9% alternate, and **82% contain an
+episode**, for which the production has no symbol at all. Corrected:
+
+```
+Exposition → Entry (Link? Countersubject Entry){V−1} Redundant?
+```
+
+> **A grammar with an unbounded `+` in it is hard to falsify, and the parts of §2.4 that survive are the parts that
+> say least.** `Middle+` accepts any number and 21 of 22 satisfy it; `Final → … Cadence` is exact and is one bit;
+> `Exposition` is the only production with a shape and the only one that fails.
+
+**Three faults in the parser were found and fixed before any of these numbers, and each had produced a plausible
+table.** Grouping entries by the distance between their *starts* rather than from where one **ends** split every
+exposition into as many groups as it had voices and reported 0% on all 22. A verdict for `Middle → Episode Entry+`
+was true by construction once a group is defined as a run with no episode in it — a check that cannot fail,
+replaced by a measurement of the `+`, which is 1.35 entries per middle group. And judging an entry's level by
+whether its first note is the tonic failed seven expositions for alternating perfectly, since a subject beginning
+on the dominant has a dux on degree 4; §8.11's Rule I is what *level* means, and using it moved that row from
+22.7% to 40.9%.
+
+A fourth was caught by the reference checker rather than by me: a section heading containing a `§` reference reads
+to the link test as a citation and mangles its own anchor. Headings do not carry cross-references now.
+
+### What step 7 has to build
+
+Not §2.4's grammar. Four facts, and one of them is not from this section: the exposition takes links and sometimes
+a redundant entry; a fugue has a median of three middle entry groups of about 1.35 entries; the episodes between
+them run about three bars; it ends at home, always. And §8.13's: **episodes are 54% of the book by duration**, so
+more than half of what step 7 must generate has no subject in it at all — which is not the problem §8.6 solved.
+
+
+---
+
 ## Recurring pattern
 
 Three constraints in this project have turned out too permissive to bind — the two-rule hard tier, the
@@ -881,6 +932,12 @@ Step 6e adds two more, both about reading a table rather than building one.
 > **A statistic that says how well the data fit the model says nothing about whether the model is right.** The
 > analyser's `fit` sits at 95% on spans whose chords are 15% correct, because two voices are easy to explain with
 > many chords. Every repair that gates on such a number fails for the same reason, so the family closes together.
+
+Step 7 adds one about checks rather than about music:
+
+> **A check that cannot fail is worse than no check, because it reports a rate.** `Middle → Episode Entry+` scored
+> 77.3% under a broken grouping and would have scored 100% under the correct one, since a group is *defined* as a
+> run with no episode in it. Both numbers were meaningless and only one of them looked it.
 
 §8.11 adds one that has been implicit since §8.2 and is now explicit:
 
