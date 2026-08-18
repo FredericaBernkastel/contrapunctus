@@ -1119,6 +1119,60 @@ note with **Bach's own preceding note** in hand, and more than half of its appar
 honest baseline for a generator is the 6.9%. What 16.2% establishes is a different and still useful thing — a
 ceiling on how much the constraint alone determines when the previous note is *given*: about one note in six.
 
+#### A treatise weighting was tried, and it is Bach's rather than counterpoint's
+
+The uniform draw asserts nothing, and asserting nothing is why it does no better than the objective. The obvious
+next move is [§7.1](#71-parallels-within-the-same-algorithmic-family)'s **Weak C2** with the corpus half removed:
+draw each fill in proportion to how much the *treatise* likes it. Fux supplies the directions — the six soft
+criteria are the things he says to avoid — and supplies no magnitudes at all, which is Komosinski's objection to
+Schottstaedt's weights. So there is **one** number rather than six: an inverse temperature `β`, with each fill drawn
+in proportion to `exp(−β × soft cost)`. `β = 0` is the uniform draw, `β → ∞` is the cheapest fill, and everything
+between is a preference rather than an optimisation. It is swept and reported as a curve rather than chosen, on
+[§8.5](#85-the-harmonic-analyser)'s precedent with `λ`.
+
+**Whether that generalises is [§8.2](#82-the-rulebook-stratified-by-two-corpora)'s question, so it gets §8.2's
+instrument**: the same measurement on two corpora three centuries apart. One protocol for both, since the
+Renaissance corpus has no subject annotations — hold the **top voice**, free up to two others, window at eight
+quarters. The rule was fixed before the run: *keep it only if one `β` beats the uniform draw on both corpora by more
+than twice the standard error.*
+
+| β | Bach agreement | gain on β = 0 | 15th-c. polyphony | gain on β = 0 |
+|---:|---:|---|---:|---|
+| 0.00 | 6.8% | — | 9.8% | — |
+| 0.25 | 7.4% | +0.26 ± 0.35 | 9.9% | −0.17 ± 0.31 |
+| 0.50 | 7.8% | +0.78 ± 0.53 | 9.7% | −0.46 ± 0.33 |
+| 1.00 | **8.3%** | **+1.33 ± 0.62** | 9.1% | **−1.04 ± 0.40** |
+| 2.00 | 8.2% | +1.29 ± 0.74 | 8.4% | −1.88 ± 0.45 |
+| 4.00 | 8.2% | +1.41 ± 0.88 | 7.6% | **−2.68 ± 0.52** |
+
+67 Bach spans from 24 fugues, 577 Renaissance spans from 200 works, eight draws each. Gains are **paired per-span
+differences** against the same spans at `β = 0`, one standard error; the span is the unit of replication, because
+eight draws sharing one span's fixed voices and plan are not eight independent observations.
+
+**The verdict is repertoire-specific, so it was rolled back.** The weighting buys Bach a little over a point at
+`β = 1` — itself only about two standard errors, across five swept values, so not much — and it *costs* the earlier
+repertoire more than that, **monotonically worse the harder it is applied**. Every production call site passes
+`β = 0`; the parameter survives only so this table stays reproducible, which is what
+[§10.2](#102-which-command-produces-which-section) asks of every superseded result.
+
+Two things about it are worth more than the rollback.
+
+**The first run said the opposite.** On 60 works and 112 spans the Renaissance gain came out **+0.6 points** and the
+verdict printed `GENERAL`. Five times the data reversed the sign and made it significant. Nothing was wrong with the
+code; the decision rule simply said *"improves on both"* and never said *by how much against what noise* — so a
+figure inside its own error bar was allowed to decide. That is this project's recurring pattern arriving in the
+test-design rather than in the measurement.
+
+**And the direction is backwards from what the source would predict.** Fux is writing about Palestrina, so a
+weighting transcribed from Fux ought to fit 16th-century vocal polyphony *better* than it fits Bach, and it does the
+reverse. The likeliest reading is in the corpus rather than the weighting: per
+[§10.4](#104-how-the-samples-were-taken) the control is **70 Busnois, 37 Dufay and 93 Josquin** — 15th-century
+Franco-Flemish music, a century *before* Fux's subject, in which open fifths and octaves are idiomatic and
+equal-range voices cross constantly. Three of the six criteria penalise exactly those. So what this table shows is
+that the weighting fails to span 1450 to 1722; **Fux's own repertoire sits between the two and remains untested**,
+and testing it needs a Palestrina corpus this project does not have. That is a real limit on the claim and it does
+not rescue the weighting, which was asked to generalise and did not.
+
 **The search is given Bach's rhythm** — every onset and every tie of the voices it is reconstructing, which is a
 large part of the answer — and it still cannot find the pitches. One span whole, because percentages hide what is
 actually happening. BWV 847 at bar 11, two free voices, the melodic tier and an honest plan:
@@ -1245,8 +1299,10 @@ order.
      **6.9%** against the objective's 7.8% ([§8.6](#86-realisation-and-the-first-notes)), so *typical* does not
      beat *extremal* here and WaveFunctionCollapse's Weak C2 does not carry across. It earns its place twice
      anyway: it is the like-for-like baseline the section had been missing, and it is the only way to ask how many
-     of `10¹⁵` fills are acceptable, because it can now draw them. **Frequency-weighted** sampling is the version
-     that remains untried, and it needs frequencies — a treatise may state them where a corpus may not be used.
+     of `10¹⁵` fills are acceptable, because it can now draw them. **Frequency-weighted** sampling was then tried
+     too, with the weights taken from Fux rather than from a corpus, and it is
+     **repertoire-specific** — it helps Bach by about a point and costs 15th-century polyphony more than that
+     ([§8.6](#86-realisation-and-the-first-notes)). Rolled back. Both halves of this proposal are now closed.
    - **Enumerate the species as a whitelist**, rather than only the prohibitions as a blacklist. This is
      [§7.1](#c1-is-a-whitelist-and-fux-is-a-blacklist), and it is the only proposal here that attacks `10¹⁵`
      at its root instead of choosing better within it: *only these configurations may occur* is enormously tighter
@@ -1339,6 +1395,7 @@ the Josquin Research Project for the Renaissance scores.
 | [§8.6](#86-realisation-and-the-first-notes) stretto render | `cargo run --release -- r1` |
 | [§8.6](#86-realisation-and-the-first-notes) reconstruction | `cargo run --release -- r2` |
 | [§8.6](#86-realisation-and-the-first-notes) scalarisations | `cargo run --release -- r3` |
+| [§8.6](#86-realisation-and-the-first-notes) treatise weighting, both corpora | `cargo run --release -- gen` |
 
 `realise` runs all three of the last. `rank`, `probe`, `exp2`, `exp5`, `harmony`, `cad`, `seg`, `revisit`, `hren2`
 and `func` reproduce the superseded measurements recorded in [`CHANGELOG.md`](CHANGELOG.md).
@@ -1358,6 +1415,7 @@ seconds, and the reason is the subject of [§8.6](#86-realisation-and-the-first-
 | realiser plan | `λ = 1.0`, the middle of [§8.5](#85-the-harmonic-analyser)'s plausible band |
 | realiser compass | each voice's range over the **whole piece**, which a form grammar would supply; never the passage's own range, which would be circular |
 | realiser budgets | 60 000 states per layer, 4 000 000 edges per span — both refusals, never beams ([`realise.rs`](src/realise.rs)) |
+| sampler | uniform over the legal set; the treatise weighting `β` is swept in [§8.6](#86-realisation-and-the-first-notes) and left at **0** everywhere else, being repertoire-specific |
 | MIDI output | format 1, **960 ticks per quarter** (an exact ×4 of the internal lattice), tempo and time signature from the score, tracks top voice first ([`midi.rs`](src/midi.rs)) |
 | PRNG | SplitMix64 inline; seeds `0x5EED`, `0xC0FFEE`, `0xBEEF`, `0xF00D`, `0xD00D` |
 | trials | 400 random contours for single-subject figures, 60 per subject for corpus tables |
@@ -1380,6 +1438,12 @@ least one other voice sounds through at least half of it; of those, the ones wit
 attempted, because [§2.7](#27-where-a-solver-takes-over-from-the-dp)'s wall makes an exact answer impossible and
 this project does not report a beam as if it were a search. Spans refused by the state or work budget are counted
 in the `refused` column rather than dropped, so the shrinking sample is visible in the table that reports it.
+
+**The generality test does not use the annotations.** The Renaissance corpus has none and never will, so
+[§8.6](#86-realisation-and-the-first-notes)'s treatise-weighting table holds the **top voice** and windows at a
+fixed eight quarters in both corpora rather than holding an annotated subject entry. That is a slightly harder
+problem than the reconstruction table's, and the two are therefore not directly comparable to each other — only
+within themselves, which is all the paired test needs.
 
 **Timings are from one machine** and are quoted only where they carry an argument — in
 [§8.6](#86-realisation-and-the-first-notes) they carry one, since tractability is the finding. They are not

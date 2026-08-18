@@ -396,10 +396,15 @@ struct Score {
   notes: usize,
   exact: usize,
   pc: usize,
-  /// The same three, over the uniformly sampled fills rather than the cheapest.
+  /// The same three, over the sampled fills rather than the cheapest.
   s_notes: usize,
   s_exact: usize,
   s_pc: usize,
+  /// `(exact, notes)` per span over the sampled fills. The eight draws from one
+  /// span share its fixed voices, its plan and its rhythm, so they are not eight
+  /// independent observations; the span is the unit that replicates, and a
+  /// standard error computed per note would be far too small.
+  spanwise: Vec<(usize, usize)>,
   chance: f64,
   fills: Vec<f64>,
   choices: Vec<f64>,
@@ -423,7 +428,17 @@ enum Plan {
 }
 
 /// Fill one span and score it against Bach.
-fn one(p: &Piece, sp: &Span, tier: &[Rule], which: Plan, w: f64, samples: usize, sc: &mut Score) -> Option<Vec<Voice>> {
+#[allow(clippy::too_many_arguments)]
+fn one(
+  p: &Piece,
+  sp: &Span,
+  tier: &[Rule],
+  which: Plan,
+  w: f64,
+  samples: usize,
+  beta: f64,
+  sc: &mut Score,
+) -> Option<Vec<Voice>> {
   let all = &sp.clipped;
   let plan = match which {
     Plan::None => vec![],
@@ -448,6 +463,7 @@ fn one(p: &Piece, sp: &Span, tier: &[Rule], which: Plan, w: f64, samples: usize,
     // Deterministic and per span, so a rerun draws the same fills: this is a
     // measurement, not a demo, and §10 says nothing here is unseeded.
     seed: 0x5EED ^ (sp.start as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15),
+    beta,
   };
   sc.spans += 1;
   let sol = match realise::fill(&pr) {
@@ -501,11 +517,17 @@ fn one(p: &Piece, sp: &Span, tier: &[Rule], which: Plan, w: f64, samples: usize,
   sc.exact += ex;
   sc.pc += pc;
 
+  let (mut sn, mut se) = (0, 0);
   for s in &sol.sampled {
     let (n_, ex, pc) = agree(s);
     sc.s_notes += n_;
     sc.s_exact += ex;
     sc.s_pc += pc;
+    sn += n_;
+    se += ex;
+  }
+  if sn > 0 {
+    sc.spanwise.push((se, sn));
   }
 
   // the per-note baseline, which needs Bach's own preceding note and so cannot
@@ -564,7 +586,7 @@ pub fn reconstruct() {
         if s.free.len() > 2 {
           continue;
         }
-        let got = one(&pieces[s.piece], s, tier, which, 1.0, 0, &mut sc);
+        let got = one(&pieces[s.piece], s, tier, which, 1.0, 0, 0.0, &mut sc);
         if best.is_none() && which == Plan::Clean && tname == "conf+melodic" && s.free.len() == 2 {
           if let Some(f) = got {
             best = Some((f, s.piece, s.id.clone(), s.start));
@@ -605,7 +627,7 @@ pub fn reconstruct() {
       if s.free.len() > 2 {
         continue;
       }
-      one(&pieces[s.piece], s, CONF_MEL, Plan::Clean, w, 0, &mut sc);
+      one(&pieces[s.piece], s, CONF_MEL, Plan::Clean, w, 0, 0.0, &mut sc);
     }
     let n = sc.notes.max(1) as f64;
     println!(
@@ -635,7 +657,7 @@ pub fn reconstruct() {
       if s.free.len() > 2 {
         continue;
       }
-      one(&pieces[s.piece], s, CONF_MEL, Plan::Clean, 1.0, SAMPLES, &mut sc);
+      one(&pieces[s.piece], s, CONF_MEL, Plan::Clean, 1.0, SAMPLES, 0.0, &mut sc);
     }
     let n = sc.s_notes.max(1) as f64;
     println!(
@@ -752,6 +774,7 @@ pub fn scalarisations() {
       weights: *weights,
       samples: 0,
       seed: 0,
+      beta: 0.0,
     };
     let Ok(sol) = realise::fill(&pr) else { continue };
     let notes: Vec<Pitch> = sol.voices[s.free[0]].notes.iter().filter(|n| n.attack).map(|n| n.pitch).collect();
@@ -815,4 +838,233 @@ pub fn run() {
   render_stretto();
   reconstruct();
   scalarisations();
+}
+
+// ------------------------------------------------ step 6: the generality test ---
+
+/// Span length for the generality test: eight quarters, the same size of problem
+/// as §8.6's reconstruction, so the two are commensurable.
+const GEN_SPAN: i64 = 8 * TICKS_PER_QUARTER;
+/// Inverse temperatures swept. `0` is the uniform draw and large values approach
+/// the cheapest fill, so the curve interpolates between two figures §8.6 already
+/// reports and the question is whether anything in between beats both.
+const GEN_BETA: [f64; 6] = [0.0, 0.25, 0.5, 1.0, 2.0, 4.0];
+
+/// Spans taken from a score **without annotations**, so that one protocol runs on
+/// both corpora.
+///
+/// The Renaissance corpus has no subject annotations and never will, so §8.6's
+/// entry-driven spans cannot be used for a comparison across repertoires. This
+/// takes their place: hold the **top voice**, free up to two others that sound
+/// throughout, and window at a fixed tick length. Applied to Bach it is a
+/// slightly harder problem than §8.6's — the held voice is whatever is on top
+/// rather than a subject entry — which is the price of measuring the same thing
+/// in both centuries.
+fn windows(pieces: &[Piece], want: usize) -> Vec<Span> {
+  let mut out = vec![];
+  for (pi, p) in pieces.iter().enumerate() {
+    if p.voices.len() < 2 {
+      continue;
+    }
+    let end = p.voices.iter().flat_map(|v| v.notes.iter().map(|n| n.onset + n.dur)).max().unwrap_or(0);
+    if end < 4 * GEN_SPAN {
+      continue;
+    }
+    // spread the windows through the piece rather than taking the opening, which
+    // in a fugue is one voice alone and in a mass is often homophonic
+    let stride = (end - GEN_SPAN) / want.max(1) as i64;
+    let mut taken = 0;
+    for k in 0..want {
+      let start = GEN_SPAN + stride * k as i64;
+      if start + GEN_SPAN > end {
+        break;
+      }
+      let clipped: Vec<Voice> = p.voices.iter().map(|v| clip(v, start, start + GEN_SPAN)).collect();
+      // a voice counts as present only if it sounds for most of the window
+      let held: Vec<i64> =
+        clipped.iter().map(|v| v.notes.iter().map(|n| n.dur).sum::<i64>()).collect();
+      let present: Vec<usize> = (0..clipped.len()).filter(|&v| held[v] * 2 >= GEN_SPAN).collect();
+      if present.len() < 2 {
+        continue;
+      }
+      // the top voice by mean pitch is the one held; it is the part a listener
+      // tracks, and holding it is the nearest annotation-free analogue of §8.6
+      let mean = |v: usize| -> f64 {
+        let n = &clipped[v].notes;
+        if n.is_empty() { f64::MIN } else { n.iter().map(|x| x.pitch.chroma() as f64).sum::<f64>() / n.len() as f64 }
+      };
+      let top = *present.iter().max_by(|&&a, &&b| mean(a).partial_cmp(&mean(b)).unwrap()).unwrap();
+      let free: Vec<usize> = present.iter().copied().filter(|&v| v != top).take(2).collect();
+      if free.is_empty() {
+        continue;
+      }
+      let mut freeflag = vec![false; p.voices.len()];
+      for &v in &free {
+        freeflag[v] = true;
+      }
+      let segs = harmony::analyse_viterbi(&clipped, p.beat, LAMBDA);
+      out.push(Span { piece: pi, id: p.id.clone(), start, len: GEN_SPAN, free, clipped, freeflag, segs });
+      taken += 1;
+    }
+    let _ = taken;
+  }
+  out
+}
+
+fn renaissance(limit: usize) -> Vec<Piece> {
+  let mut files: Vec<std::path::PathBuf> = vec![];
+  for d in ["Jos", "Oke", "Obr", "Duf", "Bus", "Mar"] {
+    if let Ok(rd) = std::fs::read_dir(std::path::Path::new("corpus/jrp-scores").join(d)) {
+      files.extend(
+        rd.filter_map(|e| e.ok().map(|e| e.path()))
+          .filter(|p| p.extension().map(|x| x == "krn").unwrap_or(false)),
+      );
+    }
+  }
+  files.sort();
+  files.truncate(limit);
+  files.iter().filter_map(|f| kern::read(f).ok()).collect()
+}
+
+/// **Does a treatise-derived weighting generalise, or is it Bach's?**
+///
+/// §7.1 asked whether WaveFunctionCollapse's Weak C2 — sample in proportion to
+/// how much the model likes a pattern — could be had without a corpus. Fux
+/// supplies the *directions*: the six soft criteria are the things he says to
+/// avoid. He supplies no *magnitudes*, which is exactly Komosinski's objection to
+/// Schottstaedt's weights, so there is one number here rather than six, and it is
+/// swept and reported as a curve on §8.5's precedent rather than chosen.
+///
+/// The instrument is §8.2's. That section stratified *rules* into universal and
+/// repertoire-specific by measuring them against two corpora three centuries
+/// apart; this measures a *weighting* the same way.
+///
+/// **The decision rule, fixed before the numbers and printed with them.** Let
+/// `β*` be the best inverse temperature on each corpus.
+///
+/// - improves over `β = 0` on **both** corpora → the weighting encodes general
+///   voice leading, and it stays;
+/// - improves on **one** → it is repertoire-specific, and it is rolled back and
+///   documented, exactly as §8.2 did with the melodic rule;
+/// - improves on **neither** → it is useless and it is rolled back.
+pub fn generality() {
+  println!("
+== step 6: does a treatise weighting generalise, or is it Bach's? ==");
+  println!("  Fux names the six things to avoid and no magnitudes, so one temperature is swept.");
+  println!("  beta = 0 is the uniform draw of §8.6; large beta approaches the cheapest fill.
+");
+  println!("  DECIDED BEFORE THE RUN: keep only if some single beta beats beta=0 on BOTH corpora");
+  println!("  by more than twice the standard error of the paired per-span difference. Helping one");
+  println!("  is repertoire-specific and gets rolled back, per §8.2.
+");
+
+  let bach: Vec<Piece> = (1..=24)
+    .filter_map(|n| kern::read(&std::path::Path::new(KERN).join(format!("wtc1f{n:02}.krn"))).ok())
+    .collect();
+  let ren = renaissance(200);
+  if bach.is_empty() || ren.is_empty() {
+    return println!("  (corpus missing)");
+  }
+  let bs = windows(&bach, 3);
+  let rs = windows(&ren, 3);
+  println!(
+    "  Bach {} spans from {} fugues; Renaissance {} spans from {} works",
+    bs.len(),
+    bach.len(),
+    rs.len(),
+    ren.len()
+  );
+  println!("  one protocol for both: hold the top voice, free up to two others, 8 quarters");
+  println!("  the span is the unit of replication, since eight draws share one span's context
+");
+
+  // per corpus, per beta: the spanwise (exact, notes) vector
+  let mut runs: Vec<Vec<Vec<(usize, usize)>>> = vec![];
+  for (pieces, spans) in [(&bach, &bs), (&ren, &rs)] {
+    let mut per_beta = vec![];
+    for &beta in GEN_BETA.iter() {
+      let mut sc = Score::default();
+      for s in spans.iter() {
+        if s.free.len() > 2 {
+          continue;
+        }
+        one(&pieces[s.piece], s, CONF_MEL, Plan::Clean, 1.0, SAMPLES, beta, &mut sc);
+      }
+      per_beta.push(sc.spanwise);
+    }
+    runs.push(per_beta);
+  }
+
+  // paired per-span difference against beta = 0, which is the powerful test:
+  // the same spans, the same seeds, the same note counts
+  let paired = |a: &Vec<(usize, usize)>, b: &Vec<(usize, usize)>| -> (f64, f64) {
+    let d: Vec<f64> = a
+      .iter()
+      .zip(b)
+      .filter(|((_, n1), (_, n2))| *n1 > 0 && n1 == n2)
+      .map(|((e1, n1), (e0, _))| (*e1 as f64 - *e0 as f64) / *n1 as f64)
+      .collect();
+    if d.len() < 2 {
+      return (0.0, 0.0);
+    }
+    let m = d.iter().sum::<f64>() / d.len() as f64;
+    let var = d.iter().map(|x| (x - m).powi(2)).sum::<f64>() / (d.len() - 1) as f64;
+    (100.0 * m, 100.0 * (var / d.len() as f64).sqrt())
+  };
+  let rate = |v: &Vec<(usize, usize)>| -> f64 {
+    let (e, n): (usize, usize) = v.iter().fold((0, 0), |a, b| (a.0 + b.0, a.1 + b.1));
+    if n == 0 { 0.0 } else { 100.0 * e as f64 / n as f64 }
+  };
+
+  println!("   beta  |     Bach exact   gain vs beta=0  |  Renaissance exact   gain vs beta=0");
+  let mut shared: Vec<(f64, f64, f64, f64, f64)> = vec![];
+  for (bi, &beta) in GEN_BETA.iter().enumerate() {
+    let (bg, bse) = paired(&runs[0][bi], &runs[0][0]);
+    let (rg, rse) = paired(&runs[1][bi], &runs[1][0]);
+    println!(
+      "   {:>4.2}  |         {:>5.1}%   {:>+5.2} +/- {:>4.2}  |          {:>5.1}%   {:>+5.2} +/- {:>4.2}",
+      beta,
+      rate(&runs[0][bi]),
+      bg,
+      bse,
+      rate(&runs[1][bi]),
+      rg,
+      rse
+    );
+    if bi > 0 {
+      shared.push((beta, bg, bse, rg, rse));
+    }
+  }
+
+  println!("
+  gains are paired per-span differences against the uniform draw, +/- one standard error.");
+  let winners: Vec<&(f64, f64, f64, f64, f64)> =
+    shared.iter().filter(|(_, bg, bse, rg, rse)| *bg > 2.0 * *bse && *rg > 2.0 * *rse).collect();
+  match winners.first() {
+    Some((beta, bg, _, rg, _)) => {
+      println!(
+        "
+  VERDICT: GENERAL. beta = {beta:.2} beats the uniform draw in both centuries by more than
+           two standard errors — Bach {bg:+.2} points, Renaissance {rg:+.2}. The direction Fux states
+           carries across three hundred years; only the magnitude is local. Keep."
+      );
+      if winners.len() > 1 {
+        println!("  ({} of the swept values clear the bar, so the result does not hinge on one.)", winners.len());
+      }
+    }
+    None => {
+      let b_any = shared.iter().any(|(_, g, se, _, _)| *g > 2.0 * *se);
+      let r_any = shared.iter().any(|(_, _, _, g, se)| *g > 2.0 * *se);
+      println!(
+        "
+  VERDICT: {} Roll back, per the rule stated above.",
+        match (b_any, r_any) {
+          (true, false) => "REPERTOIRE-SPECIFIC — clears the bar on Bach only.",
+          (false, true) => "REPERTOIRE-SPECIFIC — clears the bar on the Renaissance only.",
+          (true, true) => "NOT SIMULTANEOUS — each corpus has a beta that helps, but no single one helps both.",
+          (false, false) => "NO EFFECT — nothing clears two standard errors on either corpus.",
+        }
+      );
+    }
+  }
 }

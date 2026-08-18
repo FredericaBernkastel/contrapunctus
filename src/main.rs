@@ -60,6 +60,7 @@ fn main() {
     "r1" => step5::render_stretto(),
     "r2" => step5::reconstruct(),
     "r3" => step5::scalarisations(),
+    "gen" => step5::generality(),
     "s17" => { analyser_sweep(); analyser_holdout(); analyser_renaissance(); }
     "s16" => { cadence_check(); harmony_renaissance(); segmentation_sensitivity(); step4_revisit(); }
     _ => {

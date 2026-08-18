@@ -158,6 +158,22 @@ pub struct Problem<'a> {
   /// path does not need.
   pub samples: usize,
   pub seed: u64,
+  /// Inverse temperature for the sampler: an edge costing `c` soft firings is
+  /// drawn with weight `exp(-beta * c)`, so a whole fill is drawn in proportion
+  /// to `exp(-beta * total soft cost)`. `beta = 0` is the uniform draw and
+  /// `beta → ∞` approaches the cheapest fill.
+  ///
+  /// **Leave this at zero.** It was built as §7.1's Weak C2 without the corpus
+  /// half — Fux names the six things to avoid and no magnitudes, so one swept
+  /// temperature rather than six chosen weights — and then measured against two
+  /// corpora on §8.2's instrument. It is **repertoire-specific**: it buys Bach
+  /// about a point and a third at `beta = 1`, and it *costs* 15th-century
+  /// polyphony more than that, monotonically worse the harder it is applied
+  /// (readme §8.6). Every production call site therefore passes `0.0`. The
+  /// parameter survives so the measurement that condemned it stays reproducible,
+  /// which is what §10.2 asks of every superseded result — not because anything
+  /// should use it.
+  pub beta: f64,
 }
 
 pub struct Solution {
@@ -249,6 +265,10 @@ struct Layer {
   took: Vec<[Option<Pitch>; MAXFREE]>,
   count: Vec<u128>,
   flags: Vec<u32>,
+  /// Boltzmann mass reaching this node, populated only when sampling. Held
+  /// separately from `count` because the two answer different questions: how
+  /// many fills there are, and how much the treatise likes them.
+  weight: Vec<f64>,
 }
 
 impl Layer {
@@ -261,14 +281,26 @@ impl Layer {
       took: vec![],
       count: vec![],
       flags: vec![],
+      weight: vec![],
     }
   }
   /// Returns the index of the node relaxed into, so a caller recording the edge
   /// list for §7.1's sampler knows where the edge landed.
-  fn relax(&mut self, n: Node, c: f64, from: u32, took: [Option<Pitch>; MAXFREE], cnt: u128, fl: u32) -> usize {
+  #[allow(clippy::too_many_arguments)]
+  fn relax(
+    &mut self,
+    n: Node,
+    c: f64,
+    from: u32,
+    took: [Option<Pitch>; MAXFREE],
+    cnt: u128,
+    fl: u32,
+    wt: f64,
+  ) -> usize {
     match self.index.get(&n) {
       Some(&i) => {
         self.count[i] = self.count[i].saturating_add(cnt);
+        self.weight[i] += wt;
         if c < self.cost[i] {
           self.cost[i] = c;
           self.back[i] = from;
@@ -286,6 +318,7 @@ impl Layer {
         self.took.push(took);
         self.count.push(cnt);
         self.flags.push(fl);
+        self.weight.push(wt);
         i
       }
     }
@@ -410,6 +443,7 @@ pub fn fill(pr: &Problem) -> Result<Solution, String> {
     [None; MAXFREE],
     1,
     0,
+    1.0,
   );
   let mut peak = 1usize;
   let mut work = 0u64;
@@ -571,7 +605,13 @@ pub fn fill(pr: &Problem) -> Result<Solution, String> {
           continue;
         }
         work += 1;
-        let to = cur.relax(node, prev.cost[i] + cost, i as u32, node.now, prev.count[i], prev.flags[i] + flags);
+        // `cost` is this edge's own soft firings, so the mass carried forward is
+        // the treatise's opinion of the *transition*; the product along a path
+        // is its opinion of the whole fill. The `exp` is skipped entirely when
+        // nobody asked for a sample.
+        let wt = if pr.samples > 0 { prev.weight[i] * (-pr.beta * cost).exp() } else { 1.0 };
+        let to =
+          cur.relax(node, prev.cost[i] + cost, i as u32, node.now, prev.count[i], prev.flags[i] + flags, wt);
         if pr.samples > 0 {
           edge_buf.push((i as u32, to as u32));
         }
@@ -602,6 +642,16 @@ pub fn fill(pr: &Problem) -> Result<Solution, String> {
     if pr.samples > 0 {
       edge_buf.sort_unstable_by_key(|&(_, to)| to);
       edges.push(std::mem::take(&mut edge_buf));
+      // Rescale the layer to a maximum of one. Sampling only ever compares
+      // weights *within* a layer, so a common factor per layer changes nothing —
+      // and without it a product over fifty layers underflows to zero and the
+      // draw silently becomes arbitrary.
+      let m = cur.weight.iter().cloned().fold(0.0f64, f64::max);
+      if m > 0.0 {
+        for w in &mut cur.weight {
+          *w /= m;
+        }
+      }
     }
     let mut done = std::mem::replace(&mut prev, cur);
     done.index = Map::default();
@@ -660,7 +710,7 @@ pub fn fill(pr: &Problem) -> Result<Solution, String> {
   // saturated total would silently distort them, so `Solution::saturated` says
   // when that has happened.
   let mut sampled: Vec<Vec<Voice>> = Vec::new();
-  if pr.samples > 0 && total > 0 && !last.count.is_empty() {
+  if pr.samples > 0 && total > 0 && !last.weight.is_empty() {
     let mut rng = pr.seed | 1;
     let mut unif = move || {
       rng = rng.wrapping_add(0x9E37_79B9_7F4A_7C15);
@@ -669,12 +719,12 @@ pub fn fill(pr: &Problem) -> Result<Solution, String> {
       z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
       (((z ^ (z >> 31)) >> 11) as f64) / ((1u64 << 53) as f64)
     };
-    let final_total: f64 = last.count.iter().map(|&c| c as f64).sum();
+    let final_total: f64 = last.weight.iter().sum();
     for _ in 0..pr.samples {
       let mut r = unif() * final_total;
-      let mut j = last.count.len() - 1;
-      for (i, &c) in last.count.iter().enumerate() {
-        r -= c as f64;
+      let mut j = last.weight.len() - 1;
+      for (i, &c) in last.weight.iter().enumerate() {
+        r -= c;
         if r <= 0.0 {
           j = i;
           break;
@@ -692,12 +742,12 @@ pub fn fill(pr: &Problem) -> Result<Solution, String> {
         if lo >= hi {
           return Err(format!("sampler: node {j} of layer {} has no predecessor", s + 1));
         }
-        let w: f64 = e[lo..hi].iter().map(|&(f, _)| layers[s].count[f as usize] as f64).sum();
+        let w: f64 = e[lo..hi].iter().map(|&(f, _)| layers[s].weight[f as usize]).sum();
         let mut r = unif() * w;
         let mut pick = e[lo].0 as usize;
         for &(f, _) in &e[lo..hi] {
           pick = f as usize;
-          r -= layers[s].count[f as usize] as f64;
+          r -= layers[s].weight[f as usize];
           if r <= 0.0 {
             break;
           }
@@ -811,6 +861,7 @@ mod tests {
       weights: [1.0; 6],
       samples: 0,
       seed: 0x5EED,
+      beta: 0.0,
     }
   }
 

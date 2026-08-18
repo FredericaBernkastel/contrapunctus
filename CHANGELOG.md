@@ -434,6 +434,41 @@ further tests assert that every sampled fill passes the checker and that more th
 
 ---
 
+## Step 6b — a treatise weighting, measured against two corpora and rolled back
+
+Readme §8.6. §7.1 asked whether WaveFunctionCollapse's **Weak C2** could be had without a corpus. Fux supplies the
+directions — the six soft criteria are the things he says to avoid — and no magnitudes, so the unfitted form is a
+single swept inverse temperature `β`, drawing each fill in proportion to `exp(−β × soft cost)`. `β = 0` is the
+uniform draw and `β → ∞` the cheapest fill, so the sweep interpolates between two figures §8.6 already reports.
+
+Tested on §8.2's instrument: the same measurement on two corpora three centuries apart, one annotation-free
+protocol for both. **The decision rule was fixed and printed before the numbers** — keep only if a single `β` beats
+the uniform draw on both corpora by more than twice the standard error of the paired per-span difference.
+
+**Result: repertoire-specific, and rolled back.** At `β = 1` Bach gains `+1.33 ± 0.62` points and 15th-century
+polyphony *loses* `−1.04 ± 0.40`, worsening monotonically to `−2.68 ± 0.52` at `β = 4`. Production call sites pass
+`0.0`; the parameter survives so the table stays reproducible, per §10.2's standard for superseded results.
+
+### Defect, in the test rather than the code
+
+**The first run said `GENERAL`.** On 60 works and 112 Renaissance spans the gain came out `+0.6` points and the
+verdict printed accordingly. Five times the data reversed the sign and made it significant. The code was right; the
+decision rule said *"improves on both"* and never said *by how much, against what noise*, so a figure well inside
+its own error bar was allowed to decide. Fixed by making the span the unit of replication — eight draws sharing one
+span's fixed voices and plan are not eight independent observations — and by requiring two standard errors on a
+**paired** per-span difference.
+
+### A limit on what was shown
+
+Fux describes Palestrina, so a weighting transcribed from Fux ought to fit 16th-century vocal polyphony better than
+Bach, and it does the reverse. The control is **70 Busnois, 37 Dufay and 93 Josquin** (§10.4) — 15th-century music,
+a century *before* Fux's subject, where open fifths and octaves are idiomatic and equal-range voices cross
+constantly, and three of the six criteria penalise exactly those. So the demonstrated failure is to span 1450–1722.
+**Fux's own repertoire sits between the two and is untested**, and testing it needs a Palestrina corpus this project
+does not have. That does not rescue the weighting, which was asked to generalise and did not.
+
+---
+
 ## Recurring pattern
 
 Three constraints in this project have turned out too permissive to bind — the two-rule hard tier, the
@@ -446,6 +481,12 @@ Step 6 adds the corollary, which cost a retracted claim to learn:
 
 > **A baseline must also be reachable by the thing it is a baseline for.** One computed with information the
 > generator does not have measures an easier problem, and the gap is invisible until the honest control is built.
+
+Step 6b adds a third, and it is about the *rule* rather than the measurement:
+
+> **A decision rule that names a direction but not a magnitude will be decided by noise.** "Improves on both" is
+> not a criterion; "improves on both by more than twice the standard error of the paired difference" is, and the
+> two gave opposite verdicts on the same experiment.
 
 Step 5 is the fourth instance and the largest: a rulebook that admits `10¹⁸` fills of three bars admits everything.
 It is also the first one where the baseline was computed **before** the measurement rather than after, which is why
