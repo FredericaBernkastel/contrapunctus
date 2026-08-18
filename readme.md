@@ -49,6 +49,7 @@ are built and measured — [§8](#8-what-is-built-and-what-it-measures). Realisa
   - [8.12 The fourth, and the scope a dissonance is judged in](#812-the-fourth-and-the-scope-a-dissonance-is-judged-in)
   - [8.13 Are episodes sequences, and how much of a fugue is episode](#813-are-episodes-sequences-and-how-much-of-a-fugue-is-episode)
   - [8.14 Key-finding, and the ground truth that was already here](#814-key-finding-and-the-ground-truth-that-was-already-here)
+  - [8.15 Does the form grammar derive the book?](#815-does-the-form-grammar-derive-the-book)
 - [9. Roadmap](#9-roadmap)
 - [10. Reproducing the results](#10-reproducing-the-results)
   - [10.1 Environment and data](#101-environment-and-data)
@@ -1973,6 +1974,73 @@ roughly a third on the modulations, the check is **coarse**: it can catch a plan
 goes, and it cannot referee between two plausible plans. [§2.3](#23-harmony-is-a-second-automaton)'s functional
 half still should not be built on this, and §9's open problem is **narrowed rather than closed**.
 
+### 8.15 Does the form grammar derive the book?
+
+`src/form.rs`. [§2.4](#24-form-is-a-grammar) writes ten lines of productions and asserts that form is a grammar.
+[§8.13](#813-are-episodes-sequences-and-how-much-of-a-fugue-is-episode) checked one of them; this checks the rest,
+in the only way a grammar can be checked — **does it derive the sentences it claims to be a grammar of?**
+
+What is parsed is the **plan**, not the notes. The ground truth annotates every subject entry and every typed
+cadence, which is what §2.4's non-terminals range over and what a form grammar would have to emit. Each production
+gets its own rate, on [§8.2](#82-the-rulebook-stratified-by-two-corpora)'s principle that a rulebook is not one
+thing: a grammar failing 22 of 22 for one reason is a different object from one failing for four.
+
+**22 fugues**, ten of them in four voices or more.
+
+| production | holds |
+|---|---:|
+| `Exposition`: one entry per voice, every voice used | 59.1% |
+| `Exposition`: alternating dux level and comes level | 40.9% |
+| `Exposition`: those entries run unbroken, no episode | **18.2%** |
+| `Fugue → Exposition Middle+`: there is a middle | 95.5% |
+| `Final → … Cadence`: the last cadence is at home | **100.0%** |
+| **the whole derivation** | **13.6%** |
+
+**The grammar derives three fugues in twenty-two, and the failure is entirely in one production.**
+
+**What holds, holds completely.** Every one of the 22 ends with its last annotated cadence in the home key — a
+production that never fails once. Twenty-one of 22 have at least one middle. So §2.4 is **right about the shape of
+a fugue**: exposition, then middles, then home. `Middle+` runs from 0 to 9 with a median of 3, `Stretto?` is taken
+by 5 of 22, and the episodes between entry groups run to a median of **3.0 bars** — the same median
+[§8.13](#813-are-episodes-sequences-and-how-much-of-a-fugue-is-episode) found by an unrelated route, which is the
+cross-check that says the two sections are measuring the same object.
+
+**And `Exposition` is wrong on every count.** It is the one production that says something detailed, and the one
+[§8.11](#811-marpurgs-tonal-answer-one-rule-exact-one-wrong-and-the-treatise-knew-which) was written to supply. Its
+answer rule is exact; the production that uses it is not. Only 59% state the subject once in each voice across the
+first `V` entries; only 41% alternate; and **82% of expositions contain an episode**, which the production has no
+symbol for at all.
+
+That last figure is the largest and the least surprising to anyone who has looked at a fugue: the link between
+expositional entries is ordinary practice, and `Entry (Countersubject Entry){V−1}` forbids it by construction. So
+the corrected production is roughly
+
+```
+Exposition → Entry (Link? Countersubject Entry){V−1} Redundant?
+```
+
+with the link optional, and a redundant entry allowed — which is what the 41% that fail the first row look like.
+
+**Three faults in the instrument were found and fixed before these numbers**, and they are worth recording because
+each produced a plausible table. Grouping entries by the distance between their *starts* rather than from where one
+**ends** split every exposition into as many groups as it had voices and reported 0% on all 22. A verdict for
+`Middle → Episode Entry+` was true by construction once a group is defined as a run with no episode in it — a check
+that cannot fail, replaced by a measurement of the `+` it actually claims: middle groups hold **1.35** entries on
+average. And judging an entry's level by whether its first note is the tonic called seven expositions
+non-alternating for alternating perfectly, since a subject beginning on the dominant has a dux on degree 4;
+[§8.11](#811-marpurgs-tonal-answer-one-rule-exact-one-wrong-and-the-treatise-knew-which)'s Rule I is what *level*
+means, and using it moved that row from 22.7% to 40.9%.
+
+> **A grammar with an unbounded `+` in it is hard to falsify, and the parts of §2.4 that survive here are the parts
+> that say least.** `Middle+` accepts any number of middles and 21 of 22 satisfy it. `Final → … Cadence` is exact
+> and is one bit. `Exposition` is the only production with a shape, and it is the only one that fails.
+
+**What step 7 gets.** Not a grammar to implement, but four facts to build one from: the exposition takes links and
+sometimes a redundant entry; a fugue has a median of three middle entry groups of about 1.35 entries each; episodes
+between them run about three bars; and it ends at home, always. Together with
+[§8.13](#813-are-episodes-sequences-and-how-much-of-a-fugue-is-episode)'s finding that episodes are **54% of the
+book by duration**, the object to build is now clear and it is not the one §2.4 describes.
+
 ---
 
 ## 9. Roadmap
@@ -2060,6 +2128,15 @@ order.
    It must emit an **answer**, not a placement, so `Entry` is not one production. And [§8.9](#89-a-better-plan-and-the-first-lever-that-moves-more-than-a-point)'s
    requirement stands beside it: the harmony has to be scheduled **per beat**, since a chord per bar loses more
    than half of what a correct plan is worth.
+
+   **The grammar has now been parsed against the book, and it derives three fugues in twenty-two**
+   ([§8.15](#815-does-the-form-grammar-derive-the-book)). What holds, holds completely: every one of the 22 ends with its last cadence at
+   home, and 21 have a middle — §2.4 is right about the *shape*. What fails is `Exposition`, the one production
+   with any detail in it and the one [§8.11](#811-marpurgs-tonal-answer-one-rule-exact-one-wrong-and-the-treatise-knew-which)
+   was written to serve: 59% state the subject once per voice, 41% alternate, and **82% contain an episode**,
+   which the production has no symbol for. The corrected form is `Exposition → Entry (Link? Countersubject
+   Entry){V−1} Redundant?`. Three faults in the parser were found and fixed first, each of which had produced a
+   plausible table.
 
    **And the grammar's one substantive production has been checked** ([§8.13](#813-are-episodes-sequences-and-how-much-of-a-fugue-is-episode)). Episodes really
    are where sequences live — ten times the rate of the passages that are not episodes, six standard errors — but
@@ -2192,6 +2269,7 @@ the Josquin Research Project for the Renaissance scores.
 | [§8.12](#812-the-fourth-and-the-scope-a-dissonance-is-judged-in) the fourth's scope | `cargo run --release -- fourth` |
 | [§8.13](#813-are-episodes-sequences-and-how-much-of-a-fugue-is-episode) episodes and sequences | `cargo run --release -- episode` |
 | [§8.14](#814-key-finding-and-the-ground-truth-that-was-already-here) key-finding | `cargo run --release -- key` |
+| [§8.15](#815-does-the-form-grammar-derive-the-book) the grammar, parsed | `cargo run --release -- form` |
 | every cross-reference in the repository | `cargo test --release --test references` |
 
 **This table is checked against the program.** `tests/references.rs` runs `list` and fails the build if a row here

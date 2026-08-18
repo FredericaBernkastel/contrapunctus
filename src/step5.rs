@@ -37,6 +37,7 @@ use crate::{
   answer,
   cli::{self, CONF_MEL},
   episode,
+  form,
   key,
   plan, refdata, shape, species, stretto,
 };
@@ -2729,4 +2730,140 @@ pub fn key_test() {
   v.sort_by_key(|(_, c)| std::cmp::Reverse(**c));
   let parts: Vec<String> = v.iter().take(8).map(|(k, c)| format!("{k} x{c}")).collect();
   println!("\n  Keys the cadences visit, commonest first: {}", parts.join(", "));
+}
+
+// ------------------------------------------- step 7: does the grammar parse? ---
+
+/// **Does §2.4's grammar derive the book it is a grammar of?**
+///
+/// The first thing step 7 does, and it is the same thing the five checks before
+/// it did: test the claim before building on it. §2.4 writes ten lines of
+/// productions and asserts that form is a grammar; §8.13 checked one of them and
+/// found a tendency rather than a rule. These are the other four.
+///
+/// **Not the notes: the plan.** The ground truth annotates every subject entry
+/// and every typed cadence, which is exactly what §2.4's non-terminals range
+/// over and exactly what a form grammar would have to emit. So a fugue arrives
+/// as a sequence of entries with voices and degrees, a set of cadences, and a
+/// length, and the question is whether the productions derive it.
+///
+/// Each production gets its own rate rather than one number for the conjunction,
+/// on §8.2's principle that a rulebook is not one thing — and because a grammar
+/// that fails on 24 of 24 for one reason is a different object from one that
+/// fails for four.
+pub fn form_test() {
+  println!("\n== step 7: does §2.4's grammar derive the Well-Tempered Clavier? ==");
+  println!("  Ten lines of productions, asserted in §2.4 and never checked. §8.13 checked the fifth");
+  println!("  and found a tendency rather than a rule; these are the other four.\n");
+  println!("  What is parsed is the plan, not the notes: the annotated entries with their voices and");
+  println!("  scale degrees, the typed cadences, and the length — which is what §2.4's non-terminals");
+  println!("  range over and what a form grammar would have to emit.\n");
+
+  let dir = kern_dir();
+  let mut pieces = std::collections::BTreeMap::new();
+  for n in 1..=24 {
+    if let Ok(p) = kern::read(&dir.join(format!("wtc1f{n:02}.krn"))) {
+      pieces.insert(format!("wtc-i-{n:02}"), p);
+    }
+  }
+  let specs = refdata::read(
+    std::path::Path::new("corpus/algomus-data/fugues/fugues.ref"),
+    &|id| pieces.get(id).map(|p| p.measure),
+  )
+  .unwrap_or_default();
+  if pieces.is_empty() || specs.is_empty() {
+    return println!("  (corpus or ground truth missing)");
+  }
+
+  let mut rows: Vec<(String, usize, form::Verdict, usize, bool)> = vec![];
+  let (mut per_mid, mut all_gaps): (Vec<f64>, Vec<f64>) = (vec![], vec![]);
+  for spec in &specs {
+    let Some(p) = pieces.get(&spec.id) else { continue };
+    let Some((pc, _)) = p.tonic else { continue };
+    let Some(tonic) = answer::tonic_letter(pc, &p.key) else { continue };
+    let es: Vec<(usize, i64, usize)> = spec
+      .entries
+      .iter()
+      .filter(|e| e.1 >= 0)
+      .filter_map(|&(letter, start)| {
+        let v = voice_of(p, letter);
+        let d = kern::sounding(&p.voices[v], start).map(|(q, _)| answer::degree(q, tonic))?;
+        Some((v, start, d))
+      })
+      .collect();
+    if es.is_empty() {
+      continue;
+    }
+    let plan = form::plan_of(p, &es, &spec.cadences, spec.len);
+    let v = form::parse(&plan);
+    let m = form::middles(&plan);
+    let st = form::has_stretto(&plan);
+    if m > 0 {
+      per_mid.push(form::entries_per_middle(&plan));
+    }
+    all_gaps.extend(form::gaps(&plan));
+    rows.push((spec.id.clone(), p.voices.len(), v, m, st));
+  }
+  if rows.is_empty() {
+    return println!("  (nothing to parse)");
+  }
+
+  let n = rows.len();
+  let pct = |f: fn(&form::Verdict) -> bool| -> f64 {
+    100.0 * rows.iter().filter(|r| f(&r.2)) .count() as f64 / n as f64
+  };
+  println!("   {n} fugues, {} of them in four voices or more\n", rows.iter().filter(|r| r.1 >= 4).count());
+  println!("   production                                             holds");
+  println!("   Exposition: one entry per voice, every voice used       {:>5.1}%", pct(|v| v.exposition_covers_the_voices));
+  println!("   Exposition: alternating tonic and dominant              {:>5.1}%", pct(|v| v.exposition_alternates));
+  println!("   Exposition: those entries run unbroken, no episode      {:>5.1}%", pct(|v| v.exposition_is_unbroken));
+  println!("   Fugue -> Exposition Middle+ : there is a middle         {:>5.1}%", pct(|v| v.has_a_middle));
+  println!("   Final -> ... Cadence : the last cadence is at home      {:>5.1}%", pct(|v| v.ends_at_home));
+  println!("   ---");
+  println!("   the whole derivation                                   {:>5.1}%", pct(|v| v.all()));
+
+  let ms: Vec<f64> = rows.iter().map(|r| r.3 as f64).collect();
+  println!(
+    "\n   `Middle+` is unbounded in §2.4 and runs {:.0} to {:.0} here, median {:.0}.",
+    ms.iter().cloned().fold(f64::INFINITY, f64::min),
+    ms.iter().cloned().fold(0.0, f64::max),
+    median(&ms)
+  );
+  println!("   `Stretto?` is taken by {} of {n}.", rows.iter().filter(|r| r.4).count());
+  println!("   `Middle -> Episode Entry+` has no verdict, because once a group is a run with no");
+  println!("   episode in it, `reached across an episode` is true by construction. What the");
+  println!(
+    "   production does claim is the `+`: middle groups hold {:.2} entries on average, and the",
+    mean(&per_mid)
+  );
+  println!("   episodes between them run to a median of {:.1} bars.", median(&all_gaps));
+
+  println!("\n   Where it fails, fugue by fugue:");
+  let mut any = false;
+  for (id, vv, v, _, _) in &rows {
+    if v.all() {
+      continue;
+    }
+    any = true;
+    let mut why: Vec<&str> = vec![];
+    if !v.exposition_covers_the_voices {
+      why.push("exposition does not cover the voices");
+    }
+    if !v.exposition_alternates {
+      why.push("exposition does not alternate");
+    }
+    if !v.exposition_is_unbroken {
+      why.push("an episode falls inside the exposition");
+    }
+    if !v.has_a_middle {
+      why.push("no middle");
+    }
+    if !v.ends_at_home {
+      why.push("last cadence is not at home");
+    }
+    println!("     {id}  ({vv} voices)  {}", why.join("; "));
+  }
+  if !any {
+    println!("     (nowhere)");
+  }
 }
