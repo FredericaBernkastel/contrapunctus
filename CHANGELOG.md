@@ -536,6 +536,8 @@ breakage into a failing build rather than making renumbering free.
 
 ## Step 6d — a criterion that is not local
 
+[`8f90d28`](../../commit/8f90d28)
+
 Readme §8.8. §8.6 says the octave is what goes wrong and §2.5 says a running range would multiply the search state
 by a few hundred, so the criterion is applied **after** the search: rank 32 uniform draws per span by a criterion
 over the whole line. Three, each transcribed from Fux and each reported alone because combining needs weights —
