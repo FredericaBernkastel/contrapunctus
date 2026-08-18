@@ -399,6 +399,8 @@ section's table rather than standing in a second one making the same Crossref cl
 
 ## Step 6 — sampling the legal set, and a claim retracted
 
+[`f171273`](../../commit/f171273)
+
 Readme §8.6, §9 step 6. The first of the two proposals §7.1 produced, built and measured.
 
 **Uniform sampling from the DAG.** The search already counts the paths through itself, so drawing one uniformly is
