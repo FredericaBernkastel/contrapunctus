@@ -270,6 +270,8 @@ pub enum Cmd {
   Fourth,
   /// Are episodes sequences?
   Episode,
+  /// Key-finding, against the cadence annotations
+  Key,
   /// Render, reconstruct and scalarisations together
   Realise,
   /// All five of the tier-deadlock experiments
@@ -309,6 +311,7 @@ impl Cmd {
       Answer => "§8.11",
       Fourth => "§8.12",
       Episode => "§8.13",
+      Key => "§8.14",
       _ => "",
     }
   }
@@ -335,7 +338,7 @@ impl Cmd {
       // reported, in section order
       States, Verdict, Corpus, Diag, Renaissance, Chromatic, Stretto, Density, Design, Sweep,
       Holdout, Render, Reconstruct, Scalarisations, Generality, Species, Shape, Plan, Soft,
-      Objective, Answer, Fourth, Episode,
+      Objective, Answer, Fourth, Episode, Key,
       // superseded, kept reproducible
       Rank, Probe, Pareto, Revisit, Ncts, HarmonyDesign, HarmonyCorpus, Cadence, Hren, Seg,
       ModalControl, Func, BindingHarmony,
@@ -425,6 +428,7 @@ fn about(c: Cmd) -> &'static str {
     Answer => "Marpurg's tonal answer, against Bach's own",
     Fourth => "the fourth, and the scope a dissonance is judged in",
     Episode => "are episodes sequences?",
+    Key => "key-finding, against the cadence annotations",
     Realise => "render, reconstruct and scalarisations together",
     Exp => "all five of the tier-deadlock experiments",
     Harmony => "the three first-attempt harmony runs together",

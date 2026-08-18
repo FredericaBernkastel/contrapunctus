@@ -23,6 +23,7 @@ mod species;
 mod step5;
 mod stretto;
 mod kern;
+mod key;
 mod pitch;
 
 use automaton::{Move, Rule, State, Sym, Vert};
@@ -84,6 +85,7 @@ fn main() {
     Cmd::Answer => step5::answer_test(),
     Cmd::Fourth => step5::fourth_test(),
     Cmd::Episode => step5::episode_test(),
+    Cmd::Key => step5::key_test(),
     Cmd::Realise => step5::run(),
     Cmd::Exp => { exp_density(); exp_pareto(); exp_renaissance(); exp_chromatic(); exp_harmony(); }
     Cmd::Harmony => { harmony_run(); harmony_design(); harmony_corpus(); }

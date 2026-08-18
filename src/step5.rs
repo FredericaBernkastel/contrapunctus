@@ -37,6 +37,7 @@ use crate::{
   answer,
   cli::{self, CONF_MEL},
   episode,
+  key,
   plan, refdata, shape, species, stretto,
 };
 
@@ -2591,4 +2592,141 @@ pub fn episode_test() {
     println!("\n   VERDICT: the difference does not clear twice its standard error. §2.4's production");
     println!("   is not supported by this measurement and step 7 should not assume it.");
   }
+}
+
+// ------------------------------------------------- key-finding, and its null ---
+
+/// The change penalties swept, on §8.5's precedent: reported as a curve rather
+/// than chosen, with the key rhythm each one produces beside it.
+const MU: [f64; 6] = [0.0, 0.25, 0.5, 1.0, 2.0, 4.0];
+
+/// **Where is the music, bar by bar?**
+///
+/// §9's second open problem, and §8.9's requirement: a form grammar is a key
+/// plan before it is anything else, and a key plan nothing can check is not a
+/// claim. `key.rs` builds one by §8.5's instrument — Viterbi over 24 keys,
+/// charging `mu` to change.
+///
+/// **The validation is external and it is the same 106 typed cadences §8.5
+/// used.** Their labels are Hepokoski–Darcy roman numerals — `I:PAC`, `V:PAC`,
+/// `vi:PAC`, `III:PAC` — and a roman numeral names the **local key**. So the
+/// ground truth for key-finding was in the repository from the beginning,
+/// annotated by somebody else, for another purpose.
+///
+/// **And the null is severe.** A fugue spends most of its length at home, so
+/// *"the piece's own key, always"* is a strong guess and any analyser has to
+/// beat it. §8.4 and §8.6 both had to learn that a baseline computed after the
+/// fact is not a baseline; this one is printed beside every row.
+pub fn key_test() {
+  println!("\n== key-finding, against the cadence annotations ==");
+  println!("  §9's second open problem. Viterbi over 24 keys by bar, charging `mu` to change key —");
+  println!("  §8.5's instrument, on the object §2.3's functional half and §2.4's grammar both need.\n");
+  println!("  Validated on the same 106 typed cadences §8.5 used: a Hepokoski-Darcy roman numeral");
+  println!("  names the local key, so the ground truth was already here, annotated for another");
+  println!("  purpose by somebody else.\n");
+  println!("  The null is `the piece's own key, always`, which in a fugue is a strong guess.\n");
+
+  let dir = kern_dir();
+  let mut pieces = std::collections::BTreeMap::new();
+  for n in 1..=24 {
+    if let Ok(p) = kern::read(&dir.join(format!("wtc1f{n:02}.krn"))) {
+      pieces.insert(format!("wtc-i-{n:02}"), p);
+    }
+  }
+  let specs = refdata::read(
+    std::path::Path::new("corpus/algomus-data/fugues/fugues.ref"),
+    &|id| pieces.get(id).map(|p| p.measure),
+  )
+  .unwrap_or_default();
+  if pieces.is_empty() || specs.is_empty() {
+    return println!("  (corpus or ground truth missing)");
+  }
+
+  // every annotated cadence whose label names a key, with the piece it is in
+  let mut cases: Vec<(&str, i64, key::Key, key::Key)> = vec![];
+  let (mut unlabelled, mut no_tonic) = (0usize, 0usize);
+  for spec in &specs {
+    let Some(p) = pieces.get(&spec.id) else { continue };
+    let Some((pc, minor)) = p.tonic else {
+      no_tonic += spec.cadences.len();
+      continue;
+    };
+    let Some(letter) = answer::tonic_letter(pc, &p.key) else {
+      no_tonic += spec.cadences.len();
+      continue;
+    };
+    let home = key::Key { tonic: pc, minor };
+    for (tick, label) in &spec.cadences {
+      match key::label_key(label, letter, &p.key) {
+        Some(k) => cases.push((spec.id.as_str(), *tick, k, home)),
+        None => unlabelled += 1,
+      }
+    }
+  }
+  if cases.is_empty() {
+    return println!("  (no cadence carries a key)");
+  }
+  let n = cases.len();
+  let null = cases.iter().filter(|c| c.2 == c.3).count();
+  println!("   {n} cadences name a key across {} fugues ({unlabelled} carry no roman numeral, {no_tonic} in", pieces.len());
+  println!("   pieces without a key interpretation)\n");
+
+  // §8.11's lesson, applied here: a method only earns something where it
+  // differs from the default. Naming the home key is free, so the cadences that
+  // are *not* in the home key are the ones this is measured on.
+  let away = n - null;
+  println!("     mu    key correct   tonic correct   away from home    bars per key");
+  for &mu in MU.iter() {
+    let (mut right, mut tonic_right, mut away_right) = (0usize, 0usize, 0usize);
+    let mut rhythm: Vec<f64> = vec![];
+    for (id, p) in pieces.iter() {
+      let path = key::analyse(&p.voices, p.measure, p.beat, mu);
+      if path.is_empty() {
+        continue;
+      }
+      rhythm.push(key::key_rhythm(&path));
+      for (_, tick, want, home) in cases.iter().filter(|c| c.0 == id) {
+        if let Some(got) = key::at(&path, *tick) {
+          let ok = got == *want;
+          right += ok as usize;
+          tonic_right += (got.tonic == want.tonic) as usize;
+          if want != home {
+            away_right += ok as usize;
+          }
+        }
+      }
+    }
+    println!(
+      "   {mu:>4.2}      {:>5.1}%          {:>5.1}%          {:>5.1}%          {:>6.1}",
+      100.0 * right as f64 / n as f64,
+      100.0 * tonic_right as f64 / n as f64,
+      100.0 * away_right as f64 / away.max(1) as f64,
+      mean(&rhythm)
+    );
+  }
+
+  println!("\n  `key correct` wants the tonic **and** the mode; `tonic correct` forgives the mode,");
+  println!("  which matters because a minor key admits eight pitch classes to a major key's seven");
+  println!("  and a fit statistic leans minor on its own.");
+  println!(
+    "
+  Naming the piece's own key at every cadence scores {:.1}% and costs nothing, so the third",
+    100.0 * null as f64 / n as f64
+  );
+  println!("  column is the measurement: the {away} cadences that are somewhere else, where a guess of");
+  println!("  `home` scores zero by construction. §8.11 is where that reading was learned.");
+
+  // which keys the annotations actually visit, since a null of this size is
+  // the reason the column above has to be read carefully
+  let mut by_degree: std::collections::BTreeMap<String, usize> = Default::default();
+  for (_, _, k, home) in &cases {
+    let d = (k.tonic as i32 - home.tonic as i32).rem_euclid(12);
+    let names = ["I", "bII", "II", "bIII", "III", "IV", "bV", "V", "bVI", "VI", "bVII", "VII"];
+    *by_degree.entry(format!("{}{}", names[d as usize], if k.minor { " minor" } else { "" }))
+      .or_default() += 1;
+  }
+  let mut v: Vec<(&String, &usize)> = by_degree.iter().collect();
+  v.sort_by_key(|(_, c)| std::cmp::Reverse(**c));
+  let parts: Vec<String> = v.iter().take(8).map(|(k, c)| format!("{k} x{c}")).collect();
+  println!("\n  Keys the cadences visit, commonest first: {}", parts.join(", "));
 }

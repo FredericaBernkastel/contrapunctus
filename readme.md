@@ -48,6 +48,7 @@ are built and measured — [§8](#8-what-is-built-and-what-it-measures). Realisa
   - [8.11 Marpurg's tonal answer: one rule exact, one wrong, and the treatise knew which](#811-marpurgs-tonal-answer-one-rule-exact-one-wrong-and-the-treatise-knew-which)
   - [8.12 The fourth, and the scope a dissonance is judged in](#812-the-fourth-and-the-scope-a-dissonance-is-judged-in)
   - [8.13 Are episodes sequences, and how much of a fugue is episode](#813-are-episodes-sequences-and-how-much-of-a-fugue-is-episode)
+  - [8.14 Key-finding, and the ground truth that was already here](#814-key-finding-and-the-ground-truth-that-was-already-here)
 - [9. Roadmap](#9-roadmap)
 - [10. Reproducing the results](#10-reproducing-the-results)
   - [10.1 Environment and data](#101-environment-and-data)
@@ -1917,6 +1918,61 @@ fixed in it at all, which is a different problem from the one
 [§8.9](#89-a-better-plan-and-the-first-lever-that-moves-more-than-a-point) showed that what makes a fill agree with
 Bach is mostly the harmony under it and an episode has to supply its own.
 
+### 8.14 Key-finding, and the ground truth that was already here
+
+`src/key.rs`. [§9](#9-roadmap)'s second open problem, stated there as *"a real functional test needs degree
+successions relative to a **local** key, and fugues modulate constantly"*. Since
+[§8.9](#89-a-better-plan-and-the-first-lever-that-moves-more-than-a-point) there is a second reason: a form grammar
+is a key plan before it is anything else, and **a key plan nothing can check is not a claim.**
+
+Built by [§8.5](#85-the-harmonic-analyser)'s instrument — Viterbi over the 24 keys, charging `μ` to change, linear
+in the vocabulary because the transition is zero to stay and `μ` to move. Segments are **bars** rather than onsets:
+a chord lasts a beat and a key lasts phrases, and segmenting a key search at every onset would ask a smoothing
+parameter to undo a segmentation mistake.
+
+One thing a collection cannot do, and the fix is ordinary theory rather than a parameter. **C major and A minor are
+the same seven pitch classes** — the objection `Piece::tonic` exists to answer for the global key. What separates
+them is the **raised seventh**, so a minor key here carries its leading tone. That has a cost worth stating: minor
+then admits eight pitch classes to major's seven, and a fit statistic leans minor on its own. A tonic-triad bonus
+leans back, fixed at the 0.2 §8.5 uses for its bass bonus; only `μ` is swept.
+
+**The validation is external, and it was in the repository from the beginning.** The 106 typed cadences §8.5 used
+carry Hepokoski–Darcy labels — `I:PAC`, `V:PAC`, `vi:PAC`, `III:PAC` — and **a roman numeral names the local key**.
+All 106 parse. Somebody else annotated them, for another purpose, before this question was asked.
+
+| μ | key correct | tonic correct | **away from home** | bars per key |
+|---:|---:|---:|---:|---:|
+| 0.00 | 45.3% | 54.7% | **36.5%** | 1.7 |
+| **0.25** | **45.3%** | **56.6%** | **35.1%** | **6.4** |
+| 0.50 | 34.9% | 48.1% | 27.0% | 14.7 |
+| 1.00 | 30.2% | 45.3% | 17.6% | 28.6 |
+| 2.00 | 24.5% | 39.6% | 10.8% | 47.3 |
+| 4.00 | 23.6% | 38.7% | 10.8% | 52.5 |
+
+**Naming the piece's own key at every cadence scores 30.2% and costs nothing**, so the third column is the
+measurement — the **74** cadences that are somewhere else, where a guess of *home* scores zero by construction.
+That reading is [§8.11](#811-marpurgs-tonal-answer-one-rule-exact-one-wrong-and-the-treatise-knew-which)'s, arriving
+for the second time in two sections.
+
+**It works, and it is weak.** A third of the modulations, and a little over half the cadences if the mode is
+forgiven. Set against §8.5, where the chord analyser reached 70–80% on these same cadences with a 14% baseline,
+this is a much harder problem answered much less well.
+
+**Two things are nevertheless in its favour.** `μ = 0` scores the same as `μ = 0.25` overall and produces a key
+rhythm of **1.7 bars**, which is not a key rhythm — it is the analyser re-choosing at every opportunity and being
+right by accident as often as by analysis. At `μ = 0.25` the key changes every **6.4 bars**, which is roughly right
+for these pieces, and the accuracy peak sits exactly there. **The accuracy peak coinciding with the musically
+plausible band is the second time this instrument has done that**, §8.5 being the first, and it is the main reason
+to trust the shape of the curve even where its height is poor.
+
+And the eleven points between `key correct` and `tonic correct` are almost all mode errors, which is the predicted
+cost of the eight-note minor collection, showing up where it was said it would.
+
+**What step 7 gets.** A key plan can now be checked rather than merely asserted — which is more than it had. But at
+roughly a third on the modulations, the check is **coarse**: it can catch a plan that wanders somewhere Bach never
+goes, and it cannot referee between two plausible plans. [§2.3](#23-harmony-is-a-second-automaton)'s functional
+half still should not be built on this, and §9's open problem is **narrowed rather than closed**.
+
 ---
 
 ## 9. Roadmap
@@ -2027,6 +2083,12 @@ order.
   step 7's job ([§8.9](#89-a-better-plan-and-the-first-lever-that-moves-more-than-a-point)).
 - **Key-finding.** A real functional test needs degree successions relative to a *local* key, and fugues modulate
   constantly. Without it [§2.3](#23-harmony-is-a-second-automaton)'s functional half cannot be built or tested.
+  **Built and measured, and the problem is narrowed rather than closed** ([§8.14](#814-key-finding-and-the-ground-truth-that-was-already-here)): Viterbi over
+  24 keys by bar, validated on the 106 cadence labels, whose roman numerals name the local key — ground truth that
+  was in the repository from the beginning, annotated by somebody else for another purpose. It reaches **35% of the
+  74 modulations** against a null that scores zero on them, and its accuracy peak sits exactly at the key rhythm
+  that is musically plausible, 6.4 bars. Enough to catch a key plan that wanders somewhere Bach never goes; not
+  enough to referee between two plausible ones, and not enough to build the functional half on.
 - **A replacement for the two dissonance rules**, which fail in both centuries ([§8.2](#82-the-rulebook-stratified-by-two-corpora)),
   and which step 6's whitelist could not supply
   ([§8.7](#87-the-species-as-a-whitelist-and-why-it-does-not-tighten-anything)). **Its one lead has now been
@@ -2129,6 +2191,7 @@ the Josquin Research Project for the Renaissance scores.
 | [§8.11](#811-marpurgs-tonal-answer-one-rule-exact-one-wrong-and-the-treatise-knew-which) Marpurg's tonal answer | `cargo run --release -- answer` |
 | [§8.12](#812-the-fourth-and-the-scope-a-dissonance-is-judged-in) the fourth's scope | `cargo run --release -- fourth` |
 | [§8.13](#813-are-episodes-sequences-and-how-much-of-a-fugue-is-episode) episodes and sequences | `cargo run --release -- episode` |
+| [§8.14](#814-key-finding-and-the-ground-truth-that-was-already-here) key-finding | `cargo run --release -- key` |
 | every cross-reference in the repository | `cargo test --release --test references` |
 
 **This table is checked against the program.** `tests/references.rs` runs `list` and fails the build if a row here
