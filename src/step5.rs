@@ -2124,6 +2124,12 @@ pub fn answer_test() {
   // records the dissenting readings. Rule II is a claim about that very note, so
   // it is tested at every boundary offered rather than at one of them.
   let (mut r2_any_n, mut r2_any_ok) = (0usize, 0usize);
+  // §8.3 and §8.4 place **every** entry by plain diatonic transposition, and
+  // §8.11 has just shown that is wrong for the comes. Whether it is wrong for
+  // the rest is a different question and this answers it: every annotated entry
+  // against the first, at every transposition.
+  let (mut all_n, mut all_real, mut all_tonal) = (0usize, 0usize, 0usize);
+  let mut levels: std::collections::BTreeMap<usize, usize> = Default::default();
   let mut shown = false;
   // the discriminating cases: those a plain transposition gets wrong
   let mut tonal: Vec<(String, bool, usize)> = vec![];
@@ -2159,6 +2165,7 @@ pub fn answer_test() {
     }
     pairs += 1;
 
+    let dd_all = answer::degrees(&dux, tonic);
     let hit = |v: &Voice| answer::degrees(v, tonic) == want;
     let is5 = hit(&answer::real(&dux, answer::Leg::Fifth, &p.key));
     let is4 = hit(&answer::real(&dux, answer::Leg::Fourth, &p.key));
@@ -2214,6 +2221,27 @@ pub fn answer_test() {
     if !is5 && !is4 {
       tonal.push((spec.id.clone(), inset, set.len()));
     }
+    // every entry against the first, at every diatonic level
+    for e in spec.entries.iter().filter(|e| e.1 >= 0) {
+      let dh = answer::degrees(&cut(e), tonic);
+      if dh.is_empty() || dh.len() != dd_all.len() {
+        continue;
+      }
+      all_n += 1;
+      match (0..7).find(|&t| dd_all.iter().zip(&dh).all(|(a, b)| (a + t) % 7 == *b)) {
+        Some(t) => {
+          all_real += 1;
+          *levels.entry(t).or_default() += 1;
+        }
+        None => {
+          if answer::admissible(&dux, &p.key, tonic).iter().any(|c| answer::degrees(c, tonic) == dh)
+          {
+            all_tonal += 1;
+          }
+        }
+      }
+    }
+
     // one pair shown whole, because a percentage over 24 cases is worth nothing
     // without an instance a reader can check by eye
     if !shown && !is5 && inset {
@@ -2313,6 +2341,23 @@ pub fn answer_test() {
       100.0 * got as f64 / tonal.len() as f64
     );
   }
+  if all_n > 0 {
+    println!("\n   And every annotated entry against the first, which is the model §8.3 and §8.4 assume:\n");
+    let r = |k: usize| 100.0 * k as f64 / all_n as f64;
+    println!("     {all_n} entries in all");
+    println!("     an exact diatonic transposition of the subject   {:>5.1}%", r(all_real));
+    println!("     not that, but an answer Marpurg's rules admit    {:>5.1}%", r(all_tonal));
+    println!(
+      "     neither                                          {:>5.1}%",
+      r(all_n - all_real - all_tonal)
+    );
+    let mut lv: Vec<(&usize, &usize)> = levels.iter().collect();
+    lv.sort_by_key(|(_, v)| std::cmp::Reverse(**v));
+    let names = ["unison", "2nd", "3rd", "4th", "5th", "6th", "7th"];
+    let parts: Vec<String> = lv.iter().map(|(t, n)| format!("{} x{n}", names[**t])).collect();
+    println!("     levels taken, commonest first: {}", parts.join(", "));
+  }
+
   println!("\n  `median set` is how many answers the rules admit for one subject, against §8.6's");
   println!("  10^12 fills of three bars. A set of one is a prediction; a set of ten is a shortlist.");
 }

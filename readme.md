@@ -1680,6 +1680,13 @@ object and it is the one that wins.
 **removing the objective and drawing instead** — which is the only change step 6 has produced that survives its own
 decision rule, and it arrives by retracting a claim rather than by adding a criterion.
 
+**And it is now the endorsed configuration in code**, as `Problem::drawing()`, so that step 7 generates the way
+this section says rather than the way [§8.6](#86-realisation-and-the-first-notes) did. It exists as a constructor
+rather than as advice because the advice has a trap in it: zeroing the weights is *not* dropping the objective,
+since to a shortest path it means every path ties and the first found wins — the `1.3%` row. `drawing()` therefore
+also asks for a draw, and `Solution::chosen()` returns that draw rather than the tied path. A test asserts the two
+differ, so the trap is closed rather than described.
+
 
 ### 8.11 Marpurg's tonal answer: one rule exact, one wrong, and the treatise knew which
 
@@ -1776,6 +1783,30 @@ transcription localises the answer from the whole space of transpositions to a s
 then stops — because the chapter stops, and hands the reader thirty worked examples instead. That is a
 **fourteen-fold** shortlist against [§8.6](#86-realisation-and-the-first-notes)'s `10¹²`, and it is the first time
 in this document that a transcribed rulebook has narrowed anything to a number a person could read.
+
+#### And whether plain transposition is the right model for the rest
+
+[§8.3](#83-the-clique-test) and [§8.4](#84-capacity-ranks-subjects-and-cannot-design-one) place **every** entry by
+plain diatonic transposition, which the above has just shown is wrong for the comes. Whether it is wrong for the
+others is a separate question, and the same machinery answers it — all 232 annotated entries against the first, at
+every diatonic level:
+
+| | |
+|---|---:|
+| an exact diatonic transposition of the subject | **78.9%** |
+| not that, but an answer Marpurg's rules admit | 2.2% |
+| neither | 19.0% |
+
+Levels taken, commonest first: **unison ×100, fifth ×36**, fourth ×16, sixth ×13, third ×10, seventh ×5, second ×3.
+
+**So §8.3's model is broadly right and §8.4's is the exposed one.** Tonal answers are five entries in 232, because
+mutation is a feature of the *exposition's comes* and most entries are not that — which is exactly where Marpurg's
+chapter puts it. The clique test, which places entries at a fixed transposition and asks how many fit, is
+measuring something real. [§8.4](#84-capacity-ranks-subjects-and-cannot-design-one)'s design objective is the one
+that turns on the dux/comes relation specifically, and the 13 of 24 above are its population, not the 5 of 232.
+
+The 19% that are neither are Bach varying his own entries, and they are also a caveat on the annotation: an entry
+altered past recognition is still annotated as an entry.
 
 **Two things this does not claim.** It is not tested on two corpora, and cannot be: the tonal answer is a device of
 tonal fugue and the 15th-century control has neither the annotations nor the exposition

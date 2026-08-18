@@ -192,6 +192,32 @@ pub struct Problem<'a> {
 /// Each is a positive statement, and each is charged by its *distance from*
 /// being satisfied so that a shortest path can minimise it — the sign is an
 /// implementation detail of §2.5's search, not a return to prohibition.
+impl<'a> Problem<'a> {
+  /// Put the problem in the configuration readme §8.10 **endorses**: no
+  /// objective, and the answer taken from a uniform draw.
+  ///
+  /// §8.10 measured the six-criterion tier against no objective at all and found
+  /// it worse by `1.07 ± 0.31` in Bach and `4.64 ± 0.61` in the Renaissance, so
+  /// every generator this project builds from here should draw rather than
+  /// optimise. The measurement drivers keep passing their own weights, because
+  /// their tables are the record of the runs as made.
+  ///
+  /// The catch this exists to remove: zeroing the weights is **not** the same as
+  /// dropping the objective. To a shortest path it means every path ties and the
+  /// first found wins, which §8.10 measured at `1.3%` — five points *below* the
+  /// tier it replaced. So this also asks for a draw, and [`Solution::chosen`] is
+  /// the accessor that returns it.
+  pub fn drawing(mut self) -> Self {
+    self.weights = [0.0; 6];
+    self.prescribe = [0.0; 3];
+    self.beta = 0.0;
+    if self.samples == 0 {
+      self.samples = 1;
+    }
+    self
+  }
+}
+
 pub const PRESCRIPTIONS: [&str; 3] = ["move by step", "move against", "state the harmony"];
 
 /// The part of a prescription that depends on one free voice's own choice.
@@ -256,6 +282,22 @@ pub struct Solution {
   /// `Problem::samples` fills drawn uniformly from the legal set. Each is a full
   /// voice list in the same shape as `voices`.
   pub sampled: Vec<Vec<Voice>>,
+}
+
+impl Solution {
+  /// **The fill to use.** A draw when one was asked for, and the cheapest path
+  /// otherwise.
+  ///
+  /// Reading `voices` directly is right for a measurement that set weights and
+  /// wrong for a generator that did not: with every weight at zero the cheapest
+  /// path is whichever of the tied paths the search happened to reach first, and
+  /// §8.10 measured that at `1.3%` against the composer. A caller who follows
+  /// §8.10's advice by zeroing the weights and then reads `voices` gets the one
+  /// line in the legal set that section singles out as the worst. This is the
+  /// accessor that does not have that failure mode.
+  pub fn chosen(&self) -> &Vec<Voice> {
+    self.sampled.first().unwrap_or(&self.voices)
+  }
 }
 
 /// The pitches a free voice may strike at one slice: the key's own scale over
@@ -998,6 +1040,25 @@ mod tests {
       let got = fill(&prescriptive(cf.clone(), line(&[35, 35, 35]), CONFIRMED, w)).unwrap();
       assert_eq!(got.legal_fills, plain.legal_fills, "prescription {w:?} changed the legal set");
     }
+  }
+
+  /// §8.10's footgun, asserted away. With no objective the cheapest path is a
+  /// tie-break that section measured at `1.3%`, and a caller who zeroes the
+  /// weights must not silently receive it — so `drawing()` asks for a draw and
+  /// `chosen()` returns that draw rather than the tied path.
+  #[test]
+  fn the_endorsed_configuration_draws_rather_than_taking_the_tie_break() {
+    let cf = line(&[28, 30, 29, 31, 28]);
+    let pr = problem(cf, line(&[35, 35, 35, 35, 35]), CONFIRMED).drawing();
+    assert_eq!(pr.weights, [0.0; 6]);
+    assert!(pr.samples >= 1, "the endorsed configuration must ask for a draw");
+    let sol = fill(&pr).expect("a fill exists");
+    assert!(sol.legal_fills > 1, "the instance must have ties for this to mean anything");
+    let pitches = |vs: &Vec<Voice>| -> Vec<Vec<Pitch>> {
+      vs.iter().map(|v| v.notes.iter().map(|n| n.pitch).collect()).collect()
+    };
+    assert_eq!(pitches(sol.chosen()), pitches(&sol.sampled[0]));
+    assert_ne!(pitches(sol.chosen()), pitches(&sol.voices), "chosen() returned the tie-break");
   }
 
   /// The generator must not emit counterpoint its own checker then flags. Both
