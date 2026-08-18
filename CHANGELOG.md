@@ -473,6 +473,8 @@ does not have. That does not rescue the weighting, which was asked to generalise
 
 ## Step 6c — the species as a whitelist, checked and not adopted
 
+[`da12028`](../../commit/da12028)
+
 Readme §8.7. §9 step 6's other proposal: Fux's book is a whitelist and was transcribed here as a blacklist, so
 transcribe the enumeration instead — first species consonance, second the passing tone, third the neighbour, fourth
 the suspension. `src/species.rs` is that and nothing else.
