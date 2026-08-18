@@ -595,9 +595,70 @@ The price is quotable: **0.024 points of note agreement per point of chord agree
 Renaissance**, near enough constant across all three ceilings. A perfect analyser is 84 points above the present
 one, so `+2.4` is the entire envelope for this lever.
 
+## Step 6f — replacing the soft tier, and a claim withdrawn
+
+[`be14082`](../../commit/be14082)
+
+Readme §8.10, `Problem::prescribe`. Step 6's last proposal points at **Marpurg** and **Kirnberger** and
+`literature/` holds neither, so what was asked is what can be asked without them: **is the tier one criterion or
+six**, and **does saying the same thing positively do better?** Six one-hot ablations for the first; three positive
+criteria — move by step, move against, state the harmony — charged *in place of* the tier for the second, with
+`weights` at zero so it is a replacement and not a seventh prohibition. Both corpora, §8.8's windows, paired per
+span. A prescription reorders the legal set and never prunes it, which a test asserts, so every row searches the
+same graph and `done` is constant.
+
+**The narrowness §8.6 and §8.8 laid at the rulebook's door is the shortest path's tie-break.** With no criterion at
+all the search returns a line of mean melodic interval **0.76** scale steps and compass **1.91** over the whole
+span, against the composer's **1.66** and **6.94** on the same voices, and it scores **1.3%**. When nothing
+distinguishes the paths the search keeps the first one it found, and the first one barely moves. That is a fact
+about §2.5's search, not about Fux.
+
+**The tier is six, not one.** Read against that tie-break control, all six together are worth `+4.8` in Bach; the
+best single prohibition is worth `+2.6`; four of the six are worth under a point.
+
+**Every prescription collapses onto a degenerate optimum.** `move by step` is satisfied *perfectly* by oscillating
+between two adjacent notes — it got mean interval `1.04` and left the compass at `3.55`. `state the harmony` is
+satisfied by holding one chord tone (`0.91` in Bach, `0.31` in the Renaissance). `move against` leaves oblique
+motion free, so never moving is optimal.
+
+> **A prohibition composes safely under a minimiser and a prescription does not.** Not doing something is what a
+> search does by default; doing something has a cheapest way to be done, and the minimiser finds that instead.
+
+Which explains the six: `repeated note` charges the degenerate solution the other five would take. The tier is a
+set of **mutually blocking degeneracies**, so no subset works and three prescriptions cannot stand in.
+
+**`move against` turned out to be `direct motion` restated** — the two rows are identical to every printed digit on
+both corpora, a free cross-implementation check, and a reminder that the distinction is not the sign of the
+sentence but whether the criterion has a cheap way to be satisfied.
+
+**And the tier reproduces the composer's melodic statistics without reproducing the composer's notes**: compass
+`6.97` against `6.94`, mean interval `1.45` against `1.66`, and the same closeness on three protocols and two
+centuries — while a uniform draw that misses both by nearly a factor of two scores *higher* on note agreement.
+
+### Withdrawn: "using it is better than ignoring it"
+
+§8.6 read: *"Minimising the soft criteria beats maximising them, and beats not optimising at all. The soft tier is
+weak and it is real, and using it is better than ignoring it."* The first clause holds — minimising beats
+maximising by `3.00 ± 1.01`. The second is withdrawn.
+
+Re-run on §8.6's own spans with both accountings side by side, the pooled column reproduces §8.6's table exactly —
+`6.9%`, `7.8%`, `4.9%` — and the paired column puts the uniform draw at **`−0.74 ± 0.97`**, which is nothing.
+Pooling weights a span by its note count and counts each of the eight draws' notes separately, and that is where
+the claim came from. On the window sample, five times the size, the same paired comparison runs the other way and
+clears the bar on both corpora: **`+1.07 ± 0.31` in Bach and `+4.64 ± 0.61` in the Renaissance.**
+
+So step 6's *first* proposal is reinstated. Uniform sampling was ruled out on `6.9%` against `7.8%` — the pooled
+figures. Paired, **drawing beats optimising**, and it is the only change step 6 has produced that clears its own
+decision rule. One caveat, which the tie-break row supplies: the objective must be dropped *by drawing*, not by
+zeroing the weights, since to a shortest path "no objective" means every path ties and the first wins, at `1.3%`.
+
+**Step 6 is closed.** Five proposals, four failures, and one adoption that arrived by retracting the measurement
+that had ruled it out.
+
 ### What step 6 established
 
-Five experiments. Four failures against the rulebook, and one measurement that moved the problem to another step:
+Six experiments. Five failures against the rulebook, one measurement that moved the problem to another step, and
+one adoption:
 
 > **The treatise is a list of prohibitions against excess. The generator's failure is deficiency.**
 
@@ -613,6 +674,13 @@ harmony under the line, it is worth two to four points on both corpora, and the 
 a better analyser — the analyser cannot see it from the fixed voices and cannot tell when it is guessing — but
 §2.4's grammar, which never has to infer the harmony because it decides it. **Step 6's open problem is answered by
 step 7.**
+
+The sixth says the rest of it out loud. The generator's narrowness was never the rulebook's doing but the
+tie-break's; the soft tier is six mutually blocking degeneracies and no smaller thing replaces it; a prescription
+cannot be minimised because it has a cheapest way to be satisfied; and the tier is not worth applying at all. What
+step 6 leaves behind is one line of code turned off, one turned on, and a much better map of where not to look:
+
+> **Do not optimise. Draw. And put the effort into the harmony rather than the rules.**
 
 ---
 
@@ -660,6 +728,18 @@ Step 6e adds two more, both about reading a table rather than building one.
 > **A statistic that says how well the data fit the model says nothing about whether the model is right.** The
 > analyser's `fit` sits at 95% on spans whose chords are 15% correct, because two voices are easy to explain with
 > many chords. Every repair that gates on such a number fails for the same reason, so the family closes together.
+
+Step 6f adds two more.
+
+> **A positive criterion has a cheapest way to be satisfied, and a minimiser will find it rather than the thing
+> meant.** All three prescriptions collapsed: `move by step` onto oscillating between two notes, `state the
+> harmony` onto holding a chord tone, `move against` onto never moving. Prohibitions do not have this failure mode,
+> which is why a rulebook of them composes and a short list of prescriptions does not.
+
+> **When no criterion distinguishes the candidates, the tie-break becomes the criterion.** Two sections diagnosed
+> the generator's lines as too narrow and blamed the rulebook. The narrowness was the shortest path keeping the
+> first of many equal-cost paths, and it was measurable all along by running with no criterion at all — a control
+> that costs one row and was not there.
 
 **Three separate defects have been argument-order or identity confusions in code that looked symmetric and was
 not** — the swapped checker arguments here, the lo/hi role tracking of step 1, and the duplicate spellings. Two of
