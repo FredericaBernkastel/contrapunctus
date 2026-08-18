@@ -43,6 +43,7 @@ are built and measured — [§8](#8-what-is-built-and-what-it-measures). Realisa
   - [8.6 Realisation, and the first notes](#86-realisation-and-the-first-notes)
   - [8.7 The species as a whitelist, and why it does not tighten anything](#87-the-species-as-a-whitelist-and-why-it-does-not-tighten-anything)
   - [8.8 A criterion that is not local, and the shape of every step-6 failure](#88-a-criterion-that-is-not-local-and-the-shape-of-every-step-6-failure)
+  - [8.9 A better plan, and the first lever that moves more than a point](#89-a-better-plan-and-the-first-lever-that-moves-more-than-a-point)
 - [9. Roadmap](#9-roadmap)
 - [10. Reproducing the results](#10-reproducing-the-results)
   - [10.1 Environment and data](#101-environment-and-data)
@@ -1084,6 +1085,12 @@ Three rulebooks and three sources of harmony, crossed:
 Every column but the last is deterministic and reproduces exactly between runs; `time` is wall clock on one
 machine and moves by a few seconds, quoted because tractability is one of the findings.
 
+**Two things about the `leaky` rows were wrong and are repaired in [§8.9](#89-a-better-plan-and-the-first-lever-that-moves-more-than-a-point).** They are not paired with the
+`clean` rows — a plan that solves one span may refuse another, so `9.3%` against `7.8%` compares two sets of notes
+rather than two plans. And the difference this table attributes to *having* a plan is mostly the difference between
+a **right** plan and a **wrong** one: the `clean` plan names the same chord as the `leaky` one on **16%** of the
+span.
+
 **The notes are not determined, and that is the result.** Read `exact` against `chance` rather than against zero:
 the baseline is what picking at random from the pitches actually open at that note would have scored, computed
 under the same tier and the same plan the search used. Agreement never gets far from it in either direction — the
@@ -1389,6 +1396,119 @@ And a shape criterion drawn from the same source pushes the wrong way on registe
 tells a generator what a line should **do**; the book assumes a writer who already knows, and constrains what they
 must not.
 
+### 8.9 A better plan, and the first lever that moves more than a point
+
+`src/plan.rs`. [§9](#9-roadmap) step 6's fourth proposal, and the only one that began with a number already on the
+table: [§8.6](#86-realisation-and-the-first-notes)'s `leaky` row scores three points above its `clean` row, which
+is the largest single effect there and three times what reversing the objective buys. Two things were wrong with
+reading it as it stood.
+
+**The rows are not paired.** A tighter plan solves spans a looser one refuses and refuses spans a looser one
+solves — `clean` finishes 99 of 117 entry spans and `leaky` 110 — so `9.3%` against `7.8%` compares two different
+sets of notes rather than two plans. **And the oracle is not a plan any grammar could emit.**
+[§2.4](#24-form-is-a-grammar)'s productions name a key plan and a cadence schedule; they cannot name a chord per
+onset, because the onsets belong to the notes the grammar is asking for.
+
+So: [§8.8](#88-a-criterion-that-is-not-local-and-the-shape-of-every-step-6-failure)'s windows, both corpora, nine
+plans, and every gain a **paired per-span difference against [§8.6](#86-realisation-and-the-first-notes)'s own plan
+on the spans both conditions finished**. Two candidates that never see the answer — `λ` varied, since
+[§8.5](#85-the-harmonic-analyser) swept it against a **full** texture while this plan is analysed from one or two
+voices out of three or four, and the plan **gated on its own `fit`**, since a plan is a hard constraint and a wrong
+one forbids the right note. Three ceilings that do see it: the oracle, and the oracle coarsened to a beat and to a
+bar.
+
+**Bach, 690 spans**
+
+| plan | right | log₁₀ fills | agreement | gain on `clean` |
+|---|---:|---:|---:|---|
+| `none` | 0% | 21.4 | 3.8% | −2.61 ± 0.61 |
+| **`clean λ=1`** | **16%** | 19.0 | **6.1%** | — |
+| `clean λ=0` | 4% | 14.7 | 5.9% | −0.32 ± 0.42 |
+| `clean λ=2` | 15% | 20.0 | 5.5% | −0.51 ± 0.28 |
+| `clean fit≥.6` | 16% | 19.0 | 6.1% | +0.01 ± 0.08 |
+| `clean fit≥.8` | 15% | 19.0 | 6.1% | +0.05 ± 0.12 |
+| oracle | 100% | 20.3 | 8.4% | **+2.36 ± 0.42** |
+| oracle / beat | 91% | 20.6 | 7.7% | **+1.73 ± 0.38** |
+| oracle / bar | 58% | 20.4 | 6.7% | +0.88 ± 0.46 |
+
+**15th-century, 577 spans**
+
+| plan | right | log₁₀ fills | agreement | gain on `clean` |
+|---|---:|---:|---:|---|
+| `none` | 0% | 3.9 | 5.7% | +0.47 ± 0.70 |
+| **`clean λ=1`** | **20%** | 3.0 | **5.2%** | — |
+| `clean λ=0` | 10% | 2.5 | 6.2% | +1.13 ± 0.66 |
+| `clean λ=2` | 20% | 3.0 | 5.1% | −0.05 ± 0.26 |
+| `clean fit≥.6` | 20% | 3.0 | 5.1% | −0.06 ± 0.06 |
+| `clean fit≥.8` | 19% | 3.0 | 5.2% | +0.06 ± 0.09 |
+| oracle | 100% | 3.0 | 8.9% | **+3.74 ± 0.70** |
+| oracle / beat | 97% | 3.1 | 8.9% | **+3.77 ± 0.73** |
+| oracle / bar | 89% | 3.1 | 7.9% | **+2.77 ± 0.70** |
+
+`right` is the fraction of the span on which the plan names the same chord as the answer-key analysis. `agreement`
+is over each row's own solved spans and is not comparable across rows; `gain` is, and it is the paired difference.
+
+**The plan the realiser has been writing against is wrong five times in six.** Sixteen per cent in Bach, twenty in
+the Renaissance. [§8.5](#85-the-harmonic-analyser) measured the analyser at 70–80% correct on cadence arrivals
+*with the whole texture in front of it*; asked the same question from one or two voices out of three or four, it
+names the same chord as its own full-texture analysis on a sixth of the span. That number had never been measured,
+and it reframes every `clean` row in [§8.6](#86-realisation-and-the-first-notes): those rows do not price a
+harmonic plan, they price a mostly wrong one. In the Renaissance the plan is worth **nothing at all** — `none` and
+`clean` are `+0.47 ± 0.70` apart, which is zero.
+
+**A correct plan is worth more than everything else step 6 tried put together.** `+2.36` in Bach and `+3.74` in the
+Renaissance, both several standard errors clear, in the same direction, on both corpora — the first condition in
+the whole of step 6 to do that. For scale: the treatise weighting bought `+1.33` in Bach and `−1.04` in the
+Renaissance; the shape criteria `+2.21` in the Renaissance and nothing in Bach; minimising the soft tier rather
+than not optimising at all, about a point. Harmony is the only lever measured that moves more than a point in the
+same direction in both centuries — and it is a **ceiling rather than a candidate**, which is exactly the point.
+
+**It survives coarsening, and the resolution at which it stops surviving is a specification for step 7.**
+[§2.4](#24-form-is-a-grammar)'s grammar can emit a chord schedule, so the question worth asking of the oracle is
+how coarse a schedule still buys the gain. At **beat** resolution — 91% and 97% of the oracle's chords — nearly all
+of it: `+1.73` and `+3.77`, both clear. At **bar** resolution the Renaissance keeps `+2.77` and **Bach falls to
+`+0.88 ± 0.46`, which does not clear two standard errors.** So a form grammar has to schedule harmony *per beat*;
+a chord per bar is not enough for the WTC. That is the first quantitative requirement step 7 has been handed from
+outside itself.
+
+**Neither candidate that stays inside the fixed voices works, and the gate fails for a reason worth keeping.**
+Gating on `fit` removes almost nothing — coverage falls only from 100% to 95–98% at `fit ≥ 0.8` — and changes
+nothing where it does. The reason is in the same row: the analyser reports high confidence on 95% of a span whose
+chords it gets right 15% of the time. **On a thin texture its confidence is uncorrelated with its correctness**,
+because two voices are easy to explain with many chords, and `fit` measures how well the notes suit the chord
+rather than how likely the chord is. No gate built on `fit` can separate the segments worth keeping, and that
+closes a family of repairs rather than one.
+
+Retuning `λ` fails differently and more usefully. `λ = 0` re-chooses the chord at every onset, and in Bach that
+removes **10⁴·³ of the legal fills** — four orders of magnitude — for a gain of `−0.32 ± 0.42`. It is tight and it
+is wrong: 4% right, against `clean`'s 16%.
+
+Which is the sharpest statement this project has of what constraint is and is not:
+
+> **Neither tightness nor looseness predicts agreement. Correctness does.** The loosest plan here is the worst, the
+> tightest is no better than the middle one, and the plan that wins admits **twenty times more** legal fills than
+> the plan it beats.
+
+That is [§8.6](#86-realisation-and-the-first-notes)'s thesis with a confound removed. That section watched
+constraint raise `chance` without raising `exact` and concluded the objective was doing nothing; this watches a
+*correct* constraint raise `exact` by two to four points while making the legal set **larger**. Constraint was
+never the variable. Correct constraint is.
+
+**And the price of correctness is quotable.** The three ceilings differ from `clean` in exactly one measurable
+respect, so dividing each gain by that difference turns "improve the analyser" into an exchange rate: **0.024
+points of note agreement per point of chord agreement in Bach and 0.045 in the Renaissance**, near enough constant
+across all three. In Bach that is about forty points of chord accuracy per point of note agreement, and since a
+perfect analyser is 84 points above the present one, the entire envelope for this lever is the `+2.4` the oracle
+row shows. Large by this project's standards, and still nowhere near music.
+
+**Nothing is adopted**, since no plan that stays inside the fixed voices beats
+[§8.6](#86-realisation-and-the-first-notes)'s. What moves is where step 6's open problem points.
+[§8.8](#88-a-criterion-that-is-not-local-and-the-shape-of-every-step-6-failure) closed with the treatise having
+nothing to say about what a line should **do**; this section says what does — the harmony under it — and that the
+instrument for supplying it is not a better analyser but [§2.4](#24-form-is-a-grammar)'s grammar, which never has
+to infer the harmony because it decides it.
+
+
 ---
 
 ## 9. Roadmap
@@ -1399,8 +1519,10 @@ order.
 6. **Selectivity**, which [§8.6](#86-realisation-and-the-first-notes) turned from a prediction into a number:
    `10¹²` to `10¹⁸` legal fills of a three-bar span, and agreement with Bach that does not respond to anything the
    rulebook does. The table there is unambiguous about which direction *not* to go: more of the same kind of
-   constraint buys tractability and nothing else. The first proposal below has now been built and measured, and it
-   failed in a way worth keeping. Four things remain.
+   constraint buys tractability and nothing else — though [§8.9](#89-a-better-plan-and-the-first-lever-that-moves-more-than-a-point) later sharpens that
+   into *correct* constraint being the variable rather than *more* of it. Four of the five proposals below have
+   now been built and measured. Four failed, in ways worth keeping; the fourth failed while measuring the largest
+   effect in the project. One remains.
 
    - ~~Sample the legal set instead of optimising over it.~~ **Done, and it does not work.** Uniform sampling is
      built — a backward walk through the DAG weighting each predecessor by its path count, drawing every legal
@@ -1428,9 +1550,17 @@ order.
      ([§8.8](#88-a-criterion-that-is-not-local-and-the-shape-of-every-step-6-failure)). Not adopted, and it is the
      experiment that produced step 6's one general finding: **the treatise prohibits excess and the generator's
      failure is deficiency.**
-   - **A better plan.** The `leaky` rows price a *perfect* harmonic plan, which is an upper bound on what
-     [§2.4](#24-form-is-a-grammar)'s grammar can buy by supplying harmony alone. It is not enough on its own, and
-     knowing that before building the grammar is what those rows are for.
+   - ~~A better plan.~~ **Done, and it is the largest lever this project has measured — and it belongs to step
+     7.** Priced properly, paired per span and on both corpora, a *correct* harmonic plan is worth **+2.36** in
+     Bach and **+3.74** in the Renaissance ([§8.9](#89-a-better-plan-and-the-first-lever-that-moves-more-than-a-point)): the only condition in the whole of step 6 to move more
+     than a point in the same direction in both centuries. It is a **ceiling and not a candidate**, because
+     neither honest repair to the analyser buys any of it, and the reason is a number nobody had measured — the
+     plan [§8.6](#86-realisation-and-the-first-notes) has been writing against names the right chord **one time in
+     six**, while reporting high confidence throughout, so no gate on that confidence can help. Two consequences.
+     The gain survives coarsening to a **beat** and not to a **bar**, which is a specification handed to
+     [§2.4](#24-form-is-a-grammar)'s grammar rather than to this step. And the row that removes four orders of
+     magnitude of legal fills for nothing settles what constraint is: **neither tightness nor looseness predicts
+     agreement, correctness does.**
    - **Replacing the soft tier rather than reweighting it.** Minimising it beats maximising it and beats not
      optimising, so it is not noise; it moves agreement by about a point, so it is not much either. Four attempts
      to improve on it from the same source have now failed, and
@@ -1452,7 +1582,9 @@ order.
 ### Open problems, in rough order of how much they block
 
 - **A criterion that selects.** [§8.6](#86-realisation-and-the-first-notes) is the whole of step 6 and now the
-  central problem of the project: everything downstream of it generates legal music that nothing prefers.
+  central problem of the project: everything downstream of it generates legal music that nothing prefers. Five
+  attempts have narrowed it rather than solved it, and the one that moved anything moved it from step 6 to step 7
+  — the harmony under the line, not the rules over it ([§8.9](#89-a-better-plan-and-the-first-lever-that-moves-more-than-a-point)).
 - **Key-finding.** A real functional test needs degree successions relative to a *local* key, and fugues modulate
   constantly. Without it [§2.3](#23-harmony-is-a-second-automaton)'s functional half cannot be built or tested.
 - **A replacement for the two dissonance rules**, which fail in both centuries ([§8.2](#82-the-rulebook-stratified-by-two-corpora)),
@@ -1521,6 +1653,7 @@ the Josquin Research Project for the Renaissance scores.
 | [§8.6](#86-realisation-and-the-first-notes) treatise weighting, both corpora | `cargo run --release -- gen` |
 | [§8.7](#87-the-species-as-a-whitelist-and-why-it-does-not-tighten-anything) species whitelist | `cargo run --release -- species` |
 | [§8.8](#88-a-criterion-that-is-not-local-and-the-shape-of-every-step-6-failure) shape criteria | `cargo run --release -- shape` |
+| [§8.9](#89-a-better-plan-and-the-first-lever-that-moves-more-than-a-point) harmonic plans | `cargo run --release -- plan` |
 | every cross-reference in the repository | `cargo test --release --test references` |
 
 `realise` runs all three of the last. `rank`, `probe`, `exp2`, `exp5`, `harmony`, `cad`, `seg`, `revisit`, `hren2`
@@ -1567,7 +1700,8 @@ in the `refused` column rather than dropped, so the shrinking sample is visible 
 
 **The generality test does not use the annotations.** The Renaissance corpus has none and never will, so
 [§8.6](#86-realisation-and-the-first-notes)'s treatise-weighting table holds the **top voice** and windows at a
-fixed eight quarters in both corpora rather than holding an annotated subject entry. That is a slightly harder
+fixed eight quarters in both corpora rather than holding an annotated subject entry, as do
+[§8.8](#88-a-criterion-that-is-not-local-and-the-shape-of-every-step-6-failure)'s and [§8.9](#89-a-better-plan-and-the-first-lever-that-moves-more-than-a-point)'s. That is a slightly harder
 problem than the reconstruction table's, and the two are therefore not directly comparable to each other — only
 within themselves, which is all the paired test needs.
 

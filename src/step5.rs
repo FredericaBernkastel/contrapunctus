@@ -34,7 +34,7 @@ use crate::{
   kern::{Note, Piece, Voice, TICKS_PER_QUARTER},
   pitch::{Interval, Pitch},
   realise::{self, Problem},
-  refdata, shape, species, stretto,
+  plan, refdata, shape, species, stretto,
 };
 
 const KERN: &str = "corpus/bach-wtc-fugues/kern";
@@ -1314,4 +1314,281 @@ pub fn shape_test() {
       println!("    {n:<12} Bach {b:+.2}, Renaissance {r:+.2}");
     }
   }
+}
+
+// -------------------------------------------- step 6: a better harmonic plan ---
+
+/// The plans compared, in the order they are built and printed. `clean` rows see
+/// the fixed voices only and are the candidates; `oracle` rows see the answer key
+/// and are the ceiling.
+const PLANS: [&str; 9] = [
+  "none",
+  "clean λ=1",
+  "clean λ=0",
+  "clean λ=2",
+  "clean fit≥.6",
+  "clean fit≥.8",
+  "oracle",
+  "oracle/beat",
+  "oracle/bar",
+];
+/// Index of the condition every other one is measured against: §8.6's own plan.
+const PLAN_BASE: usize = 1;
+/// The rows that do not see the answer key, and so are eligible to be adopted.
+const PLAN_CAND: [usize; 4] = [2, 3, 4, 5];
+/// The rows that do, and so are a ceiling rather than a candidate.
+const PLAN_CEIL: [usize; 3] = [6, 7, 8];
+
+/// Fraction of a plan's duration on which it actually names a chord.
+fn covered(pl: &[harmony::Segment]) -> f64 {
+  let total: i64 = pl.iter().map(|s| s.end - s.start).sum();
+  if total == 0 {
+    return 0.0;
+  }
+  let named: i64 = pl.iter().filter(|s| s.chord.is_some()).map(|s| s.end - s.start).sum();
+  named as f64 / total as f64
+}
+
+/// Note-for-note agreement of one candidate fill with the composer's own notes:
+/// `(notes compared, exact matches)`.
+fn agreement(cand: &[Voice], all: &[Voice], free: &[usize]) -> (usize, usize) {
+  let (mut n_, mut ex) = (0usize, 0usize);
+  for &v in free {
+    for n in all[v].notes.iter().filter(|n| n.attack) {
+      let Some((got, _)) = kern::sounding(&cand[v], n.onset) else { continue };
+      n_ += 1;
+      if got == n.pitch {
+        ex += 1;
+      }
+    }
+  }
+  (n_, ex)
+}
+
+/// **What is a better harmonic plan worth, and can one be had without cheating?**
+///
+/// §9 step 6's fourth proposal. §8.6 already runs the plan three ways and the
+/// `leaky` row scores three points above the honest one, which is the largest
+/// single effect in that whole table — three times what reversing the objective
+/// buys. That is why this item is on the list, and it is also why the number
+/// cannot be read off the table as it stands.
+///
+/// Two faults, both fixed here.
+///
+/// **The rows are not paired.** A tighter plan solves spans a looser one refuses
+/// and refuses spans a looser one solves — `clean` finishes 99 of 117 and
+/// `leaky` 110 — so `9.3%` against `7.8%` compares two different sets of notes.
+/// Everything below is a **paired per-span difference against `clean` on the
+/// spans both conditions finished**, which is §8.2's protocol and the one §8.8
+/// used.
+///
+/// **The oracle is not a plan a grammar could supply.** §2.4's productions name
+/// a key plan and a cadence schedule; they cannot name a chord per onset, since
+/// the onsets belong to the notes the grammar is asking for. So the oracle is
+/// also run **coarsened** to a beat and to a bar, which is the resolution a form
+/// grammar could actually deliver, and that is the honest ceiling on step 7.
+///
+/// Two candidate improvements run beside them, neither of which sees the answer.
+/// `λ` is varied because §8.5 swept it against a **full** texture and this plan
+/// is analysed from one or two voices out of three or four — the same question
+/// asked of half the evidence. And the plan is **gated on its own fit**, because
+/// a plan is a hard constraint and a wrong one forbids the right note.
+///
+/// The bar is §8.2's, fixed before the run: keep a candidate only if it beats
+/// `clean` on **both** corpora by more than twice the standard error.
+pub fn plan_test() {
+  println!("\n== step 6: a better harmonic plan ==");
+  println!("  §8.6's `leaky` row is three points above its `clean` row — the largest single effect in");
+  println!("  that table. It is also unpaired, and it is not a plan any grammar could emit. Both here.\n");
+  println!("  `clean` rows see the fixed voices only and are the candidates. `oracle` rows see the");
+  println!("  answer key and are the ceiling; `oracle/beat` and `oracle/bar` are that ceiling coarsened");
+  println!("  to the resolution §2.4's grammar could actually deliver.\n");
+  println!("  DECIDED BEFORE THE RUN: keep a candidate only if it beats `clean λ=1` on BOTH corpora");
+  println!("  by more than twice the standard error of the paired per-span difference.\n");
+
+  let bach: Vec<Piece> = (1..=24)
+    .filter_map(|n| kern::read(&std::path::Path::new(KERN).join(format!("wtc1f{n:02}.krn"))).ok())
+    .collect();
+  let ren = renaissance(200);
+  if bach.is_empty() || ren.is_empty() {
+    return println!("  (corpus missing)");
+  }
+  let bs = windows(&bach, 30);
+  let rs = windows(&ren, 3);
+
+  // per corpus, per plan: the paired gain, its standard error, and how much of
+  // the plan names the chord the answer-key analysis names
+  let mut summary: Vec<Vec<(f64, f64, f64)>> = vec![];
+  let names = ["Bach", "Renaissance"];
+
+  for (cname, pieces, spans) in [(names[0], &bach, &bs), (names[1], &ren, &rs)] {
+    let t0 = std::time::Instant::now();
+    let mut rows: Vec<Vec<Option<f64>>> = vec![];
+    let mut cov = vec![0.0f64; PLANS.len()];
+    let mut ov = vec![0.0f64; PLANS.len()];
+    let mut fills: Vec<Vec<f64>> = vec![vec![]; PLANS.len()];
+    let mut built = 0usize;
+
+    for s in spans.iter() {
+      if s.free.len() > 2 {
+        continue;
+      }
+      let p = &pieces[s.piece];
+      let all = &s.clipped;
+      let source: Vec<Voice> =
+        all.iter().enumerate().filter(|(i, _)| !s.freeflag[*i]).map(|(_, v)| v.clone()).collect();
+      let base = plan::viterbi(&source, p.beat, LAMBDA);
+      let oracle = s.segs.clone();
+      let variants: Vec<Vec<harmony::Segment>> = vec![
+        vec![],
+        base.clone(),
+        plan::viterbi(&source, p.beat, 0.0),
+        plan::viterbi(&source, p.beat, 2.0),
+        plan::gated(&base, 0.6),
+        plan::gated(&base, 0.8),
+        oracle.clone(),
+        plan::coarsen(&oracle, p.beat, s.start),
+        plan::coarsen(&oracle, p.measure, s.start),
+      ];
+      built += 1;
+      let mut row: Vec<Option<f64>> = vec![None; PLANS.len()];
+      for (i, pl) in variants.iter().enumerate() {
+        cov[i] += covered(pl);
+        ov[i] += plan::overlap(pl, &oracle);
+        let pr = Problem {
+          voices: all.clone(),
+          free: s.freeflag.clone(),
+          compass: p.voices.iter().map(compass).collect(),
+          key: p.key,
+          measure: p.measure,
+          plan: pl.clone(),
+          tier: CONF_MEL,
+          weights: [1.0; 6],
+          samples: 0,
+          seed: 0x5EED ^ (s.start as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15),
+          beta: 0.0,
+        };
+        let Ok(sol) = realise::fill(&pr) else { continue };
+        let (n_, ex) = agreement(&sol.voices, all, &s.free);
+        if n_ == 0 {
+          continue;
+        }
+        row[i] = Some(ex as f64 / n_ as f64);
+        fills[i].push(if sol.saturated { f64::INFINITY } else { (sol.legal_fills as f64).max(1.0).log10() });
+      }
+      rows.push(row);
+    }
+    if rows.is_empty() {
+      println!("  {cname}: no spans");
+      summary.push(vec![(0.0, 0.0, 0.0); PLANS.len()]);
+      continue;
+    }
+
+    println!("  {cname}: {built} spans of eight quarters, at most two free voices, tier conf+melodic");
+    println!("   plan            done   covered   vs oracle   log10 fills    exact   gain vs clean     n");
+    let mut here = vec![];
+    for i in 0..PLANS.len() {
+      let done = rows.iter().filter(|r| r[i].is_some()).count();
+      let mine: Vec<f64> = rows.iter().filter_map(|r| r[i]).collect();
+      // paired against `clean` on the spans both finished
+      let d: Vec<f64> = rows
+        .iter()
+        .filter_map(|r| match (r[i], r[PLAN_BASE]) {
+          (Some(a), Some(b)) => Some(a - b),
+          _ => None,
+        })
+        .collect();
+      let (m, se) = if d.len() < 2 {
+        (0.0, 0.0)
+      } else {
+        let m = d.iter().sum::<f64>() / d.len() as f64;
+        let var = d.iter().map(|x| (x - m).powi(2)).sum::<f64>() / (d.len() - 1) as f64;
+        (100.0 * m, 100.0 * (var / d.len() as f64).sqrt())
+      };
+      let overlap = 100.0 * ov[i] / built as f64;
+      here.push((m, se, overlap));
+      let gain =
+        if i == PLAN_BASE { "      —      ".to_string() } else { format!("{m:>+6.2} +/- {se:>4.2}") };
+      println!(
+        "   {:<14} {:>4}    {:>5.0}%      {:>5.0}%       {:>7.1}    {:>5.1}%  {gain}  {:>4}",
+        PLANS[i],
+        done,
+        100.0 * cov[i] / built as f64,
+        overlap,
+        median(&fills[i]),
+        100.0 * mine.iter().sum::<f64>() / mine.len().max(1) as f64,
+        d.len(),
+      );
+    }
+    summary.push(here);
+    println!("   ({:.0}s)\n", t0.elapsed().as_secs_f64());
+  }
+
+  println!("  `covered` is the fraction of the span on which the plan names a chord at all; `vs oracle`");
+  println!("  is the fraction of it naming the same chord as the answer-key analysis. `exact` is over");
+  println!("  each row's own solved spans and is not comparable across rows — `gain` is, and it is the");
+  println!("  paired per-span difference on the spans that row and `clean λ=1` both finished.\n");
+
+  if summary.len() < 2 {
+    return;
+  }
+
+  // --- what a point of correct harmony is worth ------------------------------
+  //
+  // The three ceiling rows differ from `clean` in one measurable way — how much
+  // of the plan is right — so dividing the gain by that difference converts
+  // "build a better analyser" into an exchange rate. It is quoted rather than
+  // fitted: three points and a mean, not a regression.
+  println!("  Each of the ceiling rows differs from `clean` in exactly one measurable respect, which is");
+  println!("  how much of the plan is right. The gain per point of chord agreement:\n");
+  for (c, name) in names.iter().enumerate() {
+    let base = summary[c][PLAN_BASE].2;
+    let rates: Vec<f64> = PLAN_CEIL
+      .iter()
+      .filter(|&&i| summary[c][i].2 - base > 1.0)
+      .map(|&i| summary[c][i].0 / (summary[c][i].2 - base))
+      .collect();
+    if rates.is_empty() {
+      continue;
+    }
+    let m = rates.iter().sum::<f64>() / rates.len() as f64;
+    println!(
+      "    {name:<12} {m:.3} points of note agreement per point of chord agreement  ({})",
+      rates.iter().map(|r| format!("{r:.3}")).collect::<Vec<_>>().join(", ")
+    );
+  }
+
+  // --- the verdict, on the bar stated above ---------------------------------
+  let clears = |i: usize| -> bool {
+    (0..2).all(|c| summary[c][i].0 > 2.0 * summary[c][i].1 && summary[c][i].1 > 0.0)
+  };
+  let keep: Vec<usize> = PLAN_CAND.iter().copied().filter(|&i| clears(i)).collect();
+  println!();
+  if keep.is_empty() {
+    let any = PLAN_CAND
+      .iter()
+      .filter(|&&i| (0..2).any(|c| summary[c][i].0 > 2.0 * summary[c][i].1 && summary[c][i].1 > 0.0))
+      .count();
+    println!(
+      "  VERDICT: no plan that stays inside the fixed voices clears the bar on both corpora ({any} of {}",
+      PLAN_CAND.len()
+    );
+    println!("  clears it on one). Nothing adopted; §8.6's plan stands.");
+  } else {
+    println!("  VERDICT: {} clears the bar on both corpora:", keep.len());
+    for i in keep {
+      println!(
+        "    {:<12} Bach {:+.2}, Renaissance {:+.2}",
+        PLANS[i], summary[0][i].0, summary[1][i].0
+      );
+    }
+  }
+  let ceil: Vec<usize> = PLAN_CEIL.iter().copied().filter(|&i| clears(i)).collect();
+  println!(
+    "\n  {} of the {} ceiling rows clear it, {} included — so the plan is worth having and the",
+    ceil.len(),
+    PLAN_CEIL.len(),
+    if ceil.contains(&8) { "`oracle/bar`" } else { "the finest" }
+  );
+  println!("  analyser is what stands between the search and it.");
 }
