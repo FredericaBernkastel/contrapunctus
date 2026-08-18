@@ -473,6 +473,8 @@ does not have. That does not rescue the weighting, which was asked to generalise
 
 ## Cross-references made checkable
 
+[`75f7978`](../../commit/75f7978)
+
 `tests/references.rs`. Section references had been going stale silently, and the reason they were invisible is
 that the *anchors* were checked all along: a link to `#86-realisation-and-the-first-notes` was verified to resolve,
 and nothing compared it with the `§8.6` a reader actually sees. Doc comments in `src/` had no check of any kind,
