@@ -762,6 +762,81 @@ reporting is that it is seven out of seven in the one place it makes a claim tra
 
 ---
 
+## Before step 7 — five things checked first
+
+Step 6 spent five experiments discovering that legality is not preference, and every one of them was checking
+something that had been assumed for several steps. These five were checked before step 7 assumed them.
+
+### The endorsed configuration, and every entry against the subject
+
+[`7f38718`](../../commit/7f38718)
+
+§8.10 concluded the objective should be dropped and the generator should draw, and the code had no way to say so.
+Saying it naively is a trap: zeroing the weights is not dropping the objective, since to a shortest path every path
+then ties and the first found wins — the 1.3% row. `Problem::drawing()` zeroes the weights **and** asks for a draw;
+`Solution::chosen()` returns the draw rather than the tied path; a test asserts the two differ.
+
+And §8.11 showed plain diatonic transposition is wrong for the comes, while §8.3 and §8.4 place every entry that
+way. All **232** annotated entries against the first: **78.9%** exact transpositions, 2.2% tonal answers, 19.0%
+neither. Tonal answers are five entries in 232 because mutation belongs to the exposition's comes — so §8.3's
+clique test is measuring something real, and §8.4's design objective is the exposed one.
+
+### The fourth against the bass — the oldest lead, followed and closed
+
+[`b176c50`](../../commit/b176c50)
+
+§8.7 left one lead on §9's oldest open problem, and §8.11 supplied a second and independent reason to follow it:
+Marpurg's invertible-counterpoint chapter says the fifth must be handled as a dissonance *because inversion turns
+it into a fourth*.
+
+`corpus::Fourth` adds the scope to the existing checker rather than beside it. The `pairwise` rows reproduce §8.2's
+21.4/90.9 and 8.0/71.1 exactly. Judging the fourth against the bass removes **9%** of what the two rules flag in
+Bach and **23%** in the Renaissance, leaving them at 102.6 and 61.2 per thousand. Only **38%** of Bach's flagged
+fourths have a voice below them.
+
+**The lead is answered and it is not the answer.** The correction is right and is left off, the two rules being
+outside the endorsed tier already and 9% changing no verdict. What it establishes is that the replacement §9 wants
+has to explain the other ninety per cent.
+
+### Are episodes sequences
+
+[`e1b1a3b`](../../commit/e1b1a3b)
+
+§2.4's one production that claims something about the music. Episodes score **13.3%** sequential coverage against
+entry spans' **1.3%** — `+12.0 ± 2.0`, six standard errors — so the production is directionally right. And
+**70.8%** of episodes contain no strict sequence at all, so it is a tendency with a rate and not a rewrite rule.
+
+The incidental finding is the larger one. **Episodes are 54% of the book by duration**, 154 of them, median three
+bars. The realiser fills free voices against a *held entry*, and in most of the music there is no entry to hold.
+
+### Key-finding
+
+[`756c943`](../../commit/756c943)
+
+§9's second open problem. Viterbi over 24 keys by bar, by §8.5's instrument, with minor carrying its raised seventh
+because a collection cannot otherwise be told from its relative major.
+
+**The validation was already in the repository.** The 106 typed cadences §8.5 used carry roman numerals, and a
+roman numeral names the local key. All 106 parse.
+
+Naming the piece's own key everywhere scores **30.2%** for free, so the measurement is the **74** cadences
+elsewhere. At `μ = 0.25`: 45.3% overall, 56.6% forgiving the mode, **35.1%** on the modulations, key rhythm 6.4
+bars. `μ = 0` scores the same overall at a key rhythm of 1.7 bars, which is not a key rhythm. **It works and it is
+weak** — enough to catch a key plan that wanders somewhere Bach never goes, not enough to referee between two
+plausible ones.
+
+Two pitch-class masks were wrong when first written, and a test that spells the collections out caught both. It is
+in the file.
+
+### What the five leave step 7
+
+The grammar's `Exposition` is backed by §8.11 and its `Episode` production is a tendency rather than a rule. The
+key plan can be checked coarsely and not finely. The objective is off and the generator draws. And the largest
+single fact about fugal form this project has is that **more than half of a fugue has no subject sounding in it**,
+which is not the problem §8.6 solved.
+
+---
+
 ## Recurring pattern
 
 Three constraints in this project have turned out too permissive to bind — the two-rule hard tier, the
