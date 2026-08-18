@@ -3,3 +3,8 @@ target/
 # Rendered MIDI and captured run output — readme §8.6. Regenerate with
 # `cargo run --release -- realise`; nothing here is an input to anything.
 out/
+
+# Marpurg's `Abhandlung von der Fuge` — 92 MB of scans, and public domain rather
+# than licensed like the five PDFs beside it, so there is nothing to keep here
+# that a link cannot supply. Readme §7 and §10.5 give the Internet Archive item.
+literature/Marpurg, Friedrich Wilhelm - Abhandlung von der Fuge (1753)/

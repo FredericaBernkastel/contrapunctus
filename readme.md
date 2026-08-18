@@ -696,7 +696,8 @@ the two were not distinguished when the domain was chosen.
 
 None of this is novel, and that is a feature — the components are known-good and the risk sits in the composition
 rather than in the parts. Rows marked ✔ are in [`literature/`](literature/) and were read in full; the music rows
-below them are cited from those five, and the last seven — which are not about music at all — from the
+below them are cited from those five — except Marpurg, which is a primary source this project has **located and
+not transcribed**, and says so — and the last seven, which are not about music at all, from the
 WaveFunctionCollapse README and its own bibliography, for the reasons
 [§7.1](#71-parallels-within-the-same-algorithmic-family) gives. **Every DOI here was resolved against Crossref**,
 and the three citations that have none (Schottstaedt's technical report, Vuza's four-part article, and Gumin's
@@ -717,6 +718,7 @@ repository) say so rather than carry a plausible-looking one.
 | Laurson, PWConstraints / Score-PMC (1996); Anders, Strasheela (2007) | — | the two ends of the design space: fixed rhythm with a fast static ordering, versus arbitrary score topology |
 | Vuza, "Supplementary Sets and Regular Complementary Unending Canons", *Perspectives of New Music*, 1991–93; Andreatta, Amiot, Agon | — | tiling rhythmic canons — [§4](#4-space-filling-in-the-right-category) |
 | Fux, *Gradus ad Parnassum* (1725) | — | the rulebook itself, and — per [§8.2](#82-the-rulebook-stratified-by-two-corpora) — a book about a repertoire this project mostly did not test it on |
+| Marpurg, *Abhandlung von der Fuge* (1753; new edition 1806) — **located, not read** | no DOI — [archive.org/details/abhandlungvonder00marp](https://archive.org/details/abhandlungvonder00marp) | the fugue treatise of Bach's own circle, and the answer to [§9](#9-roadmap)'s standing question about which rulebook fits the WTC. What it holds that this project does not: the **tonal answer** as a table of degree correspondences, **invertible counterpoint** at three and four parts, and the **repercussion**. Scans are not tracked here — see [§10.5](#105-what-is-not-reproducible-from-this-repository) |
 | Gumin, *WaveFunctionCollapse*, 2016 | no DOI — [github.com/mxgmn/WaveFunctionCollapse](https://github.com/mxgmn/WaveFunctionCollapse) | the whitelist/blacklist contrast of [§7.1](#c1-is-a-whitelist-and-fux-is-a-blacklist), and Weak C2 |
 | Karth & Smith, "WaveFunctionCollapse is Constraint Solving in the Wild", *FDG 2017* | [10.1145/3102071.3110566](https://doi.org/10.1145/3102071.3110566) | the CSP reading made explicit, with backtracking and global constraints |
 | Karth & Smith, "WaveFunctionCollapse: Content Generation via Constraint Solving and Machine Learning", *IEEE Trans. Games* **14**(3):364–376, 2022 | [10.1109/TG.2021.3076368](https://doi.org/10.1109/TG.2021.3076368) | the same argument at journal length |
@@ -1523,8 +1525,10 @@ to infer the harmony because it decides it.
 ### 8.10 Replacing the soft tier, and the degenerate optimum of every positive criterion
 
 `Problem::prescribe` in [`realise.rs`](src/realise.rs). [§9](#9-roadmap) step 6's last proposal, and the only one
-whose stated destination this repository cannot reach: it points at **Marpurg** and **Kirnberger**, and
-[`literature/`](literature/) holds neither. What can be asked without them are the two questions that have to be
+whose stated destination this repository cannot reach: it points at **Marpurg** and **Kirnberger**, and neither is
+transcribed here. ([Marpurg is freely available](https://archive.org/details/abhandlungvonder00marp) and
+[§9](#9-roadmap) now records what is in it; it was not read when this ran, and reading it is not this
+experiment.) What can be asked without them are the two questions that have to be
 answered before any replacement is worth transcribing — **is the tier one criterion or six**, and **does saying the
 same thing positively do better?**
 
@@ -1733,8 +1737,9 @@ order.
      magnitude of legal fills for nothing settles what constraint is: **neither tightness nor looseness predicts
      agreement, correctness does.**
    - ~~Replacing the soft tier rather than reweighting it.~~ **Done, and it is the tie-break rather than the tier
-     that was the problem.** Marpurg and Kirnberger remain unread — `literature/` holds neither — so what was
-     asked is what can be asked without them: six one-hot ablations, and three positive criteria charged **in
+     that was the problem.** Marpurg and Kirnberger remain unread — the first is
+     [freely available](https://archive.org/details/abhandlungvonder00marp) and located since, the second not — so what
+     was asked is what can be asked without them: six one-hot ablations, and three positive criteria charged **in
      place of** the tier ([§8.10](#810-replacing-the-soft-tier-and-the-degenerate-optimum-of-every-positive-criterion)). Three findings. The tier is **six and not one**: no subset carries it,
      because each criterion's cheap degenerate solution is charged by another, so they are **mutually blocking
      degeneracies**. Every prescription collapses onto one — *move by step* is satisfied by oscillating between two
@@ -1778,7 +1783,23 @@ order.
 - **The right rulebook for the right repertoire.** Fux is 1725 and Palestrina-style vocal; the WTC is 1722 and
   keyboard. **Marpurg's *Abhandlung von der Fuge*** (1753) is the fugue treatise of Bach's own circle and
   **Kirnberger** studied with him directly. Transcribing either is exactly as unfitted as transcribing Fux — it is
-  transcribing the right explicit theory.
+  transcribing the right explicit theory. Marpurg is [freely available](https://archive.org/details/abhandlungvonder00marp); the
+  engraved examples are a separate volume from the text in every edition, so both are needed. Three things in it
+  answer questions open here — **surveyed from the scans, not read in full**, which is why the row in
+  [§7](#7-prior-art) says located rather than read. **Hauptstück 3, *Vom
+  Gefährten***, gives the **tonal answer** as a table of degree correspondences with a two-case rule — transpose
+  note for note where the subject stays in the key, alter it where the subject reaches the dominant — which is a
+  finite map this document's formalism can hold and currently does not have at all, since
+  [§8.3](#83-the-clique-test) places entries by plain diatonic transposition. Its plates give some thirty worked
+  *Dux*/*Comes* pairs, attributed, two of them Bach's — the treatise's own examples, usable as
+  [§8.7](#87-the-species-as-a-whitelist-and-why-it-does-not-tighten-anything) used Fux's figures and for the same
+  reason. The second part, on **invertible counterpoint**, states its rules in a form
+  [§2.2](#22-counterpoint-is-a-finite-automaton)'s automaton already speaks: no two consecutive fourths, since
+  inversion makes them fifths, and the fifth handled as a dissonance, since inversion makes it a fourth. That is
+  the fourth-and-fifth exchange the bullet above arrived at from the other direction, by measurement. And **Vom
+  Wiederschlage** is about the order and cadence of entries, which is [§2.4](#24-form-is-a-grammar)'s subject.
+  None of it addresses [§8.10](#810-replacing-the-soft-tier-and-the-degenerate-optimum-of-every-positive-criterion)'s
+  problem, which is what to prefer among the legal fills; this is a book about fugal devices, not about choosing.
 - **The Shostakovich half of the ground truth**, which needs Marques' MIDI rather than kern.
 
 ---
@@ -1932,6 +1953,9 @@ benchmarks.
 ### 10.5 What is not reproducible from this repository
 
 - **The literature.** [`literature/`](literature/) holds five PDFs under their publishers' terms;
-  [§7](#7-prior-art) gives DOIs so each can be obtained independently.
+  [§7](#7-prior-art) gives DOIs so each can be obtained independently. **Marpurg is deliberately not among them**:
+  the scans run to 92 MB, they are public domain rather than licensed, and a link serves as well as a copy —
+  [archive.org/details/abhandlungvonder00marp](https://archive.org/details/abhandlungvonder00marp). `.gitignore` keeps them
+  out if they are downloaded into that directory.
 - **The Shostakovich annotations**, which have no scores here.
 - **The functional-harmony layer**, which compiles but is not exercised by any reported number.
