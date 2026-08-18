@@ -2361,3 +2361,110 @@ pub fn answer_test() {
   println!("\n  `median set` is how many answers the rules admit for one subject, against §8.6's");
   println!("  10^12 fills of three bars. A set of one is a prediction; a set of ten is a shortlist.");
 }
+
+// ------------------------------------- the fourth, and the scope it is judged in ---
+
+/// The lowest pitch sounding anywhere in the texture at one tick.
+fn bass_at(p: &Piece, t: i64) -> Option<Pitch> {
+  p.voices
+    .iter()
+    .filter_map(|v| kern::sounding(v, t).map(|(q, _)| q))
+    .min_by_key(|q| q.chroma())
+}
+
+/// **Do the two dissonance rules fail because they are wrong, or because they
+/// are judged in the wrong scope?**
+///
+/// §9's oldest open problem. [§8.2](../readme.md) found `UnpreparedDissonance`
+/// and `UnresolvedDissonance` firing at 8.0 and 71.1 per thousand slices in the
+/// Renaissance and 21.4 and 90.9 in Bach, which is why they were stratified out
+/// of the hard tier, and no replacement has been found: §8.7's species whitelist
+/// could not account for one dissonance in five.
+///
+/// §8.7 did leave a lead. The **perfect fourth** accounts for 31% of Bach's
+/// flagged dissonances and 44% of the Renaissance's, and a fourth is the one
+/// interval whose quality a pair cannot determine: over a supporting bass it is
+/// a consonance and only against the bass is it not. §2.2's automaton judges a
+/// pair, so it cannot see that — which would make these rules wrong in their
+/// **scope** rather than in their content.
+///
+/// §8.11 supplied a second and independent reason to look. Marpurg's chapter on
+/// invertible counterpoint reaches the same interval from the other side: the
+/// fifth must be handled as a dissonance *because inversion turns it into a
+/// fourth*. Two unrelated routes to one suspicion is the strongest signal this
+/// project has had about these two rules.
+///
+/// Three scopes, both corpora, and the blunt control included so that the
+/// principled rule cannot take credit for what merely exempting the interval
+/// would do.
+pub fn fourth_test() {
+  println!("\n== the fourth, and the scope a dissonance is judged in ==");
+  println!("  §8.2's two dissonance rules fail in both centuries and §8.7 found the perfect fourth");
+  println!("  accounts for 31% of Bach's flagged dissonances and 44% of the Renaissance's. A fourth");
+  println!("  over a supporting bass is a consonance and only a fourth against the bass is not, and");
+  println!("  a pairwise automaton cannot see the difference — so the rules may be wrong in scope.\n");
+  println!("  `pairwise` is what §8.2 measured. `over a bass` is the proposal. `consonant` is the");
+  println!("  blunt control: exempt every fourth, so the principled rule cannot take its credit.\n");
+
+  let bach: Vec<Piece> = (1..=24)
+    .filter_map(|n| kern::read(&kern_dir().join(format!("wtc1f{n:02}.krn"))).ok())
+    .collect();
+  let ren = renaissance(cli::params().ren_works);
+  if bach.is_empty() || ren.is_empty() {
+    return println!("  (corpus missing)");
+  }
+
+  println!("   corpus        scope         slices   unprepared/1k   unresolved/1k   both/1k");
+  let mut rows: Vec<(String, String, f64, f64)> = vec![];
+  for (name, corpus) in [("Bach", &bach), ("Renaissance", &ren)] {
+    for (label, scope) in [
+      ("pairwise", corpus::Fourth::Pairwise),
+      ("over a bass", corpus::Fourth::OverBass),
+      ("consonant", corpus::Fourth::Consonant),
+    ] {
+      let (mut slices, mut unprep, mut unres) = (0usize, 0usize, 0usize);
+      for p in corpus.iter() {
+        for a in 0..p.voices.len() {
+          for b in a + 1..p.voices.len() {
+            let t = corpus::check_voices_in(
+              &p.voices[a],
+              &p.voices[b],
+              p.measure,
+              scope,
+              &|tick| bass_at(p, tick),
+            );
+            slices += t.slices;
+            unprep += t.by_rule.get(Rule::UnpreparedDissonance.name()).copied().unwrap_or(0);
+            unres += t.by_rule.get(Rule::UnresolvedDissonance.name()).copied().unwrap_or(0);
+          }
+        }
+      }
+      let k = 1000.0 / slices.max(1) as f64;
+      println!(
+        "   {name:<13} {label:<12} {slices:>8}   {:>13.1}   {:>13.1}   {:>7.1}",
+        unprep as f64 * k,
+        unres as f64 * k,
+        (unprep + unres) as f64 * k
+      );
+      rows.push((name.into(), label.into(), unprep as f64 * k, unres as f64 * k));
+    }
+  }
+
+  println!("\n  §8.2 reports 21.4 and 90.9 for Bach and 8.0 and 71.1 for the Renaissance, which the");
+  println!("  `pairwise` rows must reproduce or nothing below them means anything.\n");
+  for c in 0..2 {
+    let (base, over, none) = (&rows[c * 3], &rows[c * 3 + 1], &rows[c * 3 + 2]);
+    let tot = |r: &(String, String, f64, f64)| r.2 + r.3;
+    let drop = 100.0 * (tot(base) - tot(over)) / tot(base).max(f64::EPSILON);
+    let blunt = 100.0 * (tot(base) - tot(none)) / tot(base).max(f64::EPSILON);
+    println!(
+      "  {:<12} against the bass removes {drop:.0}% of what these two rules flag, exempting every",
+      base.0
+    );
+    println!(
+      "               fourth removes {blunt:.0}%, so {:.0}% of the flagged fourths have a voice below",
+      100.0 * drop / blunt.max(f64::EPSILON)
+    );
+    println!("               them and the rest are against the bass, where the rule is right to fire.");
+  }
+}

@@ -46,6 +46,7 @@ are built and measured — [§8](#8-what-is-built-and-what-it-measures). Realisa
   - [8.9 A better plan, and the first lever that moves more than a point](#89-a-better-plan-and-the-first-lever-that-moves-more-than-a-point)
   - [8.10 Replacing the soft tier, and the degenerate optimum of every positive criterion](#810-replacing-the-soft-tier-and-the-degenerate-optimum-of-every-positive-criterion)
   - [8.11 Marpurg's tonal answer: one rule exact, one wrong, and the treatise knew which](#811-marpurgs-tonal-answer-one-rule-exact-one-wrong-and-the-treatise-knew-which)
+  - [8.12 The fourth, and the scope a dissonance is judged in](#812-the-fourth-and-the-scope-a-dissonance-is-judged-in)
 - [9. Roadmap](#9-roadmap)
 - [10. Reproducing the results](#10-reproducing-the-results)
   - [10.1 Environment and data](#101-environment-and-data)
@@ -1814,6 +1815,59 @@ tonal fugue and the 15th-century control has neither the annotations nor the exp
 are seven, not seven hundred. What makes them worth reporting is that they are **seven out of seven**, on a rule
 stated before they were looked at, in the one place the rule makes a claim transposition does not.
 
+### 8.12 The fourth, and the scope a dissonance is judged in
+
+`corpus::Fourth`. [§9](#9-roadmap)'s oldest open problem, and the one lead it had.
+[§8.2](#82-the-rulebook-stratified-by-two-corpora) measured `UnpreparedDissonance` and `UnresolvedDissonance` at
+**8.0 and 71.1** per thousand slices in the Renaissance and **21.4 and 90.9** in Bach, which is why they were
+stratified out of the hard tier; and
+[§8.7](#87-the-species-as-a-whitelist-and-why-it-does-not-tighten-anything)'s whitelist could not replace them.
+
+What §8.7 did leave was a suspicion about **which interval** is doing it: the perfect fourth accounts for 31% of
+Bach's flagged dissonances and 44% of the Renaissance's. And the fourth is the one interval whose quality a *pair*
+cannot determine. Over a supporting bass it is a consonance; only against the bass is it not.
+[§2.2](#22-counterpoint-is-a-finite-automaton)'s automaton judges a pair and therefore cannot see the difference,
+which would make these two rules wrong in their **scope** rather than in their content — *"a change to the scope a
+rule is judged in rather than to the rule"*, as §8.7 put it.
+
+[§8.11](#811-marpurgs-tonal-answer-one-rule-exact-one-wrong-and-the-treatise-knew-which) then supplied a second and
+independent reason to look at exactly this interval. Marpurg's chapter on invertible counterpoint arrives at it
+from the other side: the fifth must be handled as a dissonance **because inversion turns it into a fourth**. Two
+unrelated routes to one suspicion is the strongest signal this project has had about these rules.
+
+Three scopes, both corpora. `pairwise` is what §8.2 measured; `over a bass` is the proposal; `consonant` exempts
+every fourth and is the blunt control, so that the principled rule cannot take credit for what merely dropping the
+interval would do.
+
+| corpus | scope | unprepared /1k | unresolved /1k | both |
+|---|---|---:|---:|---:|
+| Bach | pairwise | 21.4 | 90.9 | 112.3 |
+| Bach | **over a bass** | 18.8 | 83.8 | **102.6** |
+| Bach | consonant | 16.3 | 70.7 | 87.1 |
+| 15th-c. | pairwise | 8.0 | 71.1 | 79.1 |
+| 15th-c. | **over a bass** | 3.4 | 57.8 | **61.2** |
+| 15th-c. | consonant | 2.9 | 46.9 | 49.8 |
+
+The `pairwise` rows reproduce §8.2's four figures exactly, which is what makes the rest of the table readable.
+
+**The lead is answered, and it is not the answer.** Judging the fourth against the bass removes **9%** of what the
+two rules flag in Bach and **23%** in the Renaissance, and leaves them firing at **102.6** and **61.2** per
+thousand. A rule that fires a hundred times in a thousand slices of the music it was written for is not a hard
+rule, and rescoping does not make it one. The oldest open problem stands, with one hypothesis eliminated.
+
+**Why so little, and the number that explains it.** Only **38%** of Bach's flagged fourths have a voice below them;
+the other 62% are against the bass, where the pairwise rule was right to fire all along. In the Renaissance it is
+**61%**, which is why the same correction is worth nearly three times as much there. That is a repertoire split of
+the kind §8.2 keeps producing, and for once the mechanism is plain rather than inferred: more voices and more
+upper-voice writing mean more fourths with something underneath them.
+
+**The correction is right anyway, and it is not adopted for that reason.** That a fourth over a bass is a
+consonance is not a contested claim, and `corpus::Fourth::OverBass` implements it. But this document's tables are
+the record of the runs as made, the two rules are already outside the endorsed tier
+([§8.2](#82-the-rulebook-stratified-by-two-corpora)), and a scope correction worth 9% does not change any verdict
+that rests on them. It is measured, kept runnable, and left off — and what it establishes is that **the fourth was
+never the whole of the problem**, so the replacement §9 still wants has to explain the other 90% too.
+
 ---
 
 ## 9. Roadmap
@@ -1918,10 +1972,11 @@ order.
   constantly. Without it [§2.3](#23-harmony-is-a-second-automaton)'s functional half cannot be built or tested.
 - **A replacement for the two dissonance rules**, which fail in both centuries ([§8.2](#82-the-rulebook-stratified-by-two-corpora)),
   and which step 6's whitelist could not supply
-  ([§8.7](#87-the-species-as-a-whitelist-and-why-it-does-not-tighten-anything)). It did leave a lead worth
-  following: **resolve the fourth against the lowest sounding voice rather than pairwise**, since doing so removes
-  a third to a half of everything those rules currently flag. That is a change to the scope a rule is judged in
-  rather than to the rule, which is the kind of fault §8.2 suspected them of all along.
+  ([§8.7](#87-the-species-as-a-whitelist-and-why-it-does-not-tighten-anything)). **Its one lead has now been
+  followed and it is not the answer** ([§8.12](#812-the-fourth-and-the-scope-a-dissonance-is-judged-in)): judging the
+  fourth against the lowest sounding voice rather than pairwise is right, and removes 9% of what the rules flag in
+  Bach and 23% in the Renaissance, leaving them at 102.6 and 61.2 per thousand. Only 38% of Bach's flagged fourths
+  have a voice below them. Whatever replaces these rules has to explain the other ninety per cent.
 - **A design objective**, still open after two attempts ([§3.2](#32-capacity-is-a-density-and-it-cannot-be-optimised)).
   It has to reward a subject working at the fifth, which is a harmonic statement.
 - **The right rulebook for the right repertoire.** Fux is 1725 and Palestrina-style vocal; the WTC is 1722 and
@@ -2015,6 +2070,7 @@ the Josquin Research Project for the Renaissance scores.
 | [§8.10](#810-replacing-the-soft-tier-and-the-degenerate-optimum-of-every-positive-criterion) tier ablation and prescriptions | `cargo run --release -- soft` |
 | [§8.10](#810-replacing-the-soft-tier-and-the-degenerate-optimum-of-every-positive-criterion) the objective, paired | `cargo run --release -- objective` |
 | [§8.11](#811-marpurgs-tonal-answer-one-rule-exact-one-wrong-and-the-treatise-knew-which) Marpurg's tonal answer | `cargo run --release -- answer` |
+| [§8.12](#812-the-fourth-and-the-scope-a-dissonance-is-judged-in) the fourth's scope | `cargo run --release -- fourth` |
 | every cross-reference in the repository | `cargo test --release --test references` |
 
 **This table is checked against the program.** `tests/references.rs` runs `list` and fails the build if a row here

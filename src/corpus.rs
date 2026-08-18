@@ -88,6 +88,42 @@ pub fn pair_sym(a: Sounding, b: Sounding, downbeat: bool) -> Sym {
 /// The same, on two voices that need not come from a parsed piece — which is
 /// what step 2 needs, since it checks *placements* rather than scores.
 pub fn check_voices(va: &kern::Voice, vb: &kern::Voice, measure: i64) -> Tally {
+  check_voices_in(va, vb, measure, Fourth::Pairwise, &|_| None)
+}
+
+/// Which fourths count as dissonances — readme §8.12.
+///
+/// §2.2's automaton judges a **pair**, and a pair is all a two-voice exercise
+/// has. In three parts or more the perfect fourth is the one interval whose
+/// quality depends on a voice neither member of the pair can see: over a
+/// supporting bass it is a consonance, and only against the bass is it not.
+/// §8.7 measured the fourth at 31% of Bach's flagged dissonances and 44% of the
+/// Renaissance's, and Marpurg's chapter on invertible counterpoint arrives at
+/// the same place from the other side — the fifth must be handled as a
+/// dissonance *because inversion turns it into a fourth*.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Fourth {
+  /// Every fourth is a dissonance, which is what the automaton has always done.
+  Pairwise,
+  /// A dissonance only when nothing sounds below it.
+  OverBass,
+  /// None is, which is the blunt control that says how much of the effect is
+  /// the *scope* and how much is simply exempting the interval.
+  Consonant,
+}
+
+/// [`check_voices`] with the scope a fourth is judged in, and a way to ask what
+/// sounds below the pair at a given tick.
+///
+/// One function rather than two, because a checker that drifts from its own
+/// variant is how this repository has produced wrong numbers before.
+pub fn check_voices_in(
+  va: &kern::Voice,
+  vb: &kern::Voice,
+  measure: i64,
+  fourth: Fourth,
+  bass: &dyn Fn(i64) -> Option<crate::pitch::Pitch>,
+) -> Tally {
   let mut t = Tally { pairs: 1, ..Default::default() };
   let mut st = State::default();
   // **Per voice**, not per role. An earlier version tracked the previous
@@ -108,7 +144,21 @@ pub fn check_voices(va: &kern::Voice, vb: &kern::Voice, measure: i64) -> Tally {
     };
     // Each voice's motion comes from its own history; roles are assigned after.
     let (mv_a, mv_b) = (Move::of(prev_a, pa), Move::of(prev_b, pb));
-    let sym = pair_sym((pa, aa, mv_a), (pb, ab, mv_b), measure > 0 && time % measure == 0);
+    let mut sym = pair_sym((pa, aa, mv_a), (pb, ab, mv_b), measure > 0 && time % measure == 0);
+    if fourth != Fourth::Pairwise {
+      let (lo_p, hi_p) = if pa.chroma() <= pb.chroma() { (pa, pb) } else { (pb, pa) };
+      let s = Interval::between(lo_p, hi_p).simple();
+      let exempt = match fourth {
+        Fourth::Consonant => true,
+        // strictly below, so a voice doubling the pair's own bass does not
+        // support it — that is the same note, not a foundation under it
+        Fourth::OverBass => bass(time).map_or(false, |b| b.chroma() < lo_p.chroma()),
+        Fourth::Pairwise => false,
+      };
+      if s.steps == 3 && s.semis == 5 && exempt {
+        sym.vert = Vert::Imperfect;
+      }
+    }
     let (fired, next) = automaton::step(st, sym);
     for r in fired {
       if r == Rule::ForbiddenMelodic {
