@@ -1,4 +1,4 @@
-//! The five experiments proposed to resolve §11.1 — that the rules Bach never
+//! The five experiments proposed to resolve the deadlock §8.2 records — that the rules Bach never
 //! breaks are the rules that almost never bind.
 //!
 //! 1. **density** — clique *size* saturates; does graph *density* discriminate?

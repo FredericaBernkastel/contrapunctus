@@ -253,7 +253,7 @@ Roman numeral against the mode, with half cadences on the local dominant and dec
 
 ---
 
-## §17 — the analyser rebuilt
+## The analyser rebuilt
 
 [`6acc533`](../../commit/6acc533)
 
@@ -315,7 +315,7 @@ figure. Recorded because each was invisible until measured and each was worth an
    another. Both are now iterated by index.
 4. **The analyser rescanned every note for each of 108 chord candidates.** Hoisting the per-segment weights out of
    the chord loop left every published figure of §8.5 identical and took the λ sweep from ten minutes to 1.7
-   seconds. It had been that way since §17.
+   seconds. It had been that way since the analyser was rebuilt.
 
 Finished layers also kept their hash index, which is dead once the next layer is built. That one was a guess at the
 cause and turned out not to be it — the process never exceeded 15 MB — but the change is right regardless.
@@ -391,7 +391,7 @@ Two things came out of the comparison that were not visible from inside the proj
   two. The unfitted version, uniform sampling from the legal set, is mostly built: the exact path counts are
   already computed and already checked against enumeration.
 
-Written first as a standalone §11 and then moved inside §7, where it belongs: its seven sources merged into that
+Written first as a standalone top-level section and then moved inside §7, where it belongs: its seven sources merged into that
 section's table rather than standing in a second one making the same Crossref claim, which turned up a stale count
 — three citations now carry no DOI, not two.
 
@@ -468,6 +468,38 @@ a century *before* Fux's subject, where open fifths and octaves are idiomatic an
 constantly, and three of the six criteria penalise exactly those. So the demonstrated failure is to span 1450–1722.
 **Fux's own repertoire sits between the two and is untested**, and testing it needs a Palestrina corpus this project
 does not have. That does not rescue the weighting, which was asked to generalise and did not.
+
+---
+
+## Cross-references made checkable
+
+`tests/references.rs`. Section references had been going stale silently, and the reason they were invisible is
+that the *anchors* were checked all along: a link to `#86-realisation-and-the-first-notes` was verified to resolve,
+and nothing compared it with the `§8.6` a reader actually sees. Doc comments in `src/` had no check of any kind,
+and there are 160 references in them.
+
+Four checks, all mechanical, all `cargo test`: numbered headings form a contiguous sequence; `Contents` lists each
+exactly once with the right anchor; every link resolves, every relative path exists, and where a link reads `[§N]`
+the heading it points at **is** section N; and every bare `§N` across `readme.md`, `CHANGELOG.md` and `src/**.rs`
+names a section that exists. References to `ricercar`'s sections resolve against that document instead, identified
+without guesswork — either the link target names the file, or the word immediately before is `ricercar`.
+
+**The first run found 53 stale references** in a repository that had just been tidied by hand. Four links in the
+readme read `§8` while pointing at `#9-roadmap`; the rest were doc comments and command banners still naming the
+`9`–`17` numbering that the restructure folded into §8 — `12.5`, `13.3`, `16.2`, `17.4` and so on. Live
+references were remapped; the ones naming superseded experiments now say what the experiment was, since the
+numbering they used no longer exists anywhere.
+
+Each of the four checks was then verified to fail on a deliberately broken copy, because a linter that has never
+failed is indistinguishable from one that cannot.
+
+### The alternative that was not taken
+
+Stable identifiers — permanent slugs referenced instead of numbers — would prevent the rot rather than detect it,
+at the cost of the numbers themselves, which carry a reader's sense of where in the argument a reference points
+and which this document's voice is built on. Detection is cheaper and loses nothing. What remains true is that
+**renumbering is the operation that breaks references**, so it stays worth avoiding; the checker turns a silent
+breakage into a failing build rather than making renumbering free.
 
 ---
 

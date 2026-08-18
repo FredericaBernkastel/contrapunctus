@@ -285,7 +285,7 @@ pub fn rule_is_hard(name: &str) -> bool {
   is_hard_name(name)
 }
 
-/// Just the edge density of the compatibility graph — readme §12.1's measure,
+/// Just the edge density of the compatibility graph — readme §8.4's measure,
 /// without the clique search. Capacity by clique *size* saturates under a
 /// permissive tier; density is bounded in `[0, 1]` and cannot.
 pub fn density(

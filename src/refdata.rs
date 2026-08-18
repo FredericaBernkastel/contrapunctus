@@ -24,7 +24,7 @@ pub struct SubjectSpec {
   pub alternatives: Vec<i64>,
   /// Annotated cadences: tick, and the label in Hepokoski-Darcy notation such
   /// as `III:PAC`. Present in the ground truth from the beginning and unused
-  /// until §16 — the only external check available on the harmonic analyser.
+  /// until the analyser was validated — the only external check available on the harmonic analyser.
   pub cadences: Vec<(i64, String)>,
 }
 

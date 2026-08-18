@@ -496,7 +496,7 @@ Ricercar [§7.6](ricercar/readme.md#76-step-5-θ-calibrated-against-bach) had to
 throughout step 4, and concluded that *"the measurement became intractable at the moment the threshold stopped
 being wrong."*
 
-Here there is no threshold. The calibration becomes a **yes-or-no test**, and since [§8](#9-roadmap)'s step 0 the target is an
+Here there is no threshold. The calibration becomes a **yes-or-no test**, and since [§9](#9-roadmap)'s step 0 the target is an
 exact set of integers rather than a description:
 
 > The subject of BWV 867 is 12 quarters long. Its five final entries entries stand at quarters
@@ -654,7 +654,7 @@ Written in ricercar's [§8](ricercar/readme.md#8-what-this-will-not-do) form, be
   patterns and choose among them **randomly**. This approach obviously leaves much to be desired. Musical styles
   are differentiated more by rhythmic practices than melodic."* A system can satisfy every rule it was given and
   still be choosing its rhythm by coin flip. **That is the failure to expect here** — not illegal output, but legal
-  output that is empty where the style lives — and [§8](#9-roadmap)'s step 1 is written to catch it early.
+  output that is empty where the style lives — and [§9](#9-roadmap)'s step 1 is written to catch it early.
 
   Two of his omissions are pointed. *"Does not reward invertible counterpoint and imitation"* is exactly the fugal
   content this document is about; *"makes no decisions about overall melodic shapes"* is [§2.5](#25-the-search-is-a-shortest-path)'s accumulator
@@ -702,7 +702,7 @@ repository) say so rather than carry a plausible-looking one.
 |---|---|---|
 | ✔ Anders & Miranda, "Constraint Programming Systems for Modeling Music Theories and Composition", *ACM Comput. Surv.* **43**(4):30, 2011 | [10.1145/1978802.1978809](https://doi.org/10.1145/1978802.1978809) | the survey to read first — music CP end to end, and the source for most rows below |
 | ✔ Komosinski & Szachewicz, "Automatic species counterpoint composition by means of the dominance relation", *J. Math. & Music* **9**(1):75–94, 2015 | [10.1080/17459737.2014.935816](https://doi.org/10.1080/17459737.2014.935816) | first-species counterpoint by the **dominance relation** — the argument against weighted sums, and [§5](#5-what-this-will-not-do)'s numbers |
-| ✔ Giraud, Groult, Leguy & Levé, "Computational Fugue Analysis", *Computer Music Journal* **39**(2):77–96, 2015 | [10.1162/COMJ_a_00300](https://doi.org/10.1162/COMJ_a_00300) | fugue **analysis**, and the ground-truth corpus [§8](#9-roadmap) now uses |
+| ✔ Giraud, Groult, Leguy & Levé, "Computational Fugue Analysis", *Computer Music Journal* **39**(2):77–96, 2015 | [10.1162/COMJ_a_00300](https://doi.org/10.1162/COMJ_a_00300) | fugue **analysis**, and the ground-truth corpus [§9](#9-roadmap) now uses |
 | ✔ Schottstaedt, *Automatic Species Counterpoint*, CCRMA Report STAN-M-19, Stanford, May 1984 | no DOI — [ccrma.stanford.edu/STANM/stanms/stanm19](https://ccrma.stanford.edu/STANM/stanms/stanm19/) | Fux, five species, up to eight voices, stratified penalties — the closest prior attempt at [§2.7](#27-where-a-solver-takes-over-from-the-dp)'s scale, printed as complete source, and the most useful negative result here |
 | ✔ Ebcioğlu, "An Expert System for Harmonizing Chorales in the Style of J. S. Bach", *J. Logic Programming* **8**(1):145–185, 1990 | [10.1016/0743-1066(90)90055-A](https://doi.org/10.1016/0743-1066(90)90055-A) | ~350 rules in first-order predicate calculus, generate-and-test with **intelligent backtracking**, in a language (BSL) built because PROLOG would not do — the argument for factoring a rulebook rather than listing it |
 | Pesant, "A Regular Language Membership Constraint for Finite Sequences of Variables", *CP 2004*, LNCS **3258**:482–495 | [10.1007/978-3-540-30201-8_36](https://doi.org/10.1007/978-3-540-30201-8_36) | the domain-consistent DFA-membership propagator of [§2.5](#25-the-search-is-a-shortest-path) |
@@ -733,7 +733,7 @@ the composition is worth attempting even though every part is off the shelf.
 
 **And a calibration on speed**, from the same conclusion: an all-interval series or first-species Fuxian
 counterpoint solves in milliseconds; harmonising a melody or **two-voice florid counterpoint takes seconds**. So
-[§8](#9-roadmap)'s realisation step should be budgeted in seconds for two voices, and five voices should be treated as genuinely
+[§9](#9-roadmap)'s realisation step should be budgeted in seconds for two voices, and five voices should be treated as genuinely
 open rather than as more of the same.
 
 **One methodological note, from Giraud.** Discussing why they did not learn their thresholds: machine learning
@@ -1366,9 +1366,17 @@ or swept.
 ```
 rustc 1.96.1   cargo 1.96.1     # no dependencies; std only
 git clone --recurse-submodules <this repo>
-cargo test --release            # 13 tests
+cargo test --release            # 18 unit tests, 4 reference checks
 cargo run --release -- realise  # writes out/*.mid
 ```
+
+**The cross-references are enforced, not proofread.** `tests/references.rs` fails the build if a `§` reference
+anywhere in this document, in [`CHANGELOG.md`](CHANGELOG.md) or in `src/**.rs` names a section that does not exist;
+if a link's visible text and its anchor disagree about which section that is; if the numbering has a gap; or if the
+Contents and the headings have drifted apart. It exists because they had: the first run over an already-tidied
+repository found **53 stale references**, most of them doc comments still naming the `9`–`17` numbering that the
+restructure folded into §8, and four links in this file reading `§8` while pointing at §9. Anchors had been checked
+all along, which is exactly why the rot was invisible — the links resolved, and only the words were wrong.
 
 | submodule | pinned | licence | used by |
 |---|---|---|---|
@@ -1396,6 +1404,7 @@ the Josquin Research Project for the Renaissance scores.
 | [§8.6](#86-realisation-and-the-first-notes) reconstruction | `cargo run --release -- r2` |
 | [§8.6](#86-realisation-and-the-first-notes) scalarisations | `cargo run --release -- r3` |
 | [§8.6](#86-realisation-and-the-first-notes) treatise weighting, both corpora | `cargo run --release -- gen` |
+| every cross-reference in the repository | `cargo test --release --test references` |
 
 `realise` runs all three of the last. `rank`, `probe`, `exp2`, `exp5`, `harmony`, `cad`, `seg`, `revisit`, `hren2`
 and `func` reproduce the superseded measurements recorded in [`CHANGELOG.md`](CHANGELOG.md).

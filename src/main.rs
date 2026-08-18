@@ -355,7 +355,7 @@ fn stretto() {
 
     let ix: Vec<usize> = (0..entries.len()).collect();
     for (tier_name, tier) in
-      [("full hard tier (5 rules)", automaton::HARD), ("confirmed tier (2 rules, §9.4)", automaton::CONFIRMED)]
+      [("full hard tier (5 rules)", automaton::HARD), ("confirmed tier (2 rules, §8.2)", automaton::CONFIRMED)]
     {
       let table = stretto::build(&sub, &entries, p.measure, tier);
       let ok = table.is_clique(&ix);
@@ -441,8 +441,8 @@ fn rank() {
   println!("\n== step 3: contrapuntal capacity of 24 Bach subjects ==");
   println!("(diatonic transpositions -7..+7, offsets every quarter within the");
   println!(" subject, one entry per offset, clique anchored at the subject)");
-  println!("Judged on the FULL 5-rule tier, not the confirmed 2-rule tier of §9.4:");
-  println!("see §11 - under the 2-rule tier capacity does not converge at all, so");
+  println!("Judged on the FULL 5-rule tier, not the confirmed 2-rule tier of §8.2:");
+  println!("see §8.4 - under the 2-rule tier capacity does not converge at all, so");
   println!("the only tier that measures anything is one Bach himself violates.\n");
   println!("  fugue        vv  subj  notes  cap  tightest stretto");
   let mut rows: Vec<(usize, String, i64, usize, String)> = vec![];
@@ -786,7 +786,7 @@ fn liveliness(c: &[i16]) -> (usize, usize, f64) {
 }
 
 fn step4_design() {
-  println!("\n== step 4: designing a subject against the §12.1 measure ==");
+  println!("\n== step 4: designing a subject against the §8.4 measure ==");
   let pieces = load_bach();
   let Some(p) = pieces.get("wtc-i-22") else { return };
   let q = kern::TICKS_PER_QUARTER;
@@ -990,7 +990,7 @@ fn step4_design() {
 
 // ---------------------------------------------------------------- §2.3 -----
 
-/// The decisive test for §12.5: does accounting for non-chord tones take Bach
+/// The decisive test for experiment 5: does accounting for non-chord tones take Bach
 /// from 78% to something a hard rule could be built on?
 fn harmony_run() {
   println!("\n== §2.3: harmony, with non-chord tones accounted for ==");
@@ -1013,7 +1013,7 @@ fn harmony_run() {
     "\n  Bach, all 24 fugues:      {:>6.1}%   ({} of {} notes)",
     100.0 * tot.explained(), tot.chord_tones + tot.explained_ncts(), tot.total()
   );
-  println!("  bare chord membership (§12.5):  78.0%");
+  println!("  bare chord membership (experiment 5):  78.0%");
   println!("  chord tones alone:              {:>5.1}%",
     100.0 * tot.chord_tones as f64 / tot.total().max(1) as f64);
 
@@ -1037,7 +1037,7 @@ fn harmony_run() {
   println!("  -> separation on this measure:  {:.1} points", 100.0 * (tot.explained() - ctl.explained()));
 
   // The binary measure saturates: widening the rule until Bach passes makes it
-  // pass almost anything, which is §11.1 arriving in the harmonic domain. The
+  // pass almost anything, which is §8.2's deadlock arriving in the harmonic domain. The
   // graded statistics underneath it are the ones to look at.
   let ctfrac = |r: &harmony::Report| r.chord_tones as f64 / r.total().max(1) as f64;
   let mut cfits = vec![];
@@ -1077,7 +1077,7 @@ fn harmony_run() {
   );
 }
 
-/// The test §13.3 asks for: an objective that *rewards* a subject working at
+/// The test §8.4 asks for: an objective that *rewards* a subject working at
 /// the fifth, where the contrapuntal one penalised it.
 fn harmony_design() {
   println!("\n== §2.3 as a design objective ==");
@@ -1162,7 +1162,7 @@ fn harmony_design() {
 
   // is a monotone still optimal?
   let flat = vec![0i16; n];
-  println!("\n  a monotone scores       {:.3}   (it won outright under §13's objective)", score(&flat));
+  println!("\n  a monotone scores       {:.3}   (it won outright under step 4's first objective)", score(&flat));
 }
 
 /// Per-subject: does Bach's contour beat random on the harmonic objective?
@@ -1230,13 +1230,13 @@ fn harmony_corpus() {
   let rs: Vec<f64> = rows.iter().map(|r| r.2).collect();
   let md: f64 = rows.iter().map(|r| r.1 - r.2).sum::<f64>() / rows.len() as f64;
   println!("\n  Bach's contour beats random on the same rhythm: {nb} of {}", rows.len());
-  println!("  mean advantage of Bach's contour: {md:+.4}   (§13 gave -0.0763)");
+  println!("  mean advantage of Bach's contour: {md:+.4}   (the first step-4 run gave -0.0763)");
   println!("  Bach vs random across subjects    r = {:+.3}", experiments::pearson(&bs, &rs));
   let avg: f64 = rows.iter().map(|r| r.4 as f64).sum::<f64>() / rows.len() as f64;
-  println!("  mean distinct degrees in an optimised contour: {avg:.1}   (§13 gave 1.0)");
+  println!("  mean distinct degrees in an optimised contour: {avg:.1}   (the first step-4 run gave 1.0)");
 }
 
-// ---------------------------------------------------------------- §16 ------
+// ----------------------------------------------------- validating the analyser ------
 
 fn specs_with(pieces: &std::collections::BTreeMap<String, kern::Piece>) -> Vec<refdata::SubjectSpec> {
   refdata::read(
@@ -1249,12 +1249,12 @@ fn specs_with(pieces: &std::collections::BTreeMap<String, kern::Piece>) -> Vec<r
 /// Test 1. The only external check available on the harmonic analyser: does it
 /// find the cadences the ground truth annotates?
 ///
-/// Every number in §14 measures whether my chord templates explain notes, not
+/// Every number in the first harmonic attempt measures whether my chord templates explain notes, not
 /// whether the labels are right. An analyser picking plausible-but-wrong chords
 /// would produce exactly those figures.
 fn cadence_check() {
   println!("
-== §16.1 cadence validation against the ground truth ==");
+== cadence validation against the ground truth ==");
   println!("  The label names the KEY of the cadence, not only its type: of 106");
   println!("  annotated cadences only 39 are in the home tonic. `III:PAC` is a");
   println!("  perfect cadence in the mediant, and its arrival chord is III.
@@ -1352,7 +1352,7 @@ fn roman(d: &str, minor: bool) -> Option<i16> {
 /// Test 2. A tonal analyser should fit modal polyphony *worse*. If it does not,
 /// it is not measuring tonality.
 fn harmony_renaissance() {
-  println!("\n== §16.2 the harmonic analyser on modal polyphony ==");
+  println!("\n== the harmonic analyser on modal polyphony ==");
   let mut files: Vec<std::path::PathBuf> = vec![];
   for d in ["Jos", "Oke", "Obr", "Duf", "Bus", "Mar"] {
     if let Ok(rd) = std::fs::read_dir(std::path::Path::new("corpus/jrp-scores").join(d)) {
@@ -1397,7 +1397,7 @@ fn harmony_renaissance() {
 /// Test 3. The beat is an unjustified free parameter, and this project has been
 /// burned four times by exactly that.
 fn segmentation_sensitivity() {
-  println!("\n== §16.3 does the segmentation window change the answer? ==");
+  println!("\n== does the segmentation window change the answer? ==");
   println!("  window            fit    chord tones   explained   untreated/1k");
   for (name, div) in [("half beat", 2i64), ("beat (as used)", 1), ("half measure", -2), ("measure", -1)] {
     let mut tot = harmony::Report::default();
@@ -1420,12 +1420,12 @@ fn segmentation_sensitivity() {
   }
 }
 
-/// A **graded** harmonic objective, replacing §14.2's binary one which
+/// A **graded** harmonic objective, replacing the first attempt's binary one which
 /// saturated at 1.000 for Bach and for a monotone alike.
 fn graded(voices: &[kern::Voice], beat: i64) -> f64 {
   let r = harmony::report(voices, beat);
   let t = r.total().max(1) as f64;
-  // chord fit, minus the untreated-dissonance rate that §14.1 found is the one
+  // chord fit, minus the untreated-dissonance rate that the first attempt found is the one
   // statistic separating Bach from arbitrary placement. Nothing is weighted
   // against anything else: these are on the same scale, both fractions of the
   // same denominator.
@@ -1434,7 +1434,7 @@ fn graded(voices: &[kern::Voice], beat: i64) -> f64 {
 
 /// Tests 4 and 5: the graded objective, and step 4 re-run against it.
 fn step4_revisit() {
-  println!("\n== §16.4 a graded harmonic objective, and step 4 again ==");
+  println!("\n== a graded harmonic objective, and step 4 again ==");
   let pieces = load_bach();
   let Some(p) = pieces.get("wtc-i-22") else { return };
   let q = kern::TICKS_PER_QUARTER;
@@ -1448,7 +1448,7 @@ fn step4_revisit() {
   let bach = contour_of(&base);
   let flat = vec![0i16; n];
   println!("  Bach's own subject      {:.4}", score(&bach));
-  println!("  a monotone              {:.4}   (both were 1.000 under §14.2)", score(&flat));
+  println!("  a monotone              {:.4}   (both were 1.000 under the binary objective)", score(&flat));
 
   let mut rng = Rng(0xF00D);
   let trials = 400;
@@ -1463,7 +1463,7 @@ fn step4_revisit() {
   let mean: f64 = samples.iter().sum::<f64>() / trials as f64;
   let sd = (samples.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / trials as f64).sqrt();
   println!("  random contours ({trials})   {mean:.4} +- {sd:.4}");
-  println!("  -> Bach sits {:+.2} sd above random   (§14.2 gave +0.91, §13 gave +0.23)",
+  println!("  -> Bach sits {:+.2} sd above random   (binary gave +0.91, step 4 gave +0.23)",
     (score(&bach) - mean) / sd.max(1e-9));
 
   let mut best = (score(&bach), bach.clone());
@@ -1541,13 +1541,13 @@ fn step4_revisit() {
   let md: f64 = rows.iter().map(|r| r.1 - r.2).sum::<f64>() / rows.len() as f64;
   let beat_bach = rows.iter().filter(|r| r.3 > r.1 + 1e-12).count();
   let avg: f64 = rows.iter().map(|r| r.4 as f64).sum::<f64>() / rows.len() as f64;
-  println!("\n  Bach beats random on the same rhythm: {nb} of {}   (§13: 5/20, §14.3: 17/20)", rows.len());
-  println!("  mean advantage of Bach's contour:     {md:+.4}   (§13: -0.0763, §14.3: +0.0552)");
+  println!("\n  Bach beats random on the same rhythm: {nb} of {}   (step 4: 5/20, graded: 17/20)", rows.len());
+  println!("  mean advantage of Bach's contour:     {md:+.4}   (step 4: -0.0763, graded: +0.0552)");
   println!("  optimiser beats Bach on:              {beat_bach} of {}", rows.len());
-  println!("  mean distinct degrees in an optimum:  {avg:.1}   (§13: 1.0, §14.3: 6.8)");
+  println!("  mean distinct degrees in an optimum:  {avg:.1}   (step 4: 1.0, graded: 6.8)");
 }
 
-// ---------------------------------------------------------------- §17 ------
+// ------------------------------------------------------- the analyser rebuilt ------
 
 /// Cadence accuracy of the Viterbi analyser, swept over the change penalty.
 ///
@@ -1555,9 +1555,9 @@ fn step4_revisit() {
 /// the thing this project was written to avoid, and testing on the data it was
 /// fitted to would be worse. The whole curve is reported instead, so a reader
 /// can see how much of the result is the parameter — which is the complaint
-/// §16.3 made about the window it replaces.
+/// the validation pass made about the window it replaces.
 fn analyser_sweep() {
-  println!("\n== §17 the Viterbi analyser, swept over the change penalty ==");
+  println!("\n== the Viterbi analyser, swept over the change penalty ==");
   let pieces = load_bach();
   let specs = specs_with(&pieces);
   println!("  lambda   arrival  +dominant   chance   harm.rhythm   chord tones");
@@ -1617,7 +1617,7 @@ fn analyser_sweep() {
       100.0 * rep.chord_tones as f64 / rep.total().max(1) as f64
     );
   }
-  println!("\n  (fixed-window analyser, §16.1: 38% arrival, 18% +dominant, 23% chance)");
+  println!("\n  (fixed-window analyser: 38% arrival, 18% +dominant, 23% chance)");
   println!("  a quarter note is {} ticks; the beat varies by piece", kern::TICKS_PER_QUARTER);
 }
 
@@ -1625,7 +1625,7 @@ fn analyser_sweep() {
 /// other? The sweep reports a curve; this asks whether picking a point on it
 /// generalises, which is the only honest way to quote a single number.
 fn analyser_holdout() {
-  println!("\n== §17.2 held-out validation ==");
+  println!("\n== held-out validation ==");
   let pieces = load_bach();
   let specs = specs_with(&pieces);
   let score = |lambda: f64, which: usize| {
@@ -1676,9 +1676,9 @@ fn analyser_holdout() {
   }
 }
 
-/// Does the new analyser still prefer modal music? §16.2's falsification, re-run.
+/// Does the new analyser still prefer modal music? the modal falsification, re-run.
 fn analyser_renaissance() {
-  println!("\n== §17.3 modal control, on the new analyser ==");
+  println!("\n== modal control, on the new analyser ==");
   let lambda = 0.3;
   let mut files: Vec<std::path::PathBuf> = vec![];
   for d in ["Jos", "Oke", "Obr", "Duf", "Bus", "Mar"] {
@@ -1719,12 +1719,12 @@ fn analyser_renaissance() {
   );
   println!("  chord tones                      {:>6.1}%  {:>6.1}%   {:>+7.1}", ct(&ren), ct(&bach), ct(&ren) - ct(&bach));
   println!("  untreated per 1000 notes         {:>7.1}  {:>7.1}   {:>+7.1}", un(&ren), un(&bach), un(&ren) - un(&bach));
-  println!("\n  (§16.2, fixed window: fit +0.061, chord tones +7.0, untreated -3.3 - all wrong-signed)");
+  println!("\n  (fixed window: fit +0.061, chord tones +7.0, untreated -3.3 - all wrong-signed)");
 }
 
-/// §17.4: the sharper modal test — functional progression, not chord fit.
+/// The sharper modal test — functional progression, not chord fit.
 fn functional_test() {
-  println!("\n== §17.4 functional progression: the test the modal control wanted ==");
+  println!("\n== functional progression: the test the modal control wanted ==");
   let lambda = 1.0;
   let (mut bo, mut bt) = (0usize, 0usize);
   for (_, p) in load_bach() {

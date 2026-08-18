@@ -1,11 +1,11 @@
 //! §2.3, built at last: harmony as a second automaton.
 //!
-//! Two independent findings converged on this file. §12.5 showed that a
+//! Two independent findings converged on this file. Experiment 5 showed that a
 //! harmonic constraint is the only one Bach *satisfies* while arbitrary
 //! placements *violate* it — the property the contrapuntal rules lack — but
 //! that a bare chord-membership test tops out at 78% on Bach, because the
 //! missing 22% is suspensions and passing tones, which are non-chord tones by
-//! design. §13.3 showed that a purely contrapuntal objective penalises the
+//! design. §8.4 shows that a purely contrapuntal objective penalises the
 //! perfect fifth, and a fugal answer *is* at the fifth, so no contrapuntal
 //! measure can serve as a design objective.
 //!
@@ -14,7 +14,7 @@
 //!
 //! The analysis is deliberately the simplest defensible one — segment at the
 //! notated beat, score every candidate chord by duration-weighted membership,
-//! take the best. It is not a theory of tonal function; §13.4 wanted the
+//! take the best. It is not a theory of tonal function; step 4 wanted the
 //! *relationship*, and the relationship is what a chord label carries.
 
 use crate::{kern, kern::Voice, pitch::Pitch};
@@ -185,7 +185,7 @@ impl Report {
   pub fn explained_ncts(&self) -> usize {
     self.suspension + self.passing + self.neighbour + self.appoggiatura + self.escape
   }
-  /// The measure §12.5 asked for: everything a chord explains, either as a
+  /// The measure experiment 5 asked for: everything a chord explains, either as a
   /// chord tone or as a properly treated dissonance against it.
   pub fn explained(&self) -> f64 {
     let t = self.total();
@@ -268,7 +268,7 @@ pub fn report_piece(p: &kern::Piece) -> Report {
 
 // ------------------------------------------------- a real analyser ---------
 //
-// §16 killed the fixed-window analyser above on three counts: it identified
+// The validation pass in CHANGELOG.md killed the fixed-window analyser above on three counts: it identified
 // annotated cadences 38% of the time against a 23% baseline, it fitted *modal*
 // polyphony better than tonal — so it was measuring triadic consonance rather
 // than harmony — and every effect size it reported varied elevenfold with a
@@ -279,7 +279,7 @@ pub fn report_piece(p: &kern::Piece) -> Report {
 // penalty `lambda` to change chord lets the harmonic rhythm **emerge**: the
 // analysis holds a chord until the evidence for changing outweighs the cost of
 // doing so. The window parameter disappears and a change penalty replaces it —
-// which would be no gain at all if the penalty were then fitted, so §17 sweeps
+// which would be no gain at all if the penalty were then fitted, so §8.5 sweeps
 // it and reports the whole curve instead of choosing a value.
 //
 // The other two are addressed by scoring a chord properly rather than counting
@@ -446,7 +446,7 @@ pub fn harmonic_rhythm(segs: &[Segment]) -> f64 {
   (segs.last().unwrap().end - segs[0].start) as f64 / changes as f64
 }
 
-/// The §14 note-accounting, over a Viterbi analysis instead of a fixed window.
+/// The note-accounting of the first harmonic attempt, over a Viterbi analysis instead of a fixed window.
 pub fn report_viterbi(voices: &[Voice], beat: i64, lambda: f64) -> Report {
   let segs = analyse_viterbi(voices, beat, lambda);
   let mut r = Report::default();
@@ -478,7 +478,7 @@ pub fn report_viterbi(voices: &[Voice], beat: i64, lambda: f64) -> Report {
 /// whatever the analyser does — that is a fact about the music. What should
 /// separate tonal from modal is not whether chords can be *named* but whether
 /// they *succeed each other functionally*. It is also the first thing to
-/// exercise `progression_ok`, written in §14 and untested until now.
+/// exercise `progression_ok`, written for that first attempt and untested until now.
 pub fn functional_rate(segs: &[Segment]) -> (usize, usize) {
   let mut chords: Vec<Chord> = vec![];
   for s in segs {
