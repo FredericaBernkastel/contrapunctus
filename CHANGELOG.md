@@ -471,6 +471,33 @@ does not have. That does not rescue the weighting, which was asked to generalise
 
 ---
 
+## Step 6c — the species as a whitelist, checked and not adopted
+
+Readme §8.7. §9 step 6's other proposal: Fux's book is a whitelist and was transcribed here as a blacklist, so
+transcribe the enumeration instead — first species consonance, second the passing tone, third the neighbour, fourth
+the suspension. `src/species.rs` is that and nothing else.
+
+**Run as a checker before being used as a constraint**, on §8.2's instrument. At its most generous reading the four
+figures cannot account for **23% of Bach's dissonances and 18% of the Renaissance's**, rejecting 54.3 and 23.5
+slices per thousand against the 21.4/90.9 and 8.0/71.1 of the two rules it was written to replace — the same band,
+not an improvement. Not adopted. The failure is *even* across the two corpora, so unlike the melodic rule this is an
+enumeration that is incomplete rather than one belonging to a repertoire.
+
+### What it found instead
+
+- **The perfect fourth is a large classification artefact.** Counting it as a consonance removes **31% of Bach's
+  flagged dissonances and 44% of the Renaissance's**. `pitch.rs` calls it a dissonance — the classical two-voice
+  position, and its own comment warns what that costs — but in three parts a fourth over a supporting bass is a
+  consonance and only a fourth against the bass is not, which a pairwise walk cannot see. §8.2 has called the two
+  dissonance rules implementation faults since step 1 without a diagnosis; this is a candidate, and it is testable:
+  resolve the fourth against the lowest sounding voice rather than pairwise.
+- **Fux's metric condition costs fourteen points in both centuries** — 76.0% → 61.9% in Bach, 74.8% → 59.3% in the
+  Renaissance. Real counterpoint strikes dissonances on the beat far more often than the species permit.
+- **The residue is seconds and sevenths**, the intervals a chord explains rather than a melodic figure — §2.3's
+  claim arriving from the other side.
+
+---
+
 ## Cross-references made checkable
 
 [`75f7978`](../../commit/75f7978)

@@ -34,7 +34,7 @@ use crate::{
   kern::{Note, Piece, Voice, TICKS_PER_QUARTER},
   pitch::{Interval, Pitch},
   realise::{self, Problem},
-  refdata, stretto,
+  refdata, species, stretto,
 };
 
 const KERN: &str = "corpus/bach-wtc-fugues/kern";
@@ -1065,6 +1065,81 @@ pub fn generality() {
           (false, false) => "NO EFFECT — nothing clears two standard errors on either corpus.",
         }
       );
+    }
+  }
+}
+
+// ------------------------------------------- step 6: the species whitelist ---
+
+/// **Does Fux's own enumeration account for the music?**
+///
+/// §9 step 6's second proposal, and its gate. The whitelist is only a tighter
+/// rulebook if real counterpoint stays inside it; if it does not, it is simply a
+/// wrong one, and §8.2 is the instrument that settles which — the same
+/// measurement on two corpora three centuries apart.
+///
+/// The comparison to keep in view is §8.2's own column. The two dissonance rules
+/// this would replace flag **8.0 and 71.1** per thousand slices in the
+/// Renaissance and **21.4 and 90.9** in Bach, which is why they were stratified
+/// out of the hard tier. A whitelist worth having must do very much better than
+/// that in both centuries.
+pub fn species() {
+  println!("\n== step 6: Fux's species as a whitelist, checked before it is used ==");
+  println!("  Four figures, transcribed and nothing else: consonance, passing, neighbour, suspension.");
+  println!("  The question is what fraction of the dissonances real music writes they account for.\n");
+
+  let bach: Vec<Piece> = (1..=24)
+    .filter_map(|n| kern::read(&std::path::Path::new(KERN).join(format!("wtc1f{n:02}.krn"))).ok())
+    .collect();
+  let ren = renaissance(200);
+  if bach.is_empty() || ren.is_empty() {
+    return println!("  (corpus missing)");
+  }
+
+  println!("   corpus         reading         slices   dissonant   explained   UNLISTED /1k");
+  let mut keep: Vec<(String, species::Tally)> = vec![];
+  for (name, corpus) in [("Bach", &bach), ("Renaissance", &ren)] {
+    for (label, metric, fourth) in
+      [("strict", true, false), ("figures only", false, false), ("4th consonant", false, true)]
+    {
+      let mut t = species::Tally::default();
+      for p in corpus.iter() {
+        t.merge(&species::check_piece(p, metric, fourth));
+      }
+      println!(
+        "   {name:<13}  {label:<14} {:>7} {:>11} {:>10.1}% {:>9.1}",
+        t.slices,
+        t.dissonant,
+        100.0 * t.explained(),
+        t.per_thousand()
+      );
+      if !metric && fourth {
+        keep.push((name.to_string(), t.clone()));
+      }
+    }
+  }
+
+  println!("\n  `strict` enforces Fux's metric condition — suspensions on the beat, passing tones off it.");
+  println!("  `figures only` drops it and asks about the figures alone.");
+  println!("  The rules this replaces flag 8.0 and 71.1 per thousand in the Renaissance, 21.4 and 90.9 in Bach.\n");
+
+  for (name, t) in &keep {
+    let mut fig: Vec<(&&str, &usize)> = t.by_figure.iter().filter(|(k, _)| **k != "consonance").collect();
+    fig.sort_by_key(|(_, v)| std::cmp::Reverse(**v));
+    let parts: Vec<String> = fig.iter().map(|(k, v)| format!("{k} {:.0}%", 100.0 * **v as f64 / t.dissonant.max(1) as f64)).collect();
+    println!("  {name:<12} dissonances: {}", parts.join(", "));
+    let mut un: Vec<(&(i16, i16), &usize)> = t.unlisted.iter().collect();
+    un.sort_by_key(|(_, v)| std::cmp::Reverse(**v));
+    let top: Vec<String> = un
+      .iter()
+      .take(5)
+      .map(|((st, se), v)| {
+        let pct = 100.0 * **v as f64 / t.dissonant.max(1) as f64;
+        format!("{}({st},{se}) {pct:.0}%", crate::name_interval(*st, *se))
+      })
+      .collect();
+    if !top.is_empty() {
+      println!("  {:<12} unlisted, commonest first: {}", "", top.join(", "));
     }
   }
 }

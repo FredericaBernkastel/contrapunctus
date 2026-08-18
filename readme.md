@@ -41,6 +41,7 @@ are built and measured — [§8](#8-what-is-built-and-what-it-measures). Realisa
   - [8.4 Capacity ranks subjects, and cannot design one](#84-capacity-ranks-subjects-and-cannot-design-one)
   - [8.5 The harmonic analyser](#85-the-harmonic-analyser)
   - [8.6 Realisation, and the first notes](#86-realisation-and-the-first-notes)
+  - [8.7 The species as a whitelist, and why it does not tighten anything](#87-the-species-as-a-whitelist-and-why-it-does-not-tighten-anything)
 - [9. Roadmap](#9-roadmap)
 - [10. Reproducing the results](#10-reproducing-the-results)
   - [10.1 Environment and data](#101-environment-and-data)
@@ -1280,6 +1281,58 @@ one passage, one listener, a flat MIDI piano with no dynamics, and a texture in 
 both files and one of the three parts is therefore identical. A real test is an A/B over many spans with the
 sources hidden, and it has not been run.
 
+### 8.7 The species as a whitelist, and why it does not tighten anything
+
+[§9](#9-roadmap) step 6's other proposal, and the one that attacks `10¹⁵` at its root rather than choosing better
+within it. Fux's book *is* a whitelist and was transcribed here as a blacklist: the species enumerate the permitted
+note-against-note figures one at a time — first species consonance throughout, second the passing tone, third the
+neighbour, fourth the suspension tied over and resolving down. `src/species.rs` transcribes that enumeration and
+nothing else.
+
+**A whitelist is a checker before it is a constraint**, and [§8.2](#82-the-rulebook-stratified-by-two-corpora)'s
+method decides whether it earns its place: one measurement on two corpora three centuries apart, asking what
+fraction of the dissonances real music writes are figures Fux lists. A whitelist that cannot account for the music
+is not a tighter rulebook but a wrong one, and generating against it would be pointless.
+
+| corpus | reading | dissonances | explained | unlisted per 1000 slices |
+|---|---|---:|---:|---:|
+| Bach | strict | 12 208 | 61.9% | 133.0 |
+| Bach | figures only | 12 208 | 76.0% | 83.8 |
+| Bach | fourth consonant | 8 410 | **77.4%** | **54.3** |
+| 15th-c. | strict | 70 050 | 59.3% | 95.0 |
+| 15th-c. | figures only | 70 050 | 74.8% | 58.8 |
+| 15th-c. | fourth consonant | 39 426 | **82.2%** | **23.5** |
+
+**It fails, and it fails symmetrically.** At its most generous the enumeration cannot account for one dissonance in
+five — 23% of Bach's and 18% of the Renaissance's — and rejects 54.3 and 23.5 slices per thousand. The two rules it
+was written to replace flag 21.4 and 90.9 per thousand in Bach, 8.0 and 71.1 in the Renaissance, so the whitelist
+lands **between them in both centuries**: better than *unresolved dissonance*, worse than *unprepared*. That is the
+same band, not an improvement, so it does not go into the tier. Note that the failure is even across the two
+corpora, unlike the melodic rule's ×38 in [§8.2](#82-the-rulebook-stratified-by-two-corpora) — this is an
+enumeration that is *incomplete*, not one that belongs to a repertoire.
+
+Two things fall out that are worth more than the proposal was.
+
+**The perfect fourth is a large classification artefact, and it may be most of an older mystery.** Reclassifying it
+as a consonance removes **31% of Bach's flagged dissonances and 44% of the Renaissance's** — from 12 208 to 8 410
+and from 70 050 to 39 426. `pitch.rs` calls the fourth a dissonance, which is the classical two-voice position that
+Schottstaedt and Komosinski both adopt, and its own comment warns that a texture judged this way will flag things
+that are not errors. In three parts or more a fourth between upper voices over a supporting bass **is** a
+consonance; only a fourth against the bass is not. A pairwise walk through a four-voice fugue cannot see the
+difference. [§8.2](#82-the-rulebook-stratified-by-two-corpora) reports the two dissonance rules failing in the very
+repertoire they were written for and calls them implementation faults awaiting a diagnosis; this is a candidate
+diagnosis, and it is measurable — those rules should be re-run with the fourth resolved against the lowest sounding
+voice rather than pairwise.
+
+**Fux's metric condition costs fourteen points in both centuries.** Requiring suspensions on the beat and passing
+tones off it drops the explained fraction from 76.0% to 61.9% in Bach and 74.8% to 59.3% in the Renaissance. Real
+counterpoint strikes dissonances on strong positions far more often than the species allow — which is the
+difference between a pedagogical exercise and the repertoire it is supposed to be teaching, arriving as a number.
+
+The residue after all of that is seconds and sevenths, which are the intervals a *chord* explains rather than a
+melodic figure. That is [§2.3](#23-harmony-is-a-second-automaton)'s claim from the other side: what is left over
+when every voice-leading figure has been accounted for is exactly what harmony is for.
+
 ---
 
 ## 9. Roadmap
@@ -1303,14 +1356,13 @@ order.
      too, with the weights taken from Fux rather than from a corpus, and it is
      **repertoire-specific** — it helps Bach by about a point and costs 15th-century polyphony more than that
      ([§8.6](#86-realisation-and-the-first-notes)). Rolled back. Both halves of this proposal are now closed.
-   - **Enumerate the species as a whitelist**, rather than only the prohibitions as a blacklist. This is
-     [§7.1](#c1-is-a-whitelist-and-fux-is-a-blacklist), and it is the only proposal here that attacks `10¹⁵`
-     at its root instead of choosing better within it: *only these configurations may occur* is enormously tighter
-     than *these five may not*, which is why WFC's practical failure is running out of options and this project's
-     has never once been. Fux sets the permitted note-against-note figures out species by species; transcribing
-     them is the same book and the same unfitted position as transcribing the prohibitions was. Expect it to bite
-     the two dissonance rules first, since those are where the blacklist is loosest
-     ([§8.2](#82-the-rulebook-stratified-by-two-corpora)).
+   - ~~Enumerate the species as a whitelist.~~ **Done, and it does not account for the music.** Transcribed and
+     run as a checker before being used as a constraint, Fux's four figures cannot explain one dissonance in five
+     in either century, and reject slices at a rate between the two rules they were written to replace
+     ([§8.7](#87-the-species-as-a-whitelist-and-why-it-does-not-tighten-anything)). Not adopted. It paid for
+     itself twice over anyway: the perfect fourth turns out to account for **31% of Bach's flagged dissonances and
+     44% of the Renaissance's**, which is a candidate diagnosis for the two dissonance rules' long-standing
+     failure, and Fux's metric condition costs fourteen points in both corpora.
    - **A criterion that is not local**, which the same table points at twice, and which the first listening test
      ([§8.6](#86-realisation-and-the-first-notes)) suggests is a question of *stylistic identity* rather than of
      rescuing the output. Pitch class is recovered about twice as often as pitch, so what is missing is
@@ -1343,9 +1395,12 @@ order.
   central problem of the project: everything downstream of it generates legal music that nothing prefers.
 - **Key-finding.** A real functional test needs degree successions relative to a *local* key, and fugues modulate
   constantly. Without it [§2.3](#23-harmony-is-a-second-automaton)'s functional half cannot be built or tested.
-- **A replacement for the two dissonance rules**, which fail in both centuries ([§8.2](#82-the-rulebook-stratified-by-two-corpora)).
-  They are also where the blacklist is loosest, so they are the first thing step 6's whitelist would replace rather
-  than repair.
+- **A replacement for the two dissonance rules**, which fail in both centuries ([§8.2](#82-the-rulebook-stratified-by-two-corpora)),
+  and which step 6's whitelist could not supply
+  ([§8.7](#87-the-species-as-a-whitelist-and-why-it-does-not-tighten-anything)). It did leave a lead worth
+  following: **resolve the fourth against the lowest sounding voice rather than pairwise**, since doing so removes
+  a third to a half of everything those rules currently flag. That is a change to the scope a rule is judged in
+  rather than to the rule, which is the kind of fault §8.2 suspected them of all along.
 - **A design objective**, still open after two attempts ([§3.2](#32-capacity-is-a-density-and-it-cannot-be-optimised)).
   It has to reward a subject working at the fifth, which is a harmonic statement.
 - **The right rulebook for the right repertoire.** Fux is 1725 and Palestrina-style vocal; the WTC is 1722 and
@@ -1404,6 +1459,7 @@ the Josquin Research Project for the Renaissance scores.
 | [§8.6](#86-realisation-and-the-first-notes) reconstruction | `cargo run --release -- r2` |
 | [§8.6](#86-realisation-and-the-first-notes) scalarisations | `cargo run --release -- r3` |
 | [§8.6](#86-realisation-and-the-first-notes) treatise weighting, both corpora | `cargo run --release -- gen` |
+| [§8.7](#87-the-species-as-a-whitelist-and-why-it-does-not-tighten-anything) species whitelist | `cargo run --release -- species` |
 | every cross-reference in the repository | `cargo test --release --test references` |
 
 `realise` runs all three of the last. `rank`, `probe`, `exp2`, `exp5`, `harmony`, `cad`, `seg`, `revisit`, `hren2`

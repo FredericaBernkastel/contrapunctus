@@ -17,6 +17,7 @@ mod harmony;
 mod midi;
 mod realise;
 mod refdata;
+mod species;
 mod step5;
 mod stretto;
 mod kern;
@@ -61,6 +62,7 @@ fn main() {
     "r2" => step5::reconstruct(),
     "r3" => step5::scalarisations(),
     "gen" => step5::generality(),
+    "species" => step5::species(),
     "s17" => { analyser_sweep(); analyser_holdout(); analyser_renaissance(); }
     "s16" => { cadence_check(); harmony_renaissance(); segmentation_sensitivity(); step4_revisit(); }
     _ => {
@@ -188,7 +190,7 @@ fn diag() {
   }
 }
 
-fn name_interval(st: i16, se: i16) -> &'static str {
+pub fn name_interval(st: i16, se: i16) -> &'static str {
   match (st.abs(), se.abs()) {
     (1, 3) => "augmented second",
     (2, 2) => "diminished third",
