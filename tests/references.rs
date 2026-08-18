@@ -360,3 +360,82 @@ fn every_bare_reference_names_a_section_that_exists() {
   assert!(checked > 100, "only {checked} bare references scanned; the scanner has stopped seeing them");
   assert!(bad.is_empty(), "references to sections that do not exist:\n  {}", bad.join("\n  "));
 }
+
+/// §10.2's table names a command for every reported figure, and the program is
+/// the authority on what commands there are. This runs `list` and compares.
+///
+/// Three ways they can disagree, and all three fail here: the table names a
+/// command the binary does not have, a command's section in the table is not the
+/// one the binary prints for it, or a command that produces a reported figure is
+/// missing from the table. The old command line answered an unknown argument by
+/// silently running something else, so a mistyped command in this table came
+/// back as a measurement of something — which is why the check exists.
+#[test]
+fn the_command_table_matches_the_program() {
+  let out = std::process::Command::new(env!("CARGO_BIN_EXE_contrapunctus"))
+    .arg("list")
+    .output()
+    .expect("`list` runs");
+  assert!(out.status.success(), "`list` failed: {}", String::from_utf8_lossy(&out.stderr));
+  let listed = String::from_utf8_lossy(&out.stdout).replace("\r\n", "\n");
+
+  // `   §8.9     plan   harmonic plans, ...`, and the same without a section for
+  // the superseded and batch blocks, which are indented past the section column.
+  let mut prog: BTreeMap<String, String> = BTreeMap::new();
+  for l in listed.lines() {
+    if !l.starts_with("   ") || l.contains("--") {
+      continue;
+    }
+    let t: Vec<&str> = l.split_whitespace().collect();
+    match t.as_slice() {
+      [s, name, ..] if s.starts_with('§') => {
+        prog.insert((*name).to_string(), (*s).to_string());
+      }
+      [name, ..] if l.starts_with("            ") => {
+        prog.insert((*name).to_string(), String::new());
+      }
+      _ => {}
+    }
+  }
+  assert!(prog.len() > 30, "`list` parsed to only {} commands: {prog:?}", prog.len());
+
+  let rd = read("readme.md");
+  let table = {
+    let a = rd.find("### 10.2").expect("§10.2 is there");
+    let b = rd[a..].find("### 10.3").expect("§10.3 is there");
+    &rd[a..a + b]
+  };
+
+  let mut bad = vec![];
+  let mut named: Vec<String> = vec![];
+  for l in table.lines().filter(|l| l.contains("cargo run --release -- ")) {
+    let cmd = l
+      .split("cargo run --release -- ")
+      .nth(1)
+      .and_then(|r| r.split('`').next())
+      .unwrap_or("")
+      .trim()
+      .to_string();
+    if cmd.is_empty() {
+      continue;
+    }
+    named.push(cmd.clone());
+    let Some(sec) = prog.get(&cmd) else {
+      bad.push(format!("readme.md §10.2 names `{cmd}`, which the program does not have"));
+      continue;
+    };
+    // rows of the table proper carry the section; the prose below it does not
+    if l.trim_start().starts_with('|') {
+      let want = l.split(']').next().unwrap_or("").rsplit('[').next().unwrap_or("");
+      if want.starts_with('§') && want != sec {
+        bad.push(format!("readme.md §10.2 files `{cmd}` under {want}; the program says {sec}"));
+      }
+    }
+  }
+  for (cmd, sec) in prog.iter().filter(|(_, s)| !s.is_empty()) {
+    if !named.contains(cmd) {
+      bad.push(format!("`{cmd}` produces {sec} and readme.md §10.2 does not list it"));
+    }
+  }
+  assert!(bad.is_empty(), "§10.2 and the program disagree:\n  {}", bad.join("\n  "));
+}

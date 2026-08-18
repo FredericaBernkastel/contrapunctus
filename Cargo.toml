@@ -1,13 +1,13 @@
 # readme.md §8 — everything the document reports, reproducible from here.
 #
-#   cargo run --release -- states     # the automaton's reachable state count
-#   cargo run --release -- verdict    # the three tests the roughness field failed
-#   cargo run --release -- corpus     # how often Bach violates the rulebook
-#   cargo run --release -- stretto    # BWV 867's five entries as a clique
-#   cargo run --release -- sweep      # the harmonic analyser, penalty swept
-#   cargo run --release -- realise    # the fill, the measurement, and out/*.mid
+#   cargo run --release -- list       # every command and the section it produces
+#   cargo run --release -- --help     # that, plus §10.3's parameters as flags
 #
-# `readme.md` §10.2 maps every section to the command that produces it.
+# `readme.md` §10.2 maps every section to the command that produces it, and
+# `tests/references.rs` fails the build if that table and `list` disagree.
+#
+# One dependency, and it parses the command line. Nothing a reported figure
+# passes through touches a crate.
 [package]
 name = "contrapunctus"
 version = "0.1.0"
@@ -15,6 +15,7 @@ edition = "2021"
 publish = false
 
 [dependencies]
+clap = { version = "4.6", features = ["derive"] }
 
 [profile.release]
 debug = false

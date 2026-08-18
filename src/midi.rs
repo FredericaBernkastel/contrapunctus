@@ -49,8 +49,9 @@
 //!   its pitches, for exactly this reason.
 //!
 //! Written by hand rather than taken from a crate, because the whole encoder is
-//! shorter than the dependency's documentation and this project has no
-//! dependencies to keep the build honest.
+//! shorter than the dependency's documentation would be. The one dependency this
+//! repository has is `clap`, and it parses the command line: nothing a reported
+//! figure passes through touches a crate.
 
 use crate::kern::{Voice, TICKS_PER_QUARTER};
 

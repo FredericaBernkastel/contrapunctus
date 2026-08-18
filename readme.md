@@ -1791,11 +1791,17 @@ or swept.
 ### 10.1 Environment and data
 
 ```
-rustc 1.96.1   cargo 1.96.1     # no dependencies; std only
+rustc 1.96.1   cargo 1.96.1     # one dependency: clap, for the command line
 git clone --recurse-submodules <this repo>
-cargo test --release            # 18 unit tests, 4 reference checks
+cargo test --release            # 42 unit tests, 5 reference checks
+cargo run --release -- list     # every command and the section it produces
+cargo run --release -- --help   # that, plus §10.3's parameters as flags
 cargo run --release -- realise  # writes out/*.mid
 ```
+
+**Everything below is a flag.** §10.3 used to be a table of constants that had to be edited and recompiled to
+vary; it is [`src/cli.rs`](src/cli.rs) now. The defaults are exactly the published runs — that is the contract of
+that module, and **no figure in §8 was produced with a non-default flag**.
 
 **The cross-references are enforced, not proofread.** `tests/references.rs` fails the build if a `§` reference
 anywhere in this document, in [`CHANGELOG.md`](CHANGELOG.md) or in `src/**.rs` names a section that does not exist;
@@ -1820,49 +1826,73 @@ the Josquin Research Project for the Renaissance scores.
 |---|---|
 | [§8.1](#81-the-automaton) state count | `cargo run --release -- states` |
 | [§8.1](#81-the-automaton) verdict tests | `cargo run --release -- verdict` |
-| [§8.2](#82-the-rulebook-stratified-by-two-corpora) Bach rates | `cargo run --release -- corpus`, and `diag` for the melodic breakdown |
-| [§8.2](#82-the-rulebook-stratified-by-two-corpora) Renaissance | `cargo run --release -- exp3` |
-| [§8.2](#82-the-rulebook-stratified-by-two-corpora) chromaticism | `cargo run --release -- exp4` |
+| [§8.2](#82-the-rulebook-stratified-by-two-corpora) Bach rates | `cargo run --release -- corpus` |
+| [§8.2](#82-the-rulebook-stratified-by-two-corpora) melodic breakdown | `cargo run --release -- diag` |
+| [§8.2](#82-the-rulebook-stratified-by-two-corpora) Renaissance | `cargo run --release -- renaissance` |
+| [§8.2](#82-the-rulebook-stratified-by-two-corpora) chromaticism | `cargo run --release -- chromatic` |
 | [§8.3](#83-the-clique-test) clique test | `cargo run --release -- stretto` |
-| [§8.4](#84-capacity-ranks-subjects-and-cannot-design-one) density ranking | `cargo run --release -- exp1` |
+| [§8.4](#84-capacity-ranks-subjects-and-cannot-design-one) density ranking | `cargo run --release -- density` |
 | [§8.4](#84-capacity-ranks-subjects-and-cannot-design-one) design | `cargo run --release -- design` |
-| [§8.5](#85-the-harmonic-analyser) sweep and hold-out | `cargo run --release -- sweep`, `holdout` |
-| [§8.6](#86-realisation-and-the-first-notes) stretto render | `cargo run --release -- r1` |
-| [§8.6](#86-realisation-and-the-first-notes) reconstruction | `cargo run --release -- r2` |
-| [§8.6](#86-realisation-and-the-first-notes) scalarisations | `cargo run --release -- r3` |
-| [§8.6](#86-realisation-and-the-first-notes) treatise weighting, both corpora | `cargo run --release -- gen` |
+| [§8.5](#85-the-harmonic-analyser) sweep | `cargo run --release -- sweep` |
+| [§8.5](#85-the-harmonic-analyser) hold-out | `cargo run --release -- holdout` |
+| [§8.6](#86-realisation-and-the-first-notes) stretto render | `cargo run --release -- render` |
+| [§8.6](#86-realisation-and-the-first-notes) reconstruction | `cargo run --release -- reconstruct` |
+| [§8.6](#86-realisation-and-the-first-notes) scalarisations | `cargo run --release -- scalarisations` |
+| [§8.6](#86-realisation-and-the-first-notes) treatise weighting, both corpora | `cargo run --release -- generality` |
 | [§8.7](#87-the-species-as-a-whitelist-and-why-it-does-not-tighten-anything) species whitelist | `cargo run --release -- species` |
 | [§8.8](#88-a-criterion-that-is-not-local-and-the-shape-of-every-step-6-failure) shape criteria | `cargo run --release -- shape` |
 | [§8.9](#89-a-better-plan-and-the-first-lever-that-moves-more-than-a-point) harmonic plans | `cargo run --release -- plan` |
 | [§8.10](#810-replacing-the-soft-tier-and-the-degenerate-optimum-of-every-positive-criterion) tier ablation and prescriptions | `cargo run --release -- soft` |
-| [§8.10](#810-replacing-the-soft-tier-and-the-degenerate-optimum-of-every-positive-criterion) the objective, paired on §8.6's spans | `cargo run --release -- obj` |
+| [§8.10](#810-replacing-the-soft-tier-and-the-degenerate-optimum-of-every-positive-criterion) the objective, paired | `cargo run --release -- objective` |
 | every cross-reference in the repository | `cargo test --release --test references` |
 
-`realise` runs all three of the last. `rank`, `probe`, `exp2`, `exp5`, `harmony`, `cad`, `seg`, `revisit`, `hren2`
-and `func` reproduce the superseded measurements recorded in [`CHANGELOG.md`](CHANGELOG.md).
+**This table is checked against the program.** `tests/references.rs` runs `list` and fails the build if a row here
+names a command the binary does not have, if a command's section disagrees with the one it prints, or if a
+command that produces a reported figure is missing from the table. It exists because the previous command line
+answered an unknown argument by silently running something else, so a mistyped command came back as a measurement
+of something.
 
-The MIDI files land in `out/`, which is not tracked. `r2` is the only command here that takes minutes rather than
-seconds, and the reason is the subject of [§8.6](#86-realisation-and-the-first-notes).
+`realise` runs the three §8.6 commands together. The short names this table used to carry — `exp1`–`exp5`,
+`h1`–`h3`, `r1`–`r3`, `gen`, `cad`, `hren2`, `obj` — all still work as aliases, because they are cited in
+[`CHANGELOG.md`](CHANGELOG.md) and a citation that cannot be run is not a citation.
+
+`rank`, `probe`, `pareto`, `revisit`, `ncts`, `harmony-design`, `harmony-corpus`, `cadence`, `hren`, `seg`,
+`modal-control`, `func` and `binding-harmony` reproduce the **superseded** measurements recorded in
+[`CHANGELOG.md`](CHANGELOG.md); `list` prints them under that heading rather than mixing them with the reported
+ones.
+
+The MIDI files land in `out/`, which is not tracked, and `--out` moves them. `reconstruct` is the only command
+here that takes minutes rather than seconds, and the reason is the subject of
+[§8.6](#86-realisation-and-the-first-notes); `plan` and `soft` take an hour, and the reason is that they run nine
+and thirteen conditions over the same 1 267 spans.
 
 ### 10.3 Parameters
 
-| | |
-|---|---|
-| tick base | 960 per whole note ([`kern.rs`](src/kern.rs)) |
-| hard tier | `ParallelPerfect`, `DirectPerfectOnDownbeat` ([`automaton.rs`](src/automaton.rs)) |
-| candidate grid | offsets every quarter within the subject; diatonic transpositions −7…+7; one entry per offset |
-| design grid | offsets every half note, same transposition range |
-| harmonic analyser | onset segmentation, 9 qualities × 12 roots, bass bonus 0.2, strong-beat weight ×2 |
-| realiser plan | `λ = 1.0`, the middle of [§8.5](#85-the-harmonic-analyser)'s plausible band |
-| realiser compass | each voice's range over the **whole piece**, which a form grammar would supply; never the passage's own range, which would be circular |
-| realiser budgets | 60 000 states per layer, 4 000 000 edges per span — both refusals, never beams ([`realise.rs`](src/realise.rs)) |
-| sampler | uniform over the legal set; the treatise weighting `β` is swept in [§8.6](#86-realisation-and-the-first-notes) and left at **0** everywhere else, being repertoire-specific |
-| objective | six soft criteria at equal weight in every table reported here, and **recommended off** by [§8.10](#810-replacing-the-soft-tier-and-the-degenerate-optimum-of-every-positive-criterion), which measures a uniform draw at `+1.07 ± 0.31` and `+4.64 ± 0.61` against it. The tables stand as the record of the runs as made |
-| prescriptions | `Problem::prescribe`, three positive criteria charged *instead of* the tier; all zero everywhere but [§8.10](#810-replacing-the-soft-tier-and-the-degenerate-optimum-of-every-positive-criterion), where each is measured and none adopted |
-| MIDI output | format 1, **960 ticks per quarter** (an exact ×4 of the internal lattice), tempo and time signature from the score, tracks top voice first ([`midi.rs`](src/midi.rs)) |
-| PRNG | SplitMix64 inline; seeds `0x5EED`, `0xC0FFEE`, `0xBEEF`, `0xF00D`, `0xD00D` |
-| trials | 400 random contours for single-subject figures, 60 per subject for corpus tables |
-| hill-climbing | 12–16 restarts, first improvement accepted, one note changed at a time |
+Everything with a flag beside it is [`src/cli.rs`](src/cli.rs)'s, and `--help` prints the same list. **The defaults
+are the published runs**: no figure anywhere in §8 was produced with a flag set, and a test asserts each default is
+the value the table names.
+
+| | | flag |
+|---|---|---|
+| tick base | 960 per whole note ([`kern.rs`](src/kern.rs)) | |
+| hard tier | `ParallelPerfect`, `DirectPerfectOnDownbeat` ([`automaton.rs`](src/automaton.rs)) | |
+| realiser tier | `conf+melodic` wherever one tier is used rather than all three crossed | `--tier` |
+| candidate grid | offsets every quarter within the subject; diatonic transpositions −7…+7; one entry per offset | |
+| design grid | offsets every half note, same transposition range | |
+| harmonic analyser | onset segmentation, 9 qualities × 12 roots, bass bonus 0.2, strong-beat weight ×2 | |
+| realiser plan | `λ = 1.0`, the middle of [§8.5](#85-the-harmonic-analyser)'s plausible band | `--lambda` |
+| realiser compass | each voice's range over the **whole piece**, which a form grammar would supply; never the passage's own range, which would be circular | |
+| realiser budgets | 60 000 states per layer, 4 000 000 edges per span — both refusals, never beams ([`realise.rs`](src/realise.rs)) | |
+| sampler | uniform over the legal set; the treatise weighting `β` is swept in [§8.6](#86-realisation-and-the-first-notes) and left at **0** everywhere else, being repertoire-specific | `--beta` |
+| draws per span | 8 where a section averages them; 32 in [§8.8](#88-a-criterion-that-is-not-local-and-the-shape-of-every-step-6-failure), which ranks them instead | `--samples`, `--rerank` |
+| objective | six soft criteria at equal weight in every table reported here, and **recommended off** by [§8.10](#810-replacing-the-soft-tier-and-the-degenerate-optimum-of-every-positive-criterion), which measures a uniform draw at `+1.07 ± 0.31` and `+4.64 ± 0.61` against it. The tables stand as the record of the runs as made | |
+| prescriptions | `Problem::prescribe`, three positive criteria charged *instead of* the tier; all zero everywhere but [§8.10](#810-replacing-the-soft-tier-and-the-degenerate-optimum-of-every-positive-criterion), where each is measured and none adopted | |
+| windows per work | 30 per Bach fugue and 3 per 15th-century work from [§8.8](#88-a-criterion-that-is-not-local-and-the-shape-of-every-step-6-failure) onwards, since 24 fugues stand against 200 works; [§8.6](#86-realisation-and-the-first-notes)'s weighting table predates that and runs 3 | `--bach-windows`, `--ren-windows`, `--gen-windows` |
+| corpora | 24 WTC Book I fugues, 200 JRP works | `--kern`, `--jrp`, `--ren-works` |
+| PRNG | SplitMix64 inline; seeds `0x5EED`, `0xC0FFEE`, `0xBEEF`, `0xF00D`, `0xD00D` | `--seed` |
+| trials | 400 random contours for single-subject figures, 60 per subject for corpus tables | |
+| hill-climbing | 12–16 restarts, first improvement accepted, one note changed at a time | |
+| MIDI output | format 1, **960 ticks per quarter** (an exact ×4 of the internal lattice), tempo and time signature from the score, tracks top voice first ([`midi.rs`](src/midi.rs)) | `--out` |
 
 ### 10.4 How the samples were taken
 

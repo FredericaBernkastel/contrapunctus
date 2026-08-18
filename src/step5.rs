@@ -34,16 +34,15 @@ use crate::{
   kern::{Note, Piece, Voice, TICKS_PER_QUARTER},
   pitch::{Interval, Pitch},
   realise::{self, Problem},
+  cli::{self, CONF_MEL},
   plan, refdata, shape, species, stretto,
 };
 
-const KERN: &str = "corpus/bach-wtc-fugues/kern";
-const OUT: &str = "out";
-/// The middle of §8.5's plausible band: a chord change about every 1.4 quarters.
-const LAMBDA: f64 = 1.0;
-/// Uniform draws per span for the §9 step 6 row. Eight averages a per-span
-/// figure without making the edge recording the dominant cost.
-const SAMPLES: usize = 8;
+/// The Bach `**kern` directory and the MIDI output directory, both settable —
+/// §10.3's table is [`crate::cli::Params`] now, and these read it.
+fn kern_dir() -> &'static std::path::Path {
+  cli::params().kern.as_path()
+}
 
 /// Clip a voice to `[t0, t1)`, keeping notes that sound across the boundary
 /// rather than dropping them. A note that began earlier is *held* into the span,
@@ -75,7 +74,7 @@ fn compass(v: &Voice) -> (i16, i16) {
 }
 
 fn out_dir() -> std::path::PathBuf {
-  let d = std::path::PathBuf::from(OUT);
+  let d = cli::params().out.clone();
   let _ = std::fs::create_dir_all(&d);
   d
 }
@@ -147,7 +146,7 @@ fn write_score(
 /// BWV 867's five entries, placed as §8.3's clique, written as sound.
 pub fn render_stretto() {
   println!("\n== step 5a: the stretto, rendered ==");
-  let Ok(p) = kern::read(&std::path::Path::new(KERN).join("wtc1f22.krn")) else {
+  let Ok(p) = kern::read(&kern_dir().join("wtc1f22.krn")) else {
     return println!("  (corpus missing)");
   };
   let q = TICKS_PER_QUARTER;
@@ -223,7 +222,7 @@ struct Span {
 }
 
 fn spans() -> (Vec<Piece>, Vec<Span>) {
-  let dir = std::path::Path::new(KERN);
+  let dir = kern_dir();
   let mut pieces = std::collections::BTreeMap::new();
   for n in 1..=24 {
     if let Ok(p) = kern::read(&dir.join(format!("wtc1f{n:02}.krn"))) {
@@ -276,7 +275,7 @@ fn spans() -> (Vec<Piece>, Vec<Span>) {
       for &v in &free {
         freeflag[v] = true;
       }
-      let segs = harmony::analyse_viterbi(&clipped, p.beat, LAMBDA);
+      let segs = harmony::analyse_viterbi(&clipped, p.beat, cli::params().lambda);
       out.push(Span { piece: pi, id: spec.id.clone(), start, len: spec.len, free, clipped, freeflag, segs });
     }
   }
@@ -384,7 +383,6 @@ fn legal_here(
 /// it nothing whatever bounds a free voice's line, so the search is free to leap
 /// two octaves between quavers. This tier is here because that turns out to
 /// matter more than any other single decision in step 5.
-const CONF_MEL: &[Rule] = &[Rule::ParallelPerfect, Rule::DirectPerfectOnDownbeat, Rule::ForbiddenMelodic];
 
 #[derive(Default)]
 struct Score {
@@ -446,7 +444,7 @@ fn one(
     Plan::Clean => {
       let source: Vec<Voice> =
         all.iter().enumerate().filter(|(i, _)| !sp.freeflag[*i]).map(|(_, v)| v.clone()).collect();
-      harmony::analyse_viterbi(&source, p.beat, LAMBDA)
+      harmony::analyse_viterbi(&source, p.beat, cli::params().lambda)
     }
   };
 
@@ -463,7 +461,7 @@ fn one(
     samples,
     // Deterministic and per span, so a rerun draws the same fills: this is a
     // measurement, not a demo, and §10 says nothing here is unseeded.
-    seed: 0x5EED ^ (sp.start as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15),
+    seed: cli::params().seed ^ (sp.start as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15),
     beta,
   };
   sc.spans += 1;
@@ -658,7 +656,7 @@ pub fn reconstruct() {
       if s.free.len() > 2 {
         continue;
       }
-      one(&pieces[s.piece], s, CONF_MEL, Plan::Clean, 1.0, SAMPLES, 0.0, &mut sc);
+      one(&pieces[s.piece], s, CONF_MEL, Plan::Clean, 1.0, cli::params().samples, 0.0, &mut sc);
     }
     let n = sc.s_notes.max(1) as f64;
     println!(
@@ -671,7 +669,7 @@ pub fn reconstruct() {
       mean(&sc.choices),
       t0.elapsed().as_secs_f64(),
     );
-    println!("   ({SAMPLES} uniform draws per span, seeded per span; `notes` counts every sampled note)");
+    println!("   ({} uniform draws per span, seeded per span; `notes` counts every sampled note)", cli::params().samples);
   }
 
   println!(
@@ -751,7 +749,7 @@ pub fn scalarisations() {
   let free = s.freeflag.clone();
   let source: Vec<Voice> =
     all.iter().enumerate().filter(|(i, _)| !free[*i]).map(|(_, v)| v.clone()).collect();
-  let plan = harmony::analyse_viterbi(&source, p.beat, LAMBDA);
+  let plan = harmony::analyse_viterbi(&source, p.beat, cli::params().lambda);
   println!("  {} bars {}-{}, one free voice\n", s.id, t0 / p.measure + 1, t1 / p.measure + 1);
 
   let mut runs: Vec<(String, Vec<Pitch>, Vec<f64>)> = vec![];
@@ -904,7 +902,7 @@ fn windows(pieces: &[Piece], want: usize) -> Vec<Span> {
       for &v in &free {
         freeflag[v] = true;
       }
-      let segs = harmony::analyse_viterbi(&clipped, p.beat, LAMBDA);
+      let segs = harmony::analyse_viterbi(&clipped, p.beat, cli::params().lambda);
       out.push(Span { piece: pi, id: p.id.clone(), start, len: GEN_SPAN, free, clipped, freeflag, segs });
       taken += 1;
     }
@@ -961,14 +959,16 @@ pub fn generality() {
 ");
 
   let bach: Vec<Piece> = (1..=24)
-    .filter_map(|n| kern::read(&std::path::Path::new(KERN).join(format!("wtc1f{n:02}.krn"))).ok())
+    .filter_map(|n| kern::read(&kern_dir().join(format!("wtc1f{n:02}.krn"))).ok())
     .collect();
-  let ren = renaissance(200);
+  let ren = renaissance(cli::params().ren_works);
   if bach.is_empty() || ren.is_empty() {
     return println!("  (corpus missing)");
   }
-  let bs = windows(&bach, 3);
-  let rs = windows(&ren, 3);
+  // §8.6 ran three windows per fugue; §8.8 onwards runs thirty. Keeping this
+  // one at its own number is what makes the default reproduce the published row.
+  let bs = windows(&bach, cli::params().gen_windows);
+  let rs = windows(&ren, cli::params().ren_windows);
   println!(
     "  Bach {} spans from {} fugues; Renaissance {} spans from {} works",
     bs.len(),
@@ -990,7 +990,7 @@ pub fn generality() {
         if s.free.len() > 2 {
           continue;
         }
-        one(&pieces[s.piece], s, CONF_MEL, Plan::Clean, 1.0, SAMPLES, beta, &mut sc);
+        one(&pieces[s.piece], s, CONF_MEL, Plan::Clean, 1.0, cli::params().samples, beta, &mut sc);
       }
       per_beta.push(sc.spanwise);
     }
@@ -1091,9 +1091,9 @@ pub fn species() {
   println!("  The question is what fraction of the dissonances real music writes they account for.\n");
 
   let bach: Vec<Piece> = (1..=24)
-    .filter_map(|n| kern::read(&std::path::Path::new(KERN).join(format!("wtc1f{n:02}.krn"))).ok())
+    .filter_map(|n| kern::read(&kern_dir().join(format!("wtc1f{n:02}.krn"))).ok())
     .collect();
-  let ren = renaissance(200);
+  let ren = renaissance(cli::params().ren_works);
   if bach.is_empty() || ren.is_empty() {
     return println!("  (corpus missing)");
   }
@@ -1148,10 +1148,6 @@ pub fn species() {
 
 // ------------------------------------ step 6: a criterion that is not local ---
 
-/// Draws per span for the reranking test. Larger than §8.6's eight, because a
-/// criterion can only choose from what it is shown, and the samples are cheap
-/// once the search has built the graph.
-const SHAPE_DRAWS: usize = 32;
 
 /// **Does a criterion over a whole line do what the local tier cannot?**
 ///
@@ -1171,15 +1167,15 @@ pub fn shape_test() {
   println!("\n== step 6: a criterion that is not local ==");
   println!("  Every soft criterion looks at one slice or two. These look at the whole line:");
   println!("  one climax, a compass inside a tenth, and not standing on one note — all Fux's.");
-  println!("  They rerank {SHAPE_DRAWS} uniform draws per span rather than entering the search,");
+  println!("  They rerank {} uniform draws per span rather than entering the search,", cli::params().rerank);
   println!("  because §2.5 says carrying a running range would multiply the state by a few hundred.\n");
   println!("  DECIDED BEFORE THE RUN: keep a criterion only if it beats the unranked draw on BOTH");
   println!("  corpora by more than twice the standard error of the paired per-span difference.\n");
 
   let bach: Vec<Piece> = (1..=24)
-    .filter_map(|n| kern::read(&std::path::Path::new(KERN).join(format!("wtc1f{n:02}.krn"))).ok())
+    .filter_map(|n| kern::read(&kern_dir().join(format!("wtc1f{n:02}.krn"))).ok())
     .collect();
-  let ren = renaissance(200);
+  let ren = renaissance(cli::params().ren_works);
   if bach.is_empty() || ren.is_empty() {
     return println!("  (corpus missing)");
   }
@@ -1188,8 +1184,8 @@ pub fn shape_test() {
   // any reason but its size. So Bach is sampled far more densely — 30 windows a
   // fugue against 3 a work — to bring the counts within reach. A null result on
   // 67 spans would have been a statement about the sample rather than the criterion.
-  let bs = windows(&bach, 30);
-  let rs = windows(&ren, 3);
+  let bs = windows(&bach, cli::params().bach_windows);
+  let rs = windows(&ren, cli::params().ren_windows);
   println!("  Bach {} spans, Renaissance {} spans; windows are denser in Bach to equalise power
 ", bs.len(), rs.len());
 
@@ -1212,12 +1208,12 @@ pub fn shape_test() {
         compass: p.voices.iter().map(compass).collect(),
         key: p.key,
         measure: p.measure,
-        plan: harmony::analyse_viterbi(&source, p.beat, LAMBDA),
-        tier: CONF_MEL,
+        plan: harmony::analyse_viterbi(&source, p.beat, cli::params().lambda),
+        tier: cli::params().tier.rules(),
         weights: [1.0; 6],
         prescribe: [0.0; 3],
-        samples: SHAPE_DRAWS,
-        seed: 0x5EED ^ (s.start as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15),
+        samples: cli::params().rerank,
+        seed: cli::params().seed ^ (s.start as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15),
         beta: 0.0,
       };
       let Ok(sol) = realise::fill(&pr) else { continue };
@@ -1410,14 +1406,14 @@ pub fn plan_test() {
   println!("  by more than twice the standard error of the paired per-span difference.\n");
 
   let bach: Vec<Piece> = (1..=24)
-    .filter_map(|n| kern::read(&std::path::Path::new(KERN).join(format!("wtc1f{n:02}.krn"))).ok())
+    .filter_map(|n| kern::read(&kern_dir().join(format!("wtc1f{n:02}.krn"))).ok())
     .collect();
-  let ren = renaissance(200);
+  let ren = renaissance(cli::params().ren_works);
   if bach.is_empty() || ren.is_empty() {
     return println!("  (corpus missing)");
   }
-  let bs = windows(&bach, 30);
-  let rs = windows(&ren, 3);
+  let bs = windows(&bach, cli::params().bach_windows);
+  let rs = windows(&ren, cli::params().ren_windows);
 
   // per corpus, per plan: the paired gain, its standard error, and how much of
   // the plan names the chord the answer-key analysis names
@@ -1440,7 +1436,7 @@ pub fn plan_test() {
       let all = &s.clipped;
       let source: Vec<Voice> =
         all.iter().enumerate().filter(|(i, _)| !s.freeflag[*i]).map(|(_, v)| v.clone()).collect();
-      let base = plan::viterbi(&source, p.beat, LAMBDA);
+      let base = plan::viterbi(&source, p.beat, cli::params().lambda);
       let oracle = s.segs.clone();
       let variants: Vec<Vec<harmony::Segment>> = vec![
         vec![],
@@ -1465,11 +1461,11 @@ pub fn plan_test() {
           key: p.key,
           measure: p.measure,
           plan: pl.clone(),
-          tier: CONF_MEL,
+          tier: cli::params().tier.rules(),
           weights: [1.0; 6],
           prescribe: [0.0; 3],
           samples: 0,
-          seed: 0x5EED ^ (s.start as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15),
+          seed: cli::params().seed ^ (s.start as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15),
           beta: 0.0,
         };
         let Ok(sol) = realise::fill(&pr) else { continue };
@@ -1488,7 +1484,10 @@ pub fn plan_test() {
       continue;
     }
 
-    println!("  {cname}: {built} spans of eight quarters, at most two free voices, tier conf+melodic");
+    println!(
+      "  {cname}: {built} spans of eight quarters, at most two free voices, tier {}",
+      cli::params().tier.label()
+    );
     println!("   plan            done   covered   vs oracle   log10 fills    exact   gain vs clean     n");
     let mut here = vec![];
     for i in 0..PLANS.len() {
@@ -1599,9 +1598,6 @@ pub fn plan_test() {
 
 // ------------------------------- step 6: replacing the soft tier, not reweighting it ---
 
-/// Uniform draws for the `no objective` row. The same eight §8.6 uses, so the
-/// two figures are produced by one protocol.
-const SOFT_DRAWS: usize = 8;
 
 /// Mean melodic interval of a line, in scale steps, counting a repeated note as
 /// zero. §8.6's diagnosis is that the fills are too narrow and §8.8's is that
@@ -1683,7 +1679,7 @@ pub fn soft_test() {
   // at all, and an ablation is worth reading against it rather than against the
   // uniform draw.
   let mut conds: Vec<(String, [f64; 6], [f64; 3], usize)> = vec![
-    ("no objective".into(), [0.0; 6], [0.0; 3], SOFT_DRAWS),
+    ("no objective".into(), [0.0; 6], [0.0; 3], cli::params().samples),
     ("tie-break only".into(), [0.0; 6], [0.0; 3], 0),
     ("soft(6)".into(), [1.0; 6], [0.0; 3], 0),
   ];
@@ -1712,14 +1708,14 @@ pub fn soft_test() {
   conds.push(("→ all three".into(), [0.0; 6], [1.0; 3], 0));
 
   let bach: Vec<Piece> = (1..=24)
-    .filter_map(|n| kern::read(&std::path::Path::new(KERN).join(format!("wtc1f{n:02}.krn"))).ok())
+    .filter_map(|n| kern::read(&kern_dir().join(format!("wtc1f{n:02}.krn"))).ok())
     .collect();
-  let ren = renaissance(200);
+  let ren = renaissance(cli::params().ren_works);
   if bach.is_empty() || ren.is_empty() {
     return println!("  (corpus missing)");
   }
-  let bs = windows(&bach, 30);
-  let rs = windows(&ren, 3);
+  let bs = windows(&bach, cli::params().bach_windows);
+  let rs = windows(&ren, cli::params().ren_windows);
 
   let mut summary: Vec<Vec<(f64, f64)>> = vec![];
   let names = ["Bach", "Renaissance"];
@@ -1738,7 +1734,7 @@ pub fn soft_test() {
       let all = &s.clipped;
       let source: Vec<Voice> =
         all.iter().enumerate().filter(|(i, _)| !s.freeflag[*i]).map(|(_, v)| v.clone()).collect();
-      let plan = harmony::analyse_viterbi(&source, p.beat, LAMBDA);
+      let plan = harmony::analyse_viterbi(&source, p.beat, cli::params().lambda);
       let mut row: Vec<Option<f64>> = vec![None; conds.len()];
       for (i, (_, w, pw, draws)) in conds.iter().enumerate() {
         let pr = Problem {
@@ -1748,11 +1744,11 @@ pub fn soft_test() {
           key: p.key,
           measure: p.measure,
           plan: plan.clone(),
-          tier: CONF_MEL,
+          tier: cli::params().tier.rules(),
           weights: *w,
           prescribe: *pw,
           samples: *draws,
-          seed: 0x5EED ^ (s.start as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15),
+          seed: cli::params().seed ^ (s.start as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15),
           beta: 0.0,
         };
         let Ok(sol) = realise::fill(&pr) else { continue };
@@ -1797,7 +1793,11 @@ pub fn soft_test() {
     }
 
     let avg = |v: &[f64]| -> f64 { if v.is_empty() { 0.0 } else { v.iter().sum::<f64>() / v.len() as f64 } };
-    println!("  {cname}: {} spans of eight quarters, at most two free voices, tier conf+melodic, clean plan", rows.len());
+    println!(
+      "  {cname}: {} spans of eight quarters, at most two free voices, tier {}, clean plan",
+      rows.len(),
+      cli::params().tier.label()
+    );
     println!("   objective            done    |step|   range    exact   gain on soft(6)      n");
     let mut here = vec![];
     for i in 0..conds.len() {
@@ -1923,7 +1923,7 @@ pub fn objective_check() {
     return println!("  (corpus or ground truth missing)");
   }
   let conds: [(&str, [f64; 6], usize); 4] = [
-    ("no objective", [0.0; 6], SOFT_DRAWS),
+    ("no objective", [0.0; 6], cli::params().samples),
     ("tie-break only", [0.0; 6], 0),
     ("soft(6) minimised", [1.0; 6], 0),
     ("soft(6) maximised", [-1.0; 6], 0),
@@ -1942,7 +1942,7 @@ pub fn objective_check() {
     let all = &s.clipped;
     let source: Vec<Voice> =
       all.iter().enumerate().filter(|(i, _)| !s.freeflag[*i]).map(|(_, v)| v.clone()).collect();
-    let plan = harmony::analyse_viterbi(&source, p.beat, LAMBDA);
+    let plan = harmony::analyse_viterbi(&source, p.beat, cli::params().lambda);
     let mut row: Vec<Option<(f64, usize, usize)>> = vec![None; conds.len()];
     for (i, (_, w, draws)) in conds.iter().enumerate() {
       let pr = Problem {
@@ -1952,11 +1952,11 @@ pub fn objective_check() {
         key: p.key,
         measure: p.measure,
         plan: plan.clone(),
-        tier: CONF_MEL,
+        tier: cli::params().tier.rules(),
         weights: *w,
         prescribe: [0.0; 3],
         samples: *draws,
-        seed: 0x5EED ^ (s.start as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15),
+        seed: cli::params().seed ^ (s.start as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15),
         beta: 0.0,
       };
       let Ok(sol) = realise::fill(&pr) else { continue };
@@ -2007,7 +2007,7 @@ pub fn objective_check() {
     100.0 * e as f64 / n.max(1) as f64
   };
   let pooled_base = pool(BASE);
-  println!("  {} annotated entry spans searched, tier conf+melodic, clean plan\n", rows.len());
+  println!("  {} annotated entry spans searched, tier {}, clean plan\n", rows.len(), cli::params().tier.label());
   println!("   objective             |step|   range   POOLED over notes   PAIRED per span      n");
   for i in 0..conds.len() {
     let d: Vec<f64> = rows

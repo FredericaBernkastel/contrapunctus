@@ -1,16 +1,14 @@
 //! Drivers for every measurement readme §8 reports.
 //!
-//!   cargo run --release -- states    the reachable state count
-//!   cargo run --release -- verdict   the three tests the roughness field failed
-//!   cargo run --release -- corpus    how often Bach violates the rulebook
-//!   cargo run --release -- stretto   BWV 867's five entries, as a clique
-//!   cargo run --release -- sweep     the harmonic analyser, penalty swept
-//!   cargo run --release -- realise   the fill, its measurement, and the MIDI
+//!   cargo run --release -- list      every command and the section it produces
+//!   cargo run --release -- --help    that, plus §10.3's parameters as flags
 //!
-//! Run with no argument for the four that take seconds. §10.2 of the readme maps
-//! each section to its command.
+//! Run with no command for the four that take seconds. [`cli`] holds the command
+//! tree and the parameters; §10.2 of the readme maps each section to its command
+//! and `list` prints the same map from the code.
 
 mod automaton;
+mod cli;
 mod corpus;
 mod experiments;
 mod harmony;
@@ -28,55 +26,66 @@ mod pitch;
 use automaton::{Move, Rule, State, Sym, Vert};
 use pitch::{parse_kern_pitch, Interval};
 
-const KERN: &str = "corpus/bach-wtc-fugues/kern";
+/// The Bach `**kern` directory this run was given — `--kern`, defaulting to the
+/// submodule. A function rather than a `const` because §10.3 is a command line
+/// now and the corpus can live anywhere.
+fn kern_dir() -> &'static std::path::Path {
+  cli::params().kern.as_path()
+}
+
 
 fn main() {
-  let what = std::env::args().nth(1).unwrap_or_else(|| "all".into());
-  match what.as_str() {
-    "states" => states(),
-    "verdict" => verdict(),
-    "corpus" => corpus_run(),
-    "diag" => diag(),
-    "stretto" => stretto(),
-    "rank" => rank(),
-    "probe" => probe(),
-    "exp" => { exp_density(); exp_pareto(); exp_renaissance(); exp_chromatic(); exp_harmony(); }
-    "exp1" => exp_density(),
-    "exp2" => exp_pareto(),
-    "exp3" => exp_renaissance(),
-    "exp4" => exp_chromatic(),
-    "exp5" => exp_harmony(),
-    "design" => step4_design(),
-    "harmony" => { harmony_run(); harmony_design(); harmony_corpus(); }
-    "h1" => harmony_run(),
-    "h2" => harmony_design(),
-    "h3" => harmony_corpus(),
-    "cad" => cadence_check(),
-    "hren" => harmony_renaissance(),
-    "seg" => segmentation_sensitivity(),
-    "revisit" => step4_revisit(),
-    "sweep" => analyser_sweep(),
-    "holdout" => analyser_holdout(),
-    "hren2" => analyser_renaissance(),
-    "func" => functional_test(),
-    "realise" => step5::run(),
-    "r1" => step5::render_stretto(),
-    "r2" => step5::reconstruct(),
-    "r3" => step5::scalarisations(),
-    "gen" => step5::generality(),
-    "species" => step5::species(),
-    "shape" => step5::shape_test(),
-    "plan" => step5::plan_test(),
-    "soft" => step5::soft_test(),
-    "obj" => step5::objective_check(),
-    "s17" => { analyser_sweep(); analyser_holdout(); analyser_renaissance(); }
-    "s16" => { cadence_check(); harmony_renaissance(); segmentation_sensitivity(); step4_revisit(); }
-    _ => {
-      states();
-      verdict();
-      corpus_run();
-      stretto();
-    }
+  use clap::Parser;
+  use cli::Cmd;
+
+  let args = cli::Cli::parse();
+  cli::set_params(args.params);
+
+  // No command is the four that take seconds, which is what this printed before
+  // there was a command line and is what a reader who has just cloned the
+  // repository should get. Everything else is now an error rather than a silent
+  // fallback to it.
+  match args.cmd.unwrap_or(Cmd::All) {
+    Cmd::States => states(),
+    Cmd::Verdict => verdict(),
+    Cmd::Corpus => corpus_run(),
+    Cmd::Diag => diag(),
+    Cmd::Renaissance => exp_renaissance(),
+    Cmd::Chromatic => exp_chromatic(),
+    Cmd::Stretto => stretto(),
+    Cmd::Rank => rank(),
+    Cmd::Probe => probe(),
+    Cmd::Density => exp_density(),
+    Cmd::Pareto => exp_pareto(),
+    Cmd::Design => step4_design(),
+    Cmd::Revisit => step4_revisit(),
+    Cmd::Ncts => harmony_run(),
+    Cmd::HarmonyDesign => harmony_design(),
+    Cmd::HarmonyCorpus => harmony_corpus(),
+    Cmd::Cadence => cadence_check(),
+    Cmd::Hren => harmony_renaissance(),
+    Cmd::Seg => segmentation_sensitivity(),
+    Cmd::Sweep => analyser_sweep(),
+    Cmd::Holdout => analyser_holdout(),
+    Cmd::ModalControl => analyser_renaissance(),
+    Cmd::Func => functional_test(),
+    Cmd::BindingHarmony => exp_harmony(),
+    Cmd::Render => step5::render_stretto(),
+    Cmd::Reconstruct => step5::reconstruct(),
+    Cmd::Scalarisations => step5::scalarisations(),
+    Cmd::Generality => step5::generality(),
+    Cmd::Species => step5::species(),
+    Cmd::Shape => step5::shape_test(),
+    Cmd::Plan => step5::plan_test(),
+    Cmd::Soft => step5::soft_test(),
+    Cmd::Objective => step5::objective_check(),
+    Cmd::Realise => step5::run(),
+    Cmd::Exp => { exp_density(); exp_pareto(); exp_renaissance(); exp_chromatic(); exp_harmony(); }
+    Cmd::Harmony => { harmony_run(); harmony_design(); harmony_corpus(); }
+    Cmd::S16 => { cadence_check(); harmony_renaissance(); segmentation_sensitivity(); step4_revisit(); }
+    Cmd::S17 => { analyser_sweep(); analyser_holdout(); analyser_renaissance(); }
+    Cmd::All => { states(); verdict(); corpus_run(); stretto(); }
+    Cmd::List => cli::list(),
   }
 }
 
@@ -178,7 +187,7 @@ fn yes(b: bool) -> &'static str {
 fn diag() {
   println!("
 == flagged melodic intervals ==");
-  let dir = std::path::Path::new(KERN);
+  let dir = kern_dir();
   let mut files: Vec<_> = std::fs::read_dir(dir).expect("kern")
     .filter_map(|e| e.ok().map(|e| e.path()))
     .filter(|p| p.file_name().map(|n| n.to_string_lossy().starts_with("wtc1f")).unwrap_or(false))
@@ -214,9 +223,9 @@ pub fn name_interval(st: i16, se: i16) -> &'static str {
 
 fn corpus_run() {
   println!("\n== Bach against the rulebook ==");
-  let dir = std::path::Path::new(KERN);
+  let dir = kern_dir();
   if !dir.exists() {
-    println!("{KERN} not found - run `git submodule update --init`");
+    println!("{} not found - run `git submodule update --init`", kern_dir().display());
     return;
   }
   let mut files: Vec<_> = std::fs::read_dir(dir)
@@ -328,7 +337,7 @@ const LEN_FEMALE_Q: i64 = 12;
 const LEN_MALE_Q: i64 = 8;
 
 fn stretto() {
-  let path = std::path::Path::new(KERN).join("wtc1f22.krn");
+  let path = kern_dir().join("wtc1f22.krn");
   let p = match kern::read(&path) {
     Ok(p) => p,
     Err(e) => return println!("{e}"),
@@ -431,7 +440,7 @@ fn window(v: &kern::Voice, t0: i64, t1: i64) -> kern::Voice {
 /// search, and the whole corpus runs in seconds.
 fn rank() {
   let refpath = std::path::Path::new("corpus/algomus-data/fugues/fugues.ref");
-  let dir = std::path::Path::new(KERN);
+  let dir = kern_dir();
   // load every piece first: the annotations are in bars, and a bar is only a
   // duration once the score has told us the time signature
   let mut pieces: std::collections::BTreeMap<String, kern::Piece> = Default::default();
@@ -529,7 +538,7 @@ fn voice_of(p: &kern::Piece, letter: char) -> usize {
 /// ranking did not finish in ten minutes, and the first question is whether
 /// the clique search is slow or the measure is vacuous.
 fn probe() {
-  let p = kern::read(&std::path::Path::new(KERN).join("wtc1f22.krn")).expect("kern");
+  let p = kern::read(&kern_dir().join("wtc1f22.krn")).expect("kern");
   let sub = stretto::Subject::cut(&p.voices[p.voices.len() - 1], 0, 12 * kern::TICKS_PER_QUARTER);
   println!("\n== probe: BWV 867, capacity search ==");
   for (name, tier) in [("confirmed (2 rules)", automaton::CONFIRMED), ("full (5 rules)", automaton::HARD)] {
@@ -549,7 +558,7 @@ fn probe() {
 // ------------------------------------------------------------ experiments ---
 
 fn load_bach() -> std::collections::BTreeMap<String, kern::Piece> {
-  let dir = std::path::Path::new(KERN);
+  let dir = kern_dir();
   let mut out = std::collections::BTreeMap::new();
   for n in 1..=24 {
     if let Ok(p) = kern::read(&dir.join(format!("wtc1f{n:02}.krn"))) {
