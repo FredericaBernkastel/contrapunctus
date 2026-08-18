@@ -684,6 +684,37 @@ step 6 leaves behind is one line of code turned off, one turned on, and a much b
 
 ---
 
+## A command line, and §10.3 made settable
+
+[`bb3d9b3`](../../commit/bb3d9b3)
+
+`src/cli.rs`, the repository's first dependency. Dispatch was a `match` on `argv[1]` whose fallback arm ran the
+four quick measurements, so **a mistyped command came back as a measurement of something else** — `specie` for
+`species` printed the automaton's state count and exited zero. It is an error with a suggestion now.
+
+**§10.3 was a table of constants.** `λ`, the draw counts, the windows per fugue, how many works are read, the
+tier, the seed, where the corpora live and where MIDI goes: every one had to be edited and recompiled to vary, and
+one of them was edited and recompiled to vary during step 6d. They are flags, and the module's stated contract is
+that **the defaults are exactly the published runs** — a test asserts each default equals the value §10.3 names.
+
+Restoring that contract caught one thing. §8.6's treatise-weighting table takes **three** windows per fugue and
+everything from §8.8 on takes **thirty**; a single flag for both would have silently rewritten §8.6's `67 Bach
+spans` into 690. They are separate flags, and `gen` prints `67 spans from 24 fugues` again. Spot-checked against
+the published figures: 513 reachable states, the λ sweep's `80 / 77 / 70 / 48`, and the stretto's `2 on the full
+tier, 0 on the confirmed tier`.
+
+**§10.2 is now checked against the program.** `list` prints the section-to-command map from the same data `--help`
+is built from, and a fifth reference test runs it and fails the build if the table names a command that does not
+exist, files one under the wrong section, or omits one that produces a reported figure. Verified against all three
+failures rather than assumed. Commands were renamed to say what they produce — `exp3` is `renaissance`, `r2` is
+`reconstruct` — and every short name the readme or this file has ever cited still works as an alias, because a
+citation that cannot be run is not a citation.
+
+`list` also separates the twenty commands that produce a reported figure from the thirteen that reproduce a
+superseded one and the seven batches, which the flat list never did.
+
+---
+
 ## Recurring pattern
 
 Three constraints in this project have turned out too permissive to bind — the two-rule hard tier, the
@@ -728,6 +759,12 @@ Step 6e adds two more, both about reading a table rather than building one.
 > **A statistic that says how well the data fit the model says nothing about whether the model is right.** The
 > analyser's `fit` sits at 95% on spans whose chords are 15% correct, because two voices are easy to explain with
 > many chords. Every repair that gates on such a number fails for the same reason, so the family closes together.
+
+The command line adds one that is not about measurement at all, but has the same shape:
+
+> **An interface that answers an unknown input by doing something else has no error case, and every mistake it
+> receives comes back as a plausible result.** `argv[1]` fell through to the default batch, so a mistyped command
+> printed a real table for a different question and exited zero.
 
 Step 6f adds two more.
 
