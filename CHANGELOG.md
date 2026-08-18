@@ -715,6 +715,53 @@ superseded one and the seven batches, which the flat list never did.
 
 ---
 
+## Marpurg's tonal answer — the first transcribed rule Bach does not break
+
+[`731a932`](../../commit/731a932)
+
+Readme §8.11, `src/answer.rs`. The first thing transcribed from a treatise of **Bach's own circle** rather than
+from Fux, which is §9's standing open problem: the *Abhandlung von der Fuge* (1753), drittes Hauptstück, "Vom
+Gefährten".
+
+Two Grundsätze that conflict — keep the subject's intervals, and stay in the key — because the octave has two
+unequal halves, five notes up to the dominant and four back. Marpurg resolves it by a *Vertauschung* he tabulates
+as a substitution of melodic intervals: a unison for a second, a second for a third, and the reverse. **One
+interval changes, by one degree.** Transposing one note up a fifth and the next up a fourth does exactly that, so a
+single change of leg along the subject is a single mutation, and that is the model.
+
+**Where the mutation falls, Marpurg settles by worked example rather than by rule, so the transcription does not
+pick a point** — it enumerates every point the stated rules leave open and returns a set. §8.7's question then
+applies unchanged, and the set's size is reported beside its coverage.
+
+**Rule I is exact.** Seven WTC subjects open on the dominant; in all seven Bach answers on the tonic, which
+transposing up a fifth does not do. **Seven of seven, zero exceptions** — against §8.2, where Fux's rules were
+measured at 8.0, 21.4, 71.1 and 90.9 violations per thousand. The right-hand column is the whole measurement: where
+a rule says *answer at the fifth* it says what transposition does anyway, and only *answer at the fourth* earns
+anything.
+
+**Rule II is not weak but wrong** — 0 of 4 where it says anything, and its 66.7% overall is entirely the free
+cases. §3.3 would object that the subject's *end* is a reading rather than a fact, so the rule was retried at every
+subject end the ground truth records. It fails at all of them.
+
+**And Marpurg knew which was which.** He states Rule I flatly and hedges Rule II in the sentence that states it —
+*"öfters nach Beschaffenheit der Umstände ihre Ausnahmen leiden kann"*. The treatise's own confidence tracks the
+measurement rule for rule, which Fux's never did: the *Gradus* asserts its melodic prohibition exactly as firmly as
+its parallel-fifth one, and §8.2 had to find the stratification from outside.
+
+**Applying Rule II as a filter costs more than it buys.** It gains three tonal answers and refuses four Bach wrote
+as plain transpositions (BWV 848, 854, 863, 865), leaving coverage exactly where transposition already was —
+41.7%. Dropping it takes coverage to **62.5%** with a median of 14 admissible answers per subject.
+
+So the transcription narrows the answer from the space of transpositions to a **shortlist of about fourteen**, and
+then stops, because the chapter stops. Against §8.6's `10¹²` fills of three bars, that is the first time a
+transcribed rulebook in this project has narrowed anything to a number a person could read.
+
+Not tested on two corpora and cannot be: the tonal answer is a device of tonal fugue and the 15th-century control
+has neither the annotations nor the exposition. Twenty-four pairs is a small sample; what makes Rule I worth
+reporting is that it is seven out of seven in the one place it makes a claim transposition does not.
+
+---
+
 ## Recurring pattern
 
 Three constraints in this project have turned out too permissive to bind — the two-rule hard tier, the
@@ -759,6 +806,13 @@ Step 6e adds two more, both about reading a table rather than building one.
 > **A statistic that says how well the data fit the model says nothing about whether the model is right.** The
 > analyser's `fit` sits at 95% on spans whose chords are 15% correct, because two voices are easy to explain with
 > many chords. Every repair that gates on such a number fails for the same reason, so the family closes together.
+
+§8.11 adds one that has been implicit since §8.2 and is now explicit:
+
+> **A rule only earns something where it differs from the default.** Marpurg's Rule I is right in 21 of 21 cases
+> and that figure means nothing, because in 14 of them it prescribes what plain transposition does anyway. Seven
+> of seven, on the cases where it says otherwise, is the measurement. The same reading applies to every rule §8.2
+> reports: a prohibition against something nobody does is satisfied at no cost.
 
 The command line adds one that is not about measurement at all, but has the same shape:
 
