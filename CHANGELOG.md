@@ -370,6 +370,9 @@ piano, and one of the three voices identical between the two files.
 
 ## §7.1 — the prior art that was found last, from outside the field
 
+[`6b57e3d`](../../commit/6b57e3d) [`35d9b13`](../../commit/35d9b13) [`e49c2dd`](../../commit/e49c2dd) — written,
+wired into the roadmap, then moved inside §7.
+
 Readme §7.1. **WaveFunctionCollapse** (Gumin, 2016) is texture synthesis for images and is the same object as this
 document in a different category — constraint propagation over a discrete lattice with local compatibility rules,
 arrived at independently and from the opposite direction. Its own README states §2.2's bounded-order automaton for
@@ -392,11 +395,55 @@ Written first as a standalone §11 and then moved inside §7, where it belongs: 
 section's table rather than standing in a second one making the same Crossref claim, which turned up a stale count
 — three citations now carry no DOI, not two.
 
+---
+
+## Step 6 — sampling the legal set, and a claim retracted
+
+Readme §8.6, §9 step 6. The first of the two proposals §7.1 produced, built and measured.
+
+**Uniform sampling from the DAG.** The search already counts the paths through itself, so drawing one uniformly is
+a backward walk: choose a final node in proportion to its count, then take each predecessor in proportion to *its*
+count. The factors telescope — `count[j]` is by construction the sum over j's predecessors — so every complete fill
+comes out with probability exactly `1/total`. Only the edge list is new, and only when a sample is asked for;
+`(from, to)` suffices, because a node's key *is* the pitches the free voices took.
+
+Verified on an instance small enough to enumerate: 116 legal fills, 20 000 seeded draws, **all 116 drawn**, and
+chi-squared **113 against 115 degrees of freedom**, which is where a flat distribution is expected to land. Two
+further tests assert that every sampled fill passes the checker and that more than one distinct fill comes back.
+
+### Claims retired
+
+- **"Optimising this objective is worse than not optimising."** Refuted by the control that sentence was waiting
+  for. Minimising the soft criteria scores 7.8%, a uniform draw **6.9%**, maximising 4.9%. Sampling was supposed to
+  win — §7.1 read WaveFunctionCollapse's Weak C2 as saying *typical beats extremal* — and it loses. The soft tier
+  is weak, real, and **better than not optimising**, which is the opposite of what §8.6 concluded from a baseline
+  that was not like-for-like.
+- **The `16.2%` baseline as a figure any generator could approach.** It is computed per note with Bach's own
+  preceding note in hand. A generator that lives with its own mistakes gets **6.9%**, so more than half of that
+  baseline was the handout. 16.2% still measures something real — how much the constraint determines when the
+  previous note is *given* — but that is a ceiling on a different problem.
+
+### Defect
+
+- **The §7.1 entry above overwrote the `## Recurring pattern` heading** when it was added in
+  [`6b57e3d`](../../commit/6b57e3d), leaving that section's body orphaned under it for three commits. A scripted
+  replacement matched `--- ## Recurring pattern` and substituted rather than inserting before it. Restored here.
+  Nothing was lost, and nothing said so either — which is the argument for the heading check the repair added.
+
+---
+
+## Recurring pattern
+
 Three constraints in this project have turned out too permissive to bind — the two-rule hard tier, the
 non-chord-tone categories, and the functional progression rule — and all three were caught after the fact.
 
 > **Any constraint written loosely enough to admit the target on the first try will admit almost everything, and
 > the check for it is a chance baseline computed before the measurement, not after.**
+
+Step 6 adds the corollary, which cost a retracted claim to learn:
+
+> **A baseline must also be reachable by the thing it is a baseline for.** One computed with information the
+> generator does not have measures an easier problem, and the gap is invisible until the honest control is built.
 
 Step 5 is the fourth instance and the largest: a rulebook that admits `10¹⁸` fills of three bars admits everything.
 It is also the first one where the baseline was computed **before** the measurement rather than after, which is why

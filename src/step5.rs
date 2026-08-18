@@ -41,6 +41,9 @@ const KERN: &str = "corpus/bach-wtc-fugues/kern";
 const OUT: &str = "out";
 /// The middle of §8.5's plausible band: a chord change about every 1.4 quarters.
 const LAMBDA: f64 = 1.0;
+/// Uniform draws per span for the §9 step 6 row. Eight averages a per-span
+/// figure without making the edge recording the dominant cost.
+const SAMPLES: usize = 8;
 
 /// Clip a voice to `[t0, t1)`, keeping notes that sound across the boundary
 /// rather than dropping them. A note that began earlier is *held* into the span,
@@ -393,6 +396,10 @@ struct Score {
   notes: usize,
   exact: usize,
   pc: usize,
+  /// The same three, over the uniformly sampled fills rather than the cheapest.
+  s_notes: usize,
+  s_exact: usize,
+  s_pc: usize,
   chance: f64,
   fills: Vec<f64>,
   choices: Vec<f64>,
@@ -416,7 +423,7 @@ enum Plan {
 }
 
 /// Fill one span and score it against Bach.
-fn one(p: &Piece, sp: &Span, tier: &[Rule], which: Plan, w: f64, sc: &mut Score) -> Option<Vec<Voice>> {
+fn one(p: &Piece, sp: &Span, tier: &[Rule], which: Plan, w: f64, samples: usize, sc: &mut Score) -> Option<Vec<Voice>> {
   let all = &sp.clipped;
   let plan = match which {
     Plan::None => vec![],
@@ -437,6 +444,10 @@ fn one(p: &Piece, sp: &Span, tier: &[Rule], which: Plan, w: f64, sc: &mut Score)
     plan: plan.clone(),
     tier,
     weights: [w; 6],
+    samples,
+    // Deterministic and per span, so a rerun draws the same fills: this is a
+    // measurement, not a demo, and §10 says nothing here is unseeded.
+    seed: 0x5EED ^ (sp.start as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15),
   };
   sc.spans += 1;
   let sol = match realise::fill(&pr) {
@@ -465,6 +476,40 @@ fn one(p: &Piece, sp: &Span, tier: &[Rule], which: Plan, w: f64, sc: &mut Score)
   // had one. The question a baseline answers here is "how often would picking at
   // random from what was open to the search have hit Bach", and *what was open
   // to the search* is not negotiable.
+  // How often a candidate fill agrees with Bach, note for note. Used unchanged
+  // for the cheapest fill and for every uniform sample, so the two figures are
+  // never the product of two slightly different accountings.
+  let agree = |cand: &[Voice]| -> (usize, usize, usize) {
+    let (mut n_, mut ex, mut pc) = (0, 0, 0);
+    for &v in &sp.free {
+      for n in all[v].notes.iter().filter(|n| n.attack) {
+        let Some((got, _)) = kern::sounding(&cand[v], n.onset) else { continue };
+        n_ += 1;
+        if got == n.pitch {
+          ex += 1;
+        }
+        if got.chroma().rem_euclid(12) == n.pitch.chroma().rem_euclid(12) {
+          pc += 1;
+        }
+      }
+    }
+    (n_, ex, pc)
+  };
+
+  let (n_, ex, pc) = agree(&sol.voices);
+  sc.notes += n_;
+  sc.exact += ex;
+  sc.pc += pc;
+
+  for s in &sol.sampled {
+    let (n_, ex, pc) = agree(s);
+    sc.s_notes += n_;
+    sc.s_exact += ex;
+    sc.s_pc += pc;
+  }
+
+  // the per-note baseline, which needs Bach's own preceding note and so cannot
+  // be folded into `agree`
   for &v in &sp.free {
     let comp = compass(&p.voices[v]);
     let mut prev: Option<Pitch> = None;
@@ -472,14 +517,6 @@ fn one(p: &Piece, sp: &Span, tier: &[Rule], which: Plan, w: f64, sc: &mut Score)
       if !n.attack {
         prev = Some(n.pitch);
         continue;
-      }
-      let Some((got, _)) = kern::sounding(&sol.voices[v], n.onset) else { continue };
-      sc.notes += 1;
-      if got == n.pitch {
-        sc.exact += 1;
-      }
-      if got.chroma().rem_euclid(12) == n.pitch.chroma().rem_euclid(12) {
-        sc.pc += 1;
       }
       let ch = plan.iter().find(|s| s.start <= n.onset && n.onset < s.end).and_then(|s| s.chord);
       let k = local_choices(all, v, n.onset, prev, &p.key, p.measure, tier, ch, comp);
@@ -527,7 +564,7 @@ pub fn reconstruct() {
         if s.free.len() > 2 {
           continue;
         }
-        let got = one(&pieces[s.piece], s, tier, which, 1.0, &mut sc);
+        let got = one(&pieces[s.piece], s, tier, which, 1.0, 0, &mut sc);
         if best.is_none() && which == Plan::Clean && tname == "conf+melodic" && s.free.len() == 2 {
           if let Some(f) = got {
             best = Some((f, s.piece, s.id.clone(), s.start));
@@ -568,11 +605,11 @@ pub fn reconstruct() {
       if s.free.len() > 2 {
         continue;
       }
-      one(&pieces[s.piece], s, CONF_MEL, Plan::Clean, w, &mut sc);
+      one(&pieces[s.piece], s, CONF_MEL, Plan::Clean, w, 0, &mut sc);
     }
     let n = sc.notes.max(1) as f64;
     println!(
-      "   {:<12}  {:<6} {:>4} {:>5} {:>4} {:>6}  {:>4.1}% {:>4.1}%   {:>4.1}%   {:>8.1}    {:>7.1}",
+      "   {:<12}  {:<9} {:>4} {:>5} {:>4} {:>6}  {:>4.1}% {:>4.1}%   {:>4.1}%   {:>8.1}    {:>7.1}",
       "conf+melodic", label, sc.solved, sc.dead, sc.capped, sc.notes,
       100.0 * sc.exact as f64 / n,
       100.0 * sc.pc as f64 / n,
@@ -580,6 +617,38 @@ pub fn reconstruct() {
       median(&sc.fills),
       mean(&sc.choices),
     );
+  }
+
+  // --- §9 step 6: sample the legal set instead of optimising over it --------
+  //
+  // The like-for-like control that the `chance` column is not. `chance` is a
+  // per-note quantity computed with **Bach's own preceding note** in hand, so it
+  // solves an easier problem than any generator does and the comparison flatters
+  // it. A uniform draw from the legal set gets no such help: it commits to a
+  // whole path, its errors compound exactly as the search's do, and it is scored
+  // by the same function. Whatever separates it from the optimised rows is the
+  // objective's doing and nothing else.
+  {
+    let t0 = std::time::Instant::now();
+    let mut sc = Score::default();
+    for s in &sp {
+      if s.free.len() > 2 {
+        continue;
+      }
+      one(&pieces[s.piece], s, CONF_MEL, Plan::Clean, 1.0, SAMPLES, &mut sc);
+    }
+    let n = sc.s_notes.max(1) as f64;
+    println!(
+      "   {:<12}  {:<9} {:>4} {:>5} {:>4} {:>6}  {:>4.1}% {:>4.1}%   {:>4.1}%   {:>8.1}    {:>7.1} {:>5.0}s",
+      "conf+melodic", "uniform", sc.solved, sc.dead, sc.capped, sc.s_notes,
+      100.0 * sc.s_exact as f64 / n,
+      100.0 * sc.s_pc as f64 / n,
+      100.0 * sc.chance / sc.notes.max(1) as f64,
+      median(&sc.fills),
+      mean(&sc.choices),
+      t0.elapsed().as_secs_f64(),
+    );
+    println!("   ({SAMPLES} uniform draws per span, seeded per span; `notes` counts every sampled note)");
   }
 
   println!(
@@ -681,6 +750,8 @@ pub fn scalarisations() {
       plan: plan.clone(),
       tier: CONFIRMED,
       weights: *weights,
+      samples: 0,
+      seed: 0,
     };
     let Ok(sol) = realise::fill(&pr) else { continue };
     let notes: Vec<Pitch> = sol.voices[s.free[0]].notes.iter().filter(|n| n.attack).map(|n| n.pitch).collect();

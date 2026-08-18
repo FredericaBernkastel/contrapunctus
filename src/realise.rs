@@ -151,6 +151,13 @@ pub struct Problem<'a> {
   /// position is that no choice is defensible — so it is a parameter here, and
   /// §8.6 runs several and reports that they disagree.
   pub weights: [f64; 6],
+  /// How many fills to draw **uniformly at random from the legal set**, beside
+  /// the cheapest one — readme §9 step 6, and WaveFunctionCollapse's Weak C2
+  /// stripped of the part that needs a corpus (§7.1). Zero costs nothing; any
+  /// positive number makes the search record its edge list, which the cheapest
+  /// path does not need.
+  pub samples: usize,
+  pub seed: u64,
 }
 
 pub struct Solution {
@@ -166,6 +173,9 @@ pub struct Solution {
   /// Melodic intervals the free voices took that Fux forbids, in the runs where
   /// `ForbiddenMelodic` is not in the tier and they are therefore permitted.
   pub melodic_flags: usize,
+  /// `Problem::samples` fills drawn uniformly from the legal set. Each is a full
+  /// voice list in the same shape as `voices`.
+  pub sampled: Vec<Vec<Voice>>,
 }
 
 /// The pitches a free voice may strike at one slice: the key's own scale over
@@ -253,7 +263,9 @@ impl Layer {
       flags: vec![],
     }
   }
-  fn relax(&mut self, n: Node, c: f64, from: u32, took: [Option<Pitch>; MAXFREE], cnt: u128, fl: u32) {
+  /// Returns the index of the node relaxed into, so a caller recording the edge
+  /// list for §7.1's sampler knows where the edge landed.
+  fn relax(&mut self, n: Node, c: f64, from: u32, took: [Option<Pitch>; MAXFREE], cnt: u128, fl: u32) -> usize {
     match self.index.get(&n) {
       Some(&i) => {
         self.count[i] = self.count[i].saturating_add(cnt);
@@ -263,6 +275,7 @@ impl Layer {
           self.took[i] = took;
           self.flags[i] = fl;
         }
+        i
       }
       None => {
         let i = self.nodes.len();
@@ -273,6 +286,7 @@ impl Layer {
         self.took.push(took);
         self.count.push(cnt);
         self.flags.push(fl);
+        i
       }
     }
   }
@@ -403,11 +417,17 @@ pub fn fill(pr: &Problem) -> Result<Solution, String> {
 
   let mut opts: Vec<Vec<Opt>> = vec![vec![]; freeix.len()];
   let mut fired: Vec<Rule> = Vec::with_capacity(8);
+  // Recorded only when a sample is asked for. `(from, to)` is all that is
+  // needed: the pick that produced an edge is recoverable from the node it
+  // lands on, since a node's key *is* the pitches the free voices took.
+  let mut edges: Vec<Vec<(u32, u32)>> = Vec::new();
+  let mut edge_buf: Vec<(u32, u32)> = Vec::new();
   for (s, &t) in times.iter().enumerate() {
     let downbeat = pr.measure > 0 && t % pr.measure == 0;
     let chord = plan_at(&pr.plan, t);
     let broke = |a: usize, b: usize| s == 0 || !sounds[s - 1][a] || !sounds[s - 1][b];
     let mut cur = Layer::new();
+    edge_buf.clear();
 
     for i in 0..prev.nodes.len() {
       if work > MAX_WORK {
@@ -551,7 +571,10 @@ pub fn fill(pr: &Problem) -> Result<Solution, String> {
           continue;
         }
         work += 1;
-        cur.relax(node, prev.cost[i] + cost, i as u32, node.now, prev.count[i], prev.flags[i] + flags);
+        let to = cur.relax(node, prev.cost[i] + cost, i as u32, node.now, prev.count[i], prev.flags[i] + flags);
+        if pr.samples > 0 {
+          edge_buf.push((i as u32, to as u32));
+        }
       }
     }
 
@@ -576,6 +599,10 @@ pub fn fill(pr: &Problem) -> Result<Solution, String> {
     // index — the largest thing in it by far — is dead the moment the next
     // layer is built. Keeping it made a long search hold hundreds of megabytes
     // of dead map and spend its time in the allocator rather than the automaton.
+    if pr.samples > 0 {
+      edge_buf.sort_unstable_by_key(|&(_, to)| to);
+      edges.push(std::mem::take(&mut edge_buf));
+    }
     let mut done = std::mem::replace(&mut prev, cur);
     done.index = Map::default();
     done.nodes = vec![];
@@ -599,32 +626,97 @@ pub fn fill(pr: &Problem) -> Result<Solution, String> {
     j = l.back[j] as usize;
   }
 
-  // --- assemble the score --------------------------------------------------
-  let mut out = pr.voices.clone();
-  for (k, &v) in freeix.iter().enumerate() {
-    let mut notes: Vec<Note> = vec![];
-    for (s, &t) in times.iter().enumerate() {
-      let Some(p) = chosen[s][k] else { continue };
-      let end = times.get(s + 1).copied().unwrap_or_else(|| {
-        pr.voices[v].notes.last().map(|n| n.onset + n.dur).unwrap_or(t + 1).max(t + 1)
-      });
-      let strike = matches!(cells[s][v], Err(Mode::Strike));
-      match notes.last_mut() {
-        Some(n) if !strike && n.onset + n.dur == t && n.pitch == p => n.dur += end - t,
-        _ => notes.push(Note { onset: t, dur: end - t, pitch: p, attack: strike }),
+  // --- assemble one chosen path into voices --------------------------------
+  let assemble = |chosen: &[[Option<Pitch>; MAXFREE]]| -> Vec<Voice> {
+    let mut out = pr.voices.clone();
+    for (k, &v) in freeix.iter().enumerate() {
+      let mut notes: Vec<Note> = vec![];
+      for (s, &t) in times.iter().enumerate() {
+        let Some(p) = chosen[s][k] else { continue };
+        let end = times.get(s + 1).copied().unwrap_or_else(|| {
+          pr.voices[v].notes.last().map(|n| n.onset + n.dur).unwrap_or(t + 1).max(t + 1)
+        });
+        let strike = matches!(cells[s][v], Err(Mode::Strike));
+        match notes.last_mut() {
+          Some(n) if !strike && n.onset + n.dur == t && n.pitch == p => n.dur += end - t,
+          _ => notes.push(Note { onset: t, dur: end - t, pitch: p, attack: strike }),
+        }
       }
+      out[v] = Voice { notes };
     }
-    out[v] = Voice { notes };
+    out
+  };
+
+  // --- uniform samples from the legal set ----------------------------------
+  //
+  // Choose a final node in proportion to how many paths reach it, then walk
+  // back choosing each predecessor in proportion to *its* count. The factors
+  // telescope — `count[j]` is by construction the sum over j's predecessors —
+  // so every complete path comes out with probability exactly `1/total`. That
+  // is §7.1's Weak C2 with the half that needs a corpus removed: typical rather
+  // than optimal, and asserting nothing.
+  //
+  // Weights go through `f64`, which is exact enough while the counts fit; a
+  // saturated total would silently distort them, so `Solution::saturated` says
+  // when that has happened.
+  let mut sampled: Vec<Vec<Voice>> = Vec::new();
+  if pr.samples > 0 && total > 0 && !last.count.is_empty() {
+    let mut rng = pr.seed | 1;
+    let mut unif = move || {
+      rng = rng.wrapping_add(0x9E37_79B9_7F4A_7C15);
+      let mut z = rng;
+      z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+      z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+      (((z ^ (z >> 31)) >> 11) as f64) / ((1u64 << 53) as f64)
+    };
+    let final_total: f64 = last.count.iter().map(|&c| c as f64).sum();
+    for _ in 0..pr.samples {
+      let mut r = unif() * final_total;
+      let mut j = last.count.len() - 1;
+      for (i, &c) in last.count.iter().enumerate() {
+        r -= c as f64;
+        if r <= 0.0 {
+          j = i;
+          break;
+        }
+      }
+      let mut path = vec![[None; MAXFREE]; times.len()];
+      for s in (0..times.len()).rev() {
+        path[s] = layers[s + 1].took[j];
+        if s == 0 {
+          break;
+        }
+        let e = &edges[s];
+        let lo = e.partition_point(|&(_, to)| (to as usize) < j);
+        let hi = e.partition_point(|&(_, to)| (to as usize) <= j);
+        if lo >= hi {
+          return Err(format!("sampler: node {j} of layer {} has no predecessor", s + 1));
+        }
+        let w: f64 = e[lo..hi].iter().map(|&(f, _)| layers[s].count[f as usize] as f64).sum();
+        let mut r = unif() * w;
+        let mut pick = e[lo].0 as usize;
+        for &(f, _) in &e[lo..hi] {
+          pick = f as usize;
+          r -= layers[s].count[f as usize] as f64;
+          if r <= 0.0 {
+            break;
+          }
+        }
+        j = pick;
+      }
+      sampled.push(assemble(&path));
+    }
   }
 
   Ok(Solution {
-    voices: out,
+    voices: assemble(&chosen),
     cost,
     legal_fills: total,
     saturated: total == u128::MAX,
     peak_states: peak,
     slices: times.len(),
     melodic_flags: flags,
+    sampled,
   })
 }
 
@@ -717,6 +809,8 @@ mod tests {
       plan: vec![],
       tier,
       weights: [1.0; 6],
+      samples: 0,
+      seed: 0x5EED,
     }
   }
 
@@ -758,6 +852,78 @@ mod tests {
     }
     assert_eq!(sol.legal_fills, brute, "dynamic programme counted {} , enumeration {brute}", sol.legal_fills);
     assert!(brute > 1, "the instance is too constrained to be a test");
+  }
+
+  /// A uniform draw is still a legal fill. The sampler walks a different path
+  /// through the same DAG, so if it could reach anything the hard tier refuses,
+  /// the count it draws in proportion to would be counting illegal fills too and
+  /// §8.6's headline number would be wrong.
+  #[test]
+  fn every_sampled_fill_is_legal() {
+    let cf = line(&[28, 30, 29, 31, 28]);
+    let mut pr = problem(cf, line(&[35, 35, 35, 35, 35]), CONFIRMED);
+    pr.samples = 24;
+    let sol = fill(&pr).expect("a fill exists");
+    assert_eq!(sol.sampled.len(), 24);
+    for (i, s) in sol.sampled.iter().enumerate() {
+      let t = corpus::check_voices(&s[0], &s[1], 4 * Q);
+      for r in CONFIRMED {
+        assert_eq!(t.by_rule.get(r.name()).copied().unwrap_or(0), 0, "sample {i} breaks {}", r.name());
+      }
+    }
+  }
+
+  /// And it draws more than one of them. A sampler that always returned the same
+  /// path would pass the test above and be worth nothing.
+  #[test]
+  fn sampling_explores_the_legal_set() {
+    let cf = line(&[28, 30, 29]);
+    let mut pr = problem(cf, line(&[35, 35, 35]), CONFIRMED);
+    pr.samples = 60;
+    let sol = fill(&pr).expect("a fill exists");
+    let seen: std::collections::BTreeSet<Vec<i16>> =
+      sol.sampled.iter().map(|s| s[1].notes.iter().map(|n| n.pitch.step).collect()).collect();
+    assert!(seen.len() > 1, "sampler returned one distinct fill out of {}", sol.legal_fills);
+    assert!(
+      seen.len() as u128 <= sol.legal_fills,
+      "drew {} distinct fills from a legal set of {}",
+      seen.len(),
+      sol.legal_fills
+    );
+  }
+
+  /// The draw is **uniform**, which is the entire claim and the one thing the
+  /// two tests above do not check: a sampler that always returned the cheapest
+  /// path would pass "is legal", and one biased towards a corner would pass
+  /// "explores". So enumerate a small instance and look at the histogram.
+  ///
+  /// 116 legal fills, 20 000 draws, seeded and therefore deterministic. For a
+  /// uniform distribution chi-squared is expected to come out near its degrees
+  /// of freedom, and it does — 113 against 115 — with every one of the 116 fills
+  /// drawn at least once. The bound below is loose on purpose: it is there to
+  /// catch a sampler that has become lopsided, not to re-measure the fit.
+  #[test]
+  fn the_draw_is_uniform_over_the_legal_set() {
+    let cf = line(&[28, 30, 29]);
+    let mut pr = problem(cf, line(&[35, 35, 35]), CONFIRMED);
+    pr.samples = 20_000;
+    let sol = fill(&pr).expect("a fill exists");
+
+    let mut hist: std::collections::BTreeMap<Vec<i16>, usize> = Default::default();
+    for s in &sol.sampled {
+      *hist.entry(s[1].notes.iter().map(|n| n.pitch.step).collect()).or_default() += 1;
+    }
+    assert_eq!(
+      hist.len() as u128,
+      sol.legal_fills,
+      "drew {} distinct fills of {} legal ones",
+      hist.len(),
+      sol.legal_fills
+    );
+    let exp = pr.samples as f64 / hist.len() as f64;
+    let chi: f64 = hist.values().map(|&c| (c as f64 - exp).powi(2) / exp).sum();
+    let df = (hist.len() - 1) as f64;
+    assert!(chi < 2.0 * df, "chi-squared {chi:.1} against {df:.0} degrees of freedom: not uniform");
   }
 
   /// Rhythm is data: the fill articulates where it was told to and nowhere else.

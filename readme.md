@@ -106,10 +106,12 @@ subject entries fixed, taking his rhythm and a harmonic plan derived only from t
 to see, and filling the rest exactly, the rulebook leaves seven to seventeen pitches open at every note and between
 `10¹²` and `10¹⁸` complete legal fills of a three-bar span. Across every combination of rulebook and plan,
 **agreement with what Bach wrote barely moves while the chance baseline nearly triples** — so the constraints are
-doing all of the work and the objective almost none. Reversing the sign of that objective is the control that says
-which: minimising the soft criteria beats maximising them by three points, and **both are less than half of a
-random legal choice**, because taking the extremum of a nearly orthogonal objective lands in an atypical corner of
-the legal set. Where taste enters is therefore the central problem rather than an afterthought, and the position
+doing all of the work and the objective almost none. Two controls place it: reversing the sign of the objective,
+and drawing from the legal set **uniformly** instead of optimising over it at all, which the search can do exactly
+because it already counts the paths through its own DAG. Minimising scores 7.8%, a uniform draw 6.9%, maximising
+4.9% — so the soft tier is weak, real, and **better than not optimising**, which is the opposite of what the
+per-note baseline had suggested before a like-for-like control existed. Where taste enters is therefore the central
+problem rather than an afterthought, and the position
 taken here is the **Pareto front** over soft criteria rather than a weighted sum, on the ground that no weighting
 in the literature is defensible and Fux declines to supply one.
 
@@ -785,15 +787,19 @@ move `10¹⁵` toward a number at which choosing means anything.
 #### Weak C2 answers §8.6's question, and answers it by not optimising
 
 [§8.6](#86-realisation-and-the-first-notes) measured that minimising the soft criteria scores 7.8%, maximising them
-4.9%, and **a random legal choice 16.2%** — that the extremum of a nearly orthogonal objective is worse than the
-middle of the legal set. It reported that as an open problem.
+4.9%, against a per-note baseline of **16.2%**, and reported that as an open problem.
 
 WFC does not have the problem, because it never forms an objective. Its answer to *which of the many legal outputs*
 is **(Weak C2)**: *"probability to meet a particular pattern in the output should be close to the density of such
 patterns in the input"*, implemented as *"collapse this element into a definite state according to its coefficients
 and the distribution of `N×N` patterns in the input."* Sample proportionally; aim to be **typical** rather than
-optimal. The measurement above already says typical beats extremal by a factor of two here, and the conclusion had
-simply not been drawn.
+optimal.
+
+**That prediction was testable here and it failed**, which is the more useful outcome. Drawing uniformly from the
+legal set — Weak C2 with the corpus half removed — scores **6.9%**, below the 7.8% of the objective it was meant to
+improve on ([§8.6](#86-realisation-and-the-first-notes)). Typical does not beat extremal in this repertoire. What
+the exercise bought instead was the honest baseline: the 16.2% figure turns out to be an artefact of handing the
+scorer Bach's own preceding note, and a generator that has to live with its own mistakes gets 6.9%.
 
 Two versions of that are available and only one is permitted by this project's founding constraint.
 
@@ -834,8 +840,9 @@ Two entries for [§9](#9-roadmap)'s step 6, neither of which was visible from in
 
 1. **Transcribe the species as a whitelist**, not only the prohibitions as a blacklist. Same book, same no-fitting
    position, and the only proposal so far that attacks `10¹⁵` at its root rather than choosing better within it.
-2. **Sample uniformly from the legal set** instead of optimising over it — the one thing
-   [§8.6](#86-realisation-and-the-first-notes)'s own control already shows to be better, and mostly built.
+2. **Sample uniformly from the legal set** instead of optimising over it. Built and measured, and it does *not*
+   beat the objective — but it supplies the like-for-like baseline the section lacked, and it is the only way to
+   ask how many of those `10¹⁵` fills are any good, since it can now draw them.
 
 Neither is an argument for adopting WFC. It is an argument that a difficulty which looked specific to counterpoint
 — a complete search over a permissive rulebook returning far too much — has a well-studied shape, a name, and at
@@ -1089,28 +1096,28 @@ Every constraint added — the melodic rule, the two dissonance rules, a harmoni
 raises what a random legal choice is worth. None of it changes what the search picks out of that set by more than a
 few points. Constraint is doing all the work; the objective is doing almost none.
 
-**Is the objective wrong, or merely weak?** Run the identical search with the sign of the objective reversed and
-the two readings separate. Same tier, same plan, same 99 spans and 2129 notes:
+**Is the objective wrong, or merely weak?** Three runs settle it, all on the same tier, the same plan and the same
+99 spans. Reverse the sign of the objective; and — [§9](#9-roadmap) step 6's first proposal — **draw from the legal
+set uniformly instead of optimising over it at all**, which the search can do exactly because it already counts the
+paths through its own DAG ([§8.6](#86-realisation-and-the-first-notes) again). Eight draws per span, seeded.
 
 | conf+melodic, clean plan | exact | pitch class |
 |---|---:|---:|
 | soft criteria **minimised** | **7.8%** | 13.2% |
+| **uniform draw from the legal set** | 6.9% | 13.4% |
 | soft criteria **maximised** | 4.9% | 13.0% |
-| a random legal choice | 16.2% | — |
+| per-note `chance` baseline | 16.2% | — |
 
-So the criteria do point the right way — minimising beats maximising by three points, which is a real signal and
-the only evidence in this project that the soft tier means anything at all. And **both ends of it are less than
-half of a random legal choice.** The objective is very nearly orthogonal to being Bach, and taking the *extremum*
-of a nearly orthogonal objective lands in an atypical corner of the legal set, which is worse than landing in the
-middle of it. Optimising this objective is worse than not optimising.
+**The middle row is the like-for-like control, and it changes the reading.** It commits to a whole path, its errors
+compound exactly as the search's do, and the same function scores it — so the ordering `4.9 < 6.9 < 7.8` is
+entirely the objective's doing. Minimising the soft criteria beats maximising them, *and* beats not optimising at
+all. The soft tier is weak and it is real, and using it is better than ignoring it.
 
-One honest qualification on the baseline, which cuts the other way. `chance` is computed per note with **Bach's own
-preceding note** as the melodic and harmonic context, because that is what makes it a per-note quantity at all; the
-fill has only its own preceding note, and its errors compound. The baseline is therefore solving an easier problem
-and the gap is not a like-for-like control. What it does establish is a ceiling: **even when the previous note is
-given, the whole rulebook plus a harmonic plan gets the next one right about one time in six.** The min-versus-max
-comparison above has no such caveat — it is the same machinery under the same conditions — and it is the one that
-says the objective is weak rather than inverted.
+**And the `chance` column is now shown to be a large overestimate of what any generator can do.** The gap between
+16.2% and 6.9% is precisely the caveat this section already carried, measured at last: `chance` is computed per
+note with **Bach's own preceding note** in hand, and more than half of its apparent advantage is that handout. The
+honest baseline for a generator is the 6.9%. What 16.2% establishes is a different and still useful thing — a
+ceiling on how much the constraint alone determines when the previous note is *given*: about one note in six.
 
 **The search is given Bach's rhythm** — every onset and every tie of the voices it is reconstructing, which is a
 large part of the answer — and it still cannot find the pitches. One span whole, because percentages hide what is
@@ -1229,19 +1236,17 @@ order.
 6. **Selectivity**, which [§8.6](#86-realisation-and-the-first-notes) turned from a prediction into a number:
    `10¹²` to `10¹⁸` legal fills of a three-bar span, and agreement with Bach that does not respond to anything the
    rulebook does. The table there is unambiguous about which direction *not* to go: more of the same kind of
-   constraint buys tractability and nothing else, and optimising the soft criteria is worse than not optimising.
-   Five things bear on it instead, the first two cheapest and both owed to
-   [§7.1](#71-parallels-within-the-same-algorithmic-family).
+   constraint buys tractability and nothing else. The first proposal below has now been built and measured, and it
+   failed in a way worth keeping. Four things remain.
 
-   - **Sample the legal set instead of optimising over it.** [§8.6](#86-realisation-and-the-first-notes)'s own
-     reversed-sign control already says a random legal choice beats both ends of the objective, by a factor of
-     two; WaveFunctionCollapse's **Weak C2** says the same thing as a design principle — aim to be *typical*, not
-     optimal. **Uniform** sampling asserts nothing and needs no data, and is most of the way built: the search
-     computes exact path counts through the DAG and they are already checked against brute-force enumeration, so
-     drawing a uniformly random legal fill is a backward walk weighting each predecessor by its count. That is the
-     smallest change on this list with a measured reason to expect it to work, and it turns a baseline column into
-     a generator. Frequency-weighted sampling would be better still and needs frequencies; a treatise may state
-     them, a corpus may not supply them.
+   - ~~Sample the legal set instead of optimising over it.~~ **Done, and it does not work.** Uniform sampling is
+     built — a backward walk through the DAG weighting each predecessor by its path count, drawing every legal
+     fill with probability exactly `1/total` and verified flat on an instance small enough to enumerate. It scores
+     **6.9%** against the objective's 7.8% ([§8.6](#86-realisation-and-the-first-notes)), so *typical* does not
+     beat *extremal* here and WaveFunctionCollapse's Weak C2 does not carry across. It earns its place twice
+     anyway: it is the like-for-like baseline the section had been missing, and it is the only way to ask how many
+     of `10¹⁵` fills are acceptable, because it can now draw them. **Frequency-weighted** sampling is the version
+     that remains untried, and it needs frequencies — a treatise may state them where a corpus may not be used.
    - **Enumerate the species as a whitelist**, rather than only the prohibitions as a blacklist. This is
      [§7.1](#c1-is-a-whitelist-and-fux-is-a-blacklist), and it is the only proposal here that attacks `10¹⁵`
      at its root instead of choosing better within it: *only these configurations may occur* is enormously tighter
