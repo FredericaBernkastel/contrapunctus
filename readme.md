@@ -42,6 +42,7 @@ are built and measured — [§8](#8-what-is-built-and-what-it-measures). Realisa
   - [8.5 The harmonic analyser](#85-the-harmonic-analyser)
   - [8.6 Realisation, and the first notes](#86-realisation-and-the-first-notes)
   - [8.7 The species as a whitelist, and why it does not tighten anything](#87-the-species-as-a-whitelist-and-why-it-does-not-tighten-anything)
+  - [8.8 A criterion that is not local, and the shape of every step-6 failure](#88-a-criterion-that-is-not-local-and-the-shape-of-every-step-6-failure)
 - [9. Roadmap](#9-roadmap)
 - [10. Reproducing the results](#10-reproducing-the-results)
   - [10.1 Environment and data](#101-environment-and-data)
@@ -1333,6 +1334,61 @@ The residue after all of that is seconds and sevenths, which are the intervals a
 melodic figure. That is [§2.3](#23-harmony-is-a-second-automaton)'s claim from the other side: what is left over
 when every voice-leading figure has been accounted for is exactly what harmony is for.
 
+### 8.8 A criterion that is not local, and the shape of every step-6 failure
+
+[§8.6](#86-realisation-and-the-first-notes) says where to look and
+[§2.5](#25-the-search-is-a-shortest-path) says what it would cost. Pitch class is recovered about twice as often as
+pitch, so the octave is wrong, and **register is a property of a line over a phrase** that no one-slice criterion
+can see. The accumulators that would express it are finite-state, and carrying a running minimum and maximum per
+free voice would multiply an already-exploding search by a few hundred.
+
+So the criterion is applied **after** the search rather than inside it. [§8.6](#86-realisation-and-the-first-notes)'s
+sampler draws whole legal fills; a criterion over a complete line can rank them afterwards, which needs no state at
+all. Three criteria, each transcribed from Fux and each reported alone, since combining them needs weights and
+[§5](#5-what-this-will-not-do) is about exactly that: **one climax**, a **compass** inside a tenth, and **variety**
+— not standing on one note. 32 draws per span, ranked; the control is the same draws unranked.
+
+| criterion | Bach | gain on unranked | 15th-c. | gain on unranked |
+|---|---:|---|---:|---|
+| unranked | 7.2% | — | 9.7% | — |
+| climax | 7.3% | +0.15 ± 0.26 | **12.0%** | **+2.21 ± 0.82** |
+| compass | 7.2% | +0.01 ± 0.27 | 7.2% | **−2.51 ± 0.61** |
+| variety | 7.1% | −0.10 ± 0.26 | **11.7%** | **+1.99 ± 0.80** |
+| all three | **8.1%** | **+0.96 ± 0.29** | 7.6% | **−2.15 ± 0.62** |
+
+690 Bach spans and 577 Renaissance, one protocol for both; gains are paired per-span differences against the same
+draws unranked. Nothing clears the bar on both corpora, so **nothing is adopted**. Three things in the table are
+worth more than that verdict.
+
+**The stratification runs the other way from [§8.7](#87-the-species-as-a-whitelist-and-why-it-does-not-tighten-anything)'s
+and [§8.6](#86-realisation-and-the-first-notes)'s.** The treatise *weighting* helped Bach and hurt the earlier
+repertoire; these *shape* criteria do the reverse — climax and variety are worth better than two points to
+15th-century polyphony and are indistinguishable from nothing in Bach. And that is
+[§8.2](#82-the-rulebook-stratified-by-two-corpora)'s melodic finding arriving a second time. That section measured
+Fux's melodic *interval* prohibition at 1.0 violations per thousand moves in the Renaissance against 37.6 in Bach
+and called it repertoire-specific; his melodic *shape* prescriptions now stratify the same way and in the same
+direction. **Fux's melodic doctrine is Renaissance doctrine**, twice measured on independent evidence.
+
+**The compass criterion makes things actively worse, and the reason indicts the whole approach.** It costs the
+Renaissance 2.5 points, four standard errors. Fux's rule is an *upper* bound — keep the line inside a tenth — and
+[§8.6](#86-realisation-and-the-first-notes)'s diagnosed failure is that the fills are too **narrow**: Bach's inner
+voice covers `F3..A♭4` where the fill covers `F3..C4`, the same floor and a ceiling a fourth lower. Ranking by an
+upper bound selects for narrowness, so it pushes precisely the wrong way on the failure it was chosen to address.
+
+Which is the general form of every step-6 result, and the most useful thing the step produced:
+
+> **The treatise is a list of prohibitions against excess. The generator's failure is deficiency.** A rulebook
+> written to restrain a human writer who naturally does too much is the wrong instrument for a search that
+> naturally does too little.
+
+That reading is consistent across all four experiments. Removing the objective entirely changed almost nothing
+([§8.6](#86-realisation-and-the-first-notes)), because the objective was never the binding problem. Weighting the
+prohibitions harder helped one repertoire and hurt the other. Enumerating the permitted figures could not account
+for a fifth of what real music writes ([§8.7](#87-the-species-as-a-whitelist-and-why-it-does-not-tighten-anything)).
+And a shape criterion drawn from the same source pushes the wrong way on register. Nothing transcribed from Fux
+tells a generator what a line should **do**; the book assumes a writer who already knows, and constrains what they
+must not.
+
 ---
 
 ## 9. Roadmap
@@ -1363,21 +1419,25 @@ order.
      itself twice over anyway: the perfect fourth turns out to account for **31% of Bach's flagged dissonances and
      44% of the Renaissance's**, which is a candidate diagnosis for the two dissonance rules' long-standing
      failure, and Fux's metric condition costs fourteen points in both corpora.
-   - **A criterion that is not local**, which the same table points at twice, and which the first listening test
-     ([§8.6](#86-realisation-and-the-first-notes)) suggests is a question of *stylistic identity* rather than of
-     rescuing the output. Pitch class is recovered about twice as often as pitch, so what is missing is
-     **register** — a property of a line over a phrase, invisible to every criterion in the tier because they all
-     look at one slice or two.
-     [§2.5](#25-the-search-is-a-shortest-path) already identifies the machinery: the shape accumulators, finite-
-     state but long-range. Schottstaedt implemented all three and still concluded his program *"makes no decisions
-     about overall melodic shapes"*, so this is known to be hard rather than merely unattempted.
+   - ~~A criterion that is not local.~~ **Done, and it is Fux's melodic doctrine that is local to the
+     Renaissance.** One climax, a bounded compass and variety, each transcribed and each used to rerank uniform
+     draws rather than to enter the search — which is how a long-range criterion is bought without the state
+     explosion [§2.5](#25-the-search-is-a-shortest-path) predicts. Climax and variety are worth better than two
+     points to 15th-century polyphony and nothing at all to Bach; the compass bound makes things *worse*, because
+     it is an upper bound and the diagnosed failure is narrowness
+     ([§8.8](#88-a-criterion-that-is-not-local-and-the-shape-of-every-step-6-failure)). Not adopted, and it is the
+     experiment that produced step 6's one general finding: **the treatise prohibits excess and the generator's
+     failure is deficiency.**
    - **A better plan.** The `leaky` rows price a *perfect* harmonic plan, which is an upper bound on what
      [§2.4](#24-form-is-a-grammar)'s grammar can buy by supplying harmony alone. It is not enough on its own, and
      knowing that before building the grammar is what those rows are for.
-   - **Replacing the soft tier rather than reweighting it.** Minimising it beats maximising it by three points, so
-     it is not noise; both lose to a random legal choice, so it is not usable as an objective either. No choice of
-     weights repairs a criterion set that is nearly orthogonal to the target, which is a sharper objection than
-     [§5](#5-what-this-will-not-do)'s and reaches the same place.
+   - **Replacing the soft tier rather than reweighting it.** Minimising it beats maximising it and beats not
+     optimising, so it is not noise; it moves agreement by about a point, so it is not much either. Four attempts
+     to improve on it from the same source have now failed, and
+     [§8.8](#88-a-criterion-that-is-not-local-and-the-shape-of-every-step-6-failure) says why in one line: a
+     replacement has to state what a line should **do**, and Fux states only what it must not. That points away
+     from the treatises this project has read and towards the ones it has not —
+     **Marpurg** and **Kirnberger**, below, who write about Bach's own practice rather than Palestrina's.
 
    And escalate to a SAT/CDCL solver, which [§2.7](#27-where-a-solver-takes-over-from-the-dp) put at four or more
    free voices and [§8.6](#86-realisation-and-the-first-notes) measured at **two**. Do not layer: Schottstaedt
@@ -1460,6 +1520,7 @@ the Josquin Research Project for the Renaissance scores.
 | [§8.6](#86-realisation-and-the-first-notes) scalarisations | `cargo run --release -- r3` |
 | [§8.6](#86-realisation-and-the-first-notes) treatise weighting, both corpora | `cargo run --release -- gen` |
 | [§8.7](#87-the-species-as-a-whitelist-and-why-it-does-not-tighten-anything) species whitelist | `cargo run --release -- species` |
+| [§8.8](#88-a-criterion-that-is-not-local-and-the-shape-of-every-step-6-failure) shape criteria | `cargo run --release -- shape` |
 | every cross-reference in the repository | `cargo test --release --test references` |
 
 `realise` runs all three of the last. `rank`, `probe`, `exp2`, `exp5`, `harmony`, `cad`, `seg`, `revisit`, `hren2`

@@ -34,7 +34,7 @@ use crate::{
   kern::{Note, Piece, Voice, TICKS_PER_QUARTER},
   pitch::{Interval, Pitch},
   realise::{self, Problem},
-  refdata, species, stretto,
+  refdata, shape, species, stretto,
 };
 
 const KERN: &str = "corpus/bach-wtc-fugues/kern";
@@ -1140,6 +1140,178 @@ pub fn species() {
       .collect();
     if !top.is_empty() {
       println!("  {:<12} unlisted, commonest first: {}", "", top.join(", "));
+    }
+  }
+}
+
+// ------------------------------------ step 6: a criterion that is not local ---
+
+/// Draws per span for the reranking test. Larger than §8.6's eight, because a
+/// criterion can only choose from what it is shown, and the samples are cheap
+/// once the search has built the graph.
+const SHAPE_DRAWS: usize = 32;
+
+/// **Does a criterion over a whole line do what the local tier cannot?**
+///
+/// §8.6 says what is missing and where to look: pitch class is recovered about
+/// twice as often as pitch, so the octave is wrong, and register is a property
+/// of a phrase that no one-slice criterion can see. §2.5 says the accumulators
+/// that would express it are finite-state but would multiply the search state by
+/// a few hundred. So the criterion is applied **after** the search instead:
+/// draw whole legal fills uniformly and let a shape criterion pick among them.
+///
+/// The control is the same draws, unranked. Whatever separates the two is the
+/// criterion's doing — same spans, same graph, same seeds, same scoring
+/// function. And the bar is §8.2's, fixed before the run: keep a criterion only
+/// if it beats the unranked draw on **both** corpora by more than twice the
+/// standard error of the paired per-span difference.
+pub fn shape_test() {
+  println!("\n== step 6: a criterion that is not local ==");
+  println!("  Every soft criterion looks at one slice or two. These look at the whole line:");
+  println!("  one climax, a compass inside a tenth, and not standing on one note — all Fux's.");
+  println!("  They rerank {SHAPE_DRAWS} uniform draws per span rather than entering the search,");
+  println!("  because §2.5 says carrying a running range would multiply the state by a few hundred.\n");
+  println!("  DECIDED BEFORE THE RUN: keep a criterion only if it beats the unranked draw on BOTH");
+  println!("  corpora by more than twice the standard error of the paired per-span difference.\n");
+
+  let bach: Vec<Piece> = (1..=24)
+    .filter_map(|n| kern::read(&std::path::Path::new(KERN).join(format!("wtc1f{n:02}.krn"))).ok())
+    .collect();
+  let ren = renaissance(200);
+  if bach.is_empty() || ren.is_empty() {
+    return println!("  (corpus missing)");
+  }
+  // 24 fugues against 200 works gives 67 spans against 577, and an effect that
+  // clears two standard errors on the larger corpus need not on the smaller for
+  // any reason but its size. So Bach is sampled far more densely — 30 windows a
+  // fugue against 3 a work — to bring the counts within reach. A null result on
+  // 67 spans would have been a statement about the sample rather than the criterion.
+  let bs = windows(&bach, 30);
+  let rs = windows(&ren, 3);
+  println!("  Bach {} spans, Renaissance {} spans; windows are denser in Bach to equalise power
+", bs.len(), rs.len());
+
+  // per corpus: for each span, the unranked mean and each criterion's pick
+  let mut per_corpus: Vec<(Vec<f64>, Vec<Vec<f64>>)> = vec![];
+  for (pieces, spans) in [(&bach, &bs), (&ren, &rs)] {
+    let mut base: Vec<f64> = vec![];
+    let mut picked: Vec<Vec<f64>> = vec![vec![]; shape::CRITERIA.len()];
+    for s in spans.iter() {
+      if s.free.len() > 2 {
+        continue;
+      }
+      let p = &pieces[s.piece];
+      let all = &s.clipped;
+      let source: Vec<Voice> =
+        all.iter().enumerate().filter(|(i, _)| !s.freeflag[*i]).map(|(_, v)| v.clone()).collect();
+      let pr = Problem {
+        voices: all.clone(),
+        free: s.freeflag.clone(),
+        compass: p.voices.iter().map(compass).collect(),
+        key: p.key,
+        measure: p.measure,
+        plan: harmony::analyse_viterbi(&source, p.beat, LAMBDA),
+        tier: CONF_MEL,
+        weights: [1.0; 6],
+        samples: SHAPE_DRAWS,
+        seed: 0x5EED ^ (s.start as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15),
+        beta: 0.0,
+      };
+      let Ok(sol) = realise::fill(&pr) else { continue };
+      if sol.sampled.is_empty() {
+        continue;
+      }
+
+      // agreement of one candidate fill with Bach, note for note
+      let agree = |cand: &[Voice]| -> f64 {
+        let (mut n_, mut ex) = (0usize, 0usize);
+        for &v in &s.free {
+          for n in all[v].notes.iter().filter(|n| n.attack) {
+            if let Some((got, _)) = kern::sounding(&cand[v], n.onset) {
+              n_ += 1;
+              if got == n.pitch {
+                ex += 1;
+              }
+            }
+          }
+        }
+        if n_ == 0 { f64::NAN } else { ex as f64 / n_ as f64 }
+      };
+
+      let rates: Vec<f64> = sol.sampled.iter().map(|c| agree(c)).collect();
+      if rates.iter().any(|x| x.is_nan()) {
+        continue;
+      }
+      base.push(rates.iter().sum::<f64>() / rates.len() as f64);
+      for (ci, (_, f)) in shape::CRITERIA.iter().enumerate() {
+        // the criterion scores the free voices it actually wrote
+        let best = sol
+          .sampled
+          .iter()
+          .enumerate()
+          .max_by(|a, b| {
+            let sc = |c: &(usize, &Vec<Voice>)| -> f64 {
+              s.free.iter().map(|&v| f(&c.1[v])).sum::<f64>() / s.free.len() as f64
+            };
+            sc(a).partial_cmp(&sc(b)).unwrap()
+          })
+          .map(|(i, _)| i)
+          .unwrap_or(0);
+        picked[ci].push(rates[best]);
+      }
+    }
+    per_corpus.push((base, picked));
+  }
+
+  let paired = |a: &[f64], b: &[f64]| -> (f64, f64) {
+    let d: Vec<f64> = a.iter().zip(b).map(|(x, y)| x - y).collect();
+    if d.len() < 2 {
+      return (0.0, 0.0);
+    }
+    let m = d.iter().sum::<f64>() / d.len() as f64;
+    let var = d.iter().map(|x| (x - m).powi(2)).sum::<f64>() / (d.len() - 1) as f64;
+    (100.0 * m, 100.0 * (var / d.len() as f64).sqrt())
+  };
+  let mean = |v: &[f64]| -> f64 { 100.0 * v.iter().sum::<f64>() / v.len().max(1) as f64 };
+
+  println!(
+    "   criterion    |     Bach   gain vs unranked  |  Renaissance   gain vs unranked"
+  );
+  println!(
+    "   {:<12} |    {:>5.1}%                  |       {:>5.1}%",
+    "unranked",
+    mean(&per_corpus[0].0),
+    mean(&per_corpus[1].0)
+  );
+  let mut verdicts = vec![];
+  for (ci, (name, _)) in shape::CRITERIA.iter().enumerate() {
+    let (bg, bse) = paired(&per_corpus[0].1[ci], &per_corpus[0].0);
+    let (rg, rse) = paired(&per_corpus[1].1[ci], &per_corpus[1].0);
+    println!(
+      "   {:<12} |    {:>5.1}%   {:>+5.2} +/- {:>4.2}  |       {:>5.1}%   {:>+5.2} +/- {:>4.2}",
+      name,
+      mean(&per_corpus[0].1[ci]),
+      bg,
+      bse,
+      mean(&per_corpus[1].1[ci]),
+      rg,
+      rse
+    );
+    verdicts.push((*name, bg > 2.0 * bse, rg > 2.0 * rse, bg, rg));
+  }
+
+  println!("\n  gains are paired per-span differences against the same draws unranked, +/- one standard error.");
+  let keep: Vec<&(&str, bool, bool, f64, f64)> = verdicts.iter().filter(|v| v.1 && v.2).collect();
+  if keep.is_empty() {
+    let any = verdicts.iter().filter(|v| v.1 || v.2).count();
+    println!(
+      "\n  VERDICT: nothing clears the bar on both corpora ({any} of {} clears it on one). Not adopted.",
+      verdicts.len()
+    );
+  } else {
+    println!("\n  VERDICT: {} clears the bar on both corpora:", keep.len());
+    for (n, _, _, b, r) in &keep {
+      println!("    {n:<12} Bach {b:+.2}, Renaissance {r:+.2}");
     }
   }
 }

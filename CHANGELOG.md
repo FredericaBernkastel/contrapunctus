@@ -534,6 +534,37 @@ breakage into a failing build rather than making renumbering free.
 
 ---
 
+## Step 6d — a criterion that is not local
+
+Readme §8.8. §8.6 says the octave is what goes wrong and §2.5 says a running range would multiply the search state
+by a few hundred, so the criterion is applied **after** the search: rank 32 uniform draws per span by a criterion
+over the whole line. Three, each transcribed from Fux and each reported alone because combining needs weights —
+one climax, a compass inside a tenth, variety.
+
+**Nothing clears the bar on both corpora, so nothing is adopted.** But climax and variety are worth `+2.21 ± 0.82`
+and `+1.99 ± 0.80` to 15th-century polyphony and are indistinguishable from zero in Bach, which is the **reverse**
+of step 6b's weighting and the second independent measurement of §8.2's melodic finding: Fux's melodic doctrine is
+Renaissance doctrine.
+
+**The compass criterion costs the Renaissance `−2.51 ± 0.61`.** Fux's rule is an upper bound and §8.6's failure is
+narrowness — the fill covers `F3..C4` where Bach covers `F3..A♭4` — so ranking by it selects for exactly the fault
+being treated.
+
+### What step 6 established
+
+Four experiments, four failures, one reading that fits all of them:
+
+> **The treatise is a list of prohibitions against excess. The generator's failure is deficiency.**
+
+Removing the objective changed nothing, because the objective was never binding. Weighting the prohibitions harder
+split by repertoire. Enumerating the permitted figures left a fifth of real dissonance unexplained. A shape
+criterion from the same source pushes the wrong way. Nothing transcribed from Fux tells a generator what a line
+should *do* — the book assumes a writer who knows, and constrains what they must not. That is an argument for
+reading **Marpurg** and **Kirnberger**, who write about Bach's practice, and it is the first time this project has
+had a measured reason to prefer one unread treatise over another.
+
+---
+
 ## Recurring pattern
 
 Three constraints in this project have turned out too permissive to bind — the two-rule hard tier, the

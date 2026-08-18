@@ -24,7 +24,7 @@
 //! generating against it.
 
 use crate::{
-  kern::{self, Note, Voice},
+  kern::{self, Voice},
   pitch::{Interval, Pitch},
 };
 use std::collections::BTreeMap;
@@ -208,7 +208,7 @@ pub fn permitted(v: &Voice, i: usize, consonant: bool, strong: bool, metric: boo
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::kern::TICKS_PER_QUARTER as Q;
+  use crate::kern::{Note, TICKS_PER_QUARTER as Q};
 
   fn line(steps: &[(i16, bool)]) -> Voice {
     Voice {

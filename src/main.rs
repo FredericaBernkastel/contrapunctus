@@ -17,6 +17,7 @@ mod harmony;
 mod midi;
 mod realise;
 mod refdata;
+mod shape;
 mod species;
 mod step5;
 mod stretto;
@@ -63,6 +64,7 @@ fn main() {
     "r3" => step5::scalarisations(),
     "gen" => step5::generality(),
     "species" => step5::species(),
+    "shape" => step5::shape_test(),
     "s17" => { analyser_sweep(); analyser_holdout(); analyser_renaissance(); }
     "s16" => { cadence_check(); harmony_renaissance(); segmentation_sensitivity(); step4_revisit(); }
     _ => {
