@@ -44,6 +44,7 @@ are built and measured — [§8](#8-what-is-built-and-what-it-measures). Realisa
   - [8.7 The species as a whitelist, and why it does not tighten anything](#87-the-species-as-a-whitelist-and-why-it-does-not-tighten-anything)
   - [8.8 A criterion that is not local, and the shape of every step-6 failure](#88-a-criterion-that-is-not-local-and-the-shape-of-every-step-6-failure)
   - [8.9 A better plan, and the first lever that moves more than a point](#89-a-better-plan-and-the-first-lever-that-moves-more-than-a-point)
+  - [8.10 Replacing the soft tier, and the degenerate optimum of every positive criterion](#810-replacing-the-soft-tier-and-the-degenerate-optimum-of-every-positive-criterion)
 - [9. Roadmap](#9-roadmap)
 - [10. Reproducing the results](#10-reproducing-the-results)
   - [10.1 Environment and data](#101-environment-and-data)
@@ -1119,8 +1120,18 @@ paths through its own DAG ([§8.6](#86-realisation-and-the-first-notes) again). 
 
 **The middle row is the like-for-like control, and it changes the reading.** It commits to a whole path, its errors
 compound exactly as the search's do, and the same function scores it — so the ordering `4.9 < 6.9 < 7.8` is
-entirely the objective's doing. Minimising the soft criteria beats maximising them, *and* beats not optimising at
-all. The soft tier is weak and it is real, and using it is better than ignoring it.
+entirely the objective's doing. Minimising the soft criteria beats maximising them, ~~*and* beats not optimising at
+all. The soft tier is weak and it is real, and using it is better than ignoring it.~~
+
+**The struck sentence is withdrawn** by [§8.10](#810-replacing-the-soft-tier-and-the-degenerate-optimum-of-every-positive-criterion). The
+three figures above are pooled over notes, which weights a span by how many it has and counts each of the eight
+draws' notes separately. Paired per span — the accounting
+[§8.2](#82-the-rulebook-stratified-by-two-corpora) established and everything after
+[§8.8](#88-a-criterion-that-is-not-local-and-the-shape-of-every-step-6-failure) uses — the uniform draw is
+`−0.74 ± 0.97` against the tier on these very spans, which is nothing, and `+1.07 ± 0.31` and `+4.64 ± 0.61` *for*
+it on the larger window sample. What survives is `4.9 < 6.9`: minimising beats maximising by `3.00 ± 1.01`, so the
+criteria are not noise and do point the right way. What does not survive is that using them beats leaving them
+out.
 
 **And the `chance` column is now shown to be a large overestimate of what any generator can do.** The gap between
 16.2% and 6.9% is precisely the caveat this section already carried, measured at last: `chance` is computed per
@@ -1509,6 +1520,162 @@ instrument for supplying it is not a better analyser but [§2.4](#24-form-is-a-g
 to infer the harmony because it decides it.
 
 
+### 8.10 Replacing the soft tier, and the degenerate optimum of every positive criterion
+
+`Problem::prescribe` in [`realise.rs`](src/realise.rs). [§9](#9-roadmap) step 6's last proposal, and the only one
+whose stated destination this repository cannot reach: it points at **Marpurg** and **Kirnberger**, and
+[`literature/`](literature/) holds neither. What can be asked without them are the two questions that have to be
+answered before any replacement is worth transcribing — **is the tier one criterion or six**, and **does saying the
+same thing positively do better?**
+
+Six one-hot ablations answer the first. Three positive criteria answer the second, each charged **in place of** the
+tier rather than beside it — `weights` goes to zero, so it is a replacement and not a seventh prohibition. They are
+the three such statements this project can make from what it already holds: **move by step**, **move against the
+other voice**, and **state the harmony**, the last being the one
+[§8.9](#89-a-better-plan-and-the-first-lever-that-moves-more-than-a-point) points at rather than Fux.
+
+Two controls, and the second is easy to omit and necessary. The uniform draw; and **`tie-break only`**, which
+charges nothing at all, so every path ties at zero and the search keeps whichever of them it reached first. An
+ablation is read against *that* rather than against the uniform draw, because most paths tie under one criterion
+too. Every row searches **the same graph** — a prescription reorders the legal set and never prunes it, which
+`realise`'s tests assert — so `done` is constant by construction and every difference is the objective's.
+
+**Bach, 690 spans, 491 solved**
+
+| objective | mean \|step\| | compass | agreement | gain on `soft(6)` |
+|---|---:|---:|---:|---|
+| no objective (uniform) | 2.78 | 10.89 | **7.2%** | **+1.07 ± 0.31** |
+| `tie-break only` | 0.76 | 1.91 | 1.3% | −4.77 ± 0.31 |
+| **`soft(6)`** | 1.45 | 6.97 | **6.1%** | — |
+| only direct→perfect | 0.78 | 2.17 | 1.4% | −4.68 ± 0.31 |
+| only perfect consonance | 1.46 | 6.61 | 3.9% | −2.16 ± 0.30 |
+| only direct motion | 0.88 | 4.10 | 2.7% | −3.37 ± 0.35 |
+| only crossing | 0.80 | 2.24 | 1.4% | −4.71 ± 0.30 |
+| only leap | 1.08 | 5.49 | 2.0% | −4.07 ± 0.33 |
+| only repetition | 1.25 | 3.03 | 1.8% | −4.31 ± 0.31 |
+| → move by step | 1.04 | 3.55 | 2.2% | −3.88 ± 0.34 |
+| → move against | 0.88 | 4.10 | 2.7% | −3.37 ± 0.35 |
+| → state the harmony | 0.91 | 3.83 | 2.1% | −3.96 ± 0.33 |
+| → all three | 0.99 | 5.02 | 4.6% | −1.49 ± 0.39 |
+| *the composer's own* | *1.66* | *6.94* | *100%* | |
+
+**15th-century, 577 spans, 556 solved**
+
+| objective | mean \|step\| | compass | agreement | gain on `soft(6)` |
+|---|---:|---:|---:|---|
+| no objective (uniform) | 2.35 | 3.14 | **9.8%** | **+4.64 ± 0.61** |
+| `tie-break only` | 0.40 | 0.47 | 4.0% | −1.21 ± 0.74 |
+| **`soft(6)`** | 1.25 | 1.63 | **5.2%** | — |
+| only direct→perfect | 0.41 | 0.48 | 4.1% | −1.10 ± 0.75 |
+| only perfect consonance | 1.02 | 1.39 | 4.4% | −0.72 ± 0.59 |
+| only direct motion | 0.36 | 0.52 | 4.6% | −0.56 ± 0.77 |
+| only crossing | 0.55 | 0.66 | 4.4% | −0.80 ± 0.73 |
+| only leap | 0.41 | 0.51 | 4.0% | −1.17 ± 0.75 |
+| only repetition | 0.99 | 1.11 | 5.3% | +0.13 ± 0.80 |
+| → move by step | 0.94 | 1.04 | 5.3% | +0.15 ± 0.75 |
+| → move against | 0.36 | 0.52 | 4.6% | −0.56 ± 0.77 |
+| → state the harmony | 0.31 | 0.50 | 5.0% | −0.21 ± 0.78 |
+| → all three | 0.79 | 0.97 | 6.7% | +1.57 ± 0.88 |
+| *the composer's own* | *1.14* | *1.39* | *100%* | |
+
+`mean |step|` is the average melodic interval of the free voices in scale steps and `compass` their whole range
+over the span — [§8.6](#86-realisation-and-the-first-notes)'s narrowness and
+[§8.8](#88-a-criterion-that-is-not-local-and-the-shape-of-every-step-6-failure)'s deficiency as numbers, with the
+answer key's own values on the same voices in the last row.
+
+**The tie-break is the generator's real failure mode, and it has been read as the rulebook's.** With no criterion
+at all the search returns a line whose mean melodic interval is **0.76 scale steps** and whose entire compass over
+the span is **1.91** — against the composer's 1.66 and 6.94 on the very same voices. It scores **1.3%**.
+[§8.6](#86-realisation-and-the-first-notes) diagnosed the fills as too narrow and
+[§8.8](#88-a-criterion-that-is-not-local-and-the-shape-of-every-step-6-failure) built a criterion to widen them;
+both were describing what a shortest path does when nothing distinguishes its paths, which is to keep the first one
+it found, and the first one barely moves. That is a fact about [§2.5](#25-the-search-is-a-shortest-path)'s search,
+not about Fux.
+
+**The tier is six, not one.** Read against `tie-break only`, all six together are worth `+4.8` in Bach; the best
+single prohibition, `perfect consonance`, is worth `+2.6`; and four of the six are worth under a point. No subset
+carries it.
+
+**And the same fact explains both halves of the experiment: every positive criterion has a cheapest way to be
+satisfied, and a shortest path finds it.**
+
+- **move by step** is satisfied *perfectly* by oscillating between two adjacent notes. It got exactly what it asked
+  for — mean interval `1.04`, against the composer's `1.66` — and left the compass at `3.55`. The prescription was
+  obeyed and the line still goes nowhere.
+- **state the harmony** is satisfied by holding one chord tone: mean interval `0.91` in Bach, `0.31` in the
+  Renaissance, compass `3.83` and `0.50`.
+- **move against** charges similar motion and leaves oblique motion free, so never moving is optimal: `0.88` and
+  `0.36`.
+
+> **A prohibition composes safely under a minimiser and a prescription does not.** Not doing something is what a
+> search does by default. Doing something has a cheapest way to be done, and the minimiser finds that instead of
+> the thing meant.
+
+Which finally explains the six. The tier does not collapse because `repeated note` charges the degenerate solution
+the other five would otherwise take. The criteria are **mutually blocking degeneracies** — that is why no subset
+works, and why three prescriptions cannot stand in for them.
+
+**And `move against` turns out to be `direct motion` restated.** The two rows are identical to every printed digit
+— same mean interval, same compass, same agreement, same standard error, on both corpora. The soft rule fires on
+similar or parallel motion; the prescription charges every voice this one moves *with*; they are one predicate
+reached from two directions, and the coincidence is a free cross-implementation check on both. It also says what
+the prohibition/prescription distinction is *not*: not the sign of the sentence, but whether the criterion has a
+degenerate optimum.
+
+**The tier reproduces the composer's melodic statistics and does not reproduce the composer's notes.**
+
+| | `soft(6)` | *the composer* | uniform draw |
+|---|---:|---:|---:|
+| Bach windows — mean interval | 1.45 | *1.66* | 2.78 |
+| Bach windows — compass | 6.97 | *6.94* | 10.89 |
+| Bach entry spans — mean interval | 1.43 | *1.49* | 2.80 |
+| Bach entry spans — compass | 6.41 | *6.14* | 10.29 |
+| 15th-c. — mean interval | 1.25 | *1.14* | 2.35 |
+| 15th-c. — compass | 1.63 | *1.39* | 3.14 |
+
+Three protocols and two centuries, and the aggregate match is close every time — a compass of `6.97` against
+`6.94`. Meanwhile the uniform draw misses both statistics by nearly a factor of two in every row and **scores
+higher on note agreement**. Matching a composer's melodic statistics is not writing a composer's notes, and here
+the two come apart far enough to be measured.
+
+#### A claim in §8.6 does not survive, and step 6's first proposal is reinstated
+
+[§8.6](#86-realisation-and-the-first-notes) reads: *"Minimising the soft criteria beats maximising them, and beats
+not optimising at all. The soft tier is weak and it is real, and using it is better than ignoring it."* The first
+clause holds. The second does not.
+
+Run on §8.6's **own** spans, with §8.6's own tier and plan, both accountings side by side:
+
+| objective | pooled over notes | paired per span |
+|---|---:|---|
+| no objective (uniform) | 6.9% (−0.95) | **−0.74 ± 0.97** |
+| `tie-break only` | 0.8% (−7.00) | −6.93 ± 1.01 |
+| `soft(6)` minimised | 7.8% | — |
+| `soft(6)` maximised | 4.9% (−2.96) | −3.00 ± 1.01 |
+
+The pooled column reproduces §8.6's table exactly, which is what makes the paired column readable: **`−0.74 ± 0.97`
+is nothing.** Pooling weights a span by how many notes it has and counts each of the eight draws' notes separately,
+and that is where the claim came from. On [§8.8](#88-a-criterion-that-is-not-local-and-the-shape-of-every-step-6-failure)'s
+windows, with five times the spans, the same paired comparison runs the *other* way and clears the bar on both
+corpora: **+1.07 ± 0.31 in Bach and +4.64 ± 0.61 in the Renaissance.** The two paired estimates are 1.8 standard
+errors apart, which is to say they agree with each other; what neither supports is the sentence. **Using the soft
+tier is not better than ignoring it, and on the larger sample it is worse.**
+
+So [§9](#9-roadmap) step 6's *first* proposal is reinstated. It was recorded as "done, and it does not work" on the
+strength of `6.9%` against `7.8%` — the pooled comparison. Paired, drawing uniformly from the legal set is never
+significantly worse than optimising over it and is significantly better on both corpora at the larger sample.
+**Sampling worked; the accounting hid it.**
+
+With one practical caveat that the `tie-break only` row exists to supply: the objective can be dropped **by
+sampling** and not by setting the weights to zero. To a shortest path, "no objective" means every path ties and the
+first one wins, and that scores `1.3%` — five points below the tier it replaced. The uniform draw is a different
+object and it is the one that wins.
+
+**Nothing among the prescriptions is adopted**, none having beaten the tier on both corpora. What clears the bar is
+**removing the objective and drawing instead** — which is the only change step 6 has produced that survives its own
+decision rule, and it arrives by retracting a claim rather than by adding a criterion.
+
+
 ---
 
 ## 9. Roadmap
@@ -1520,20 +1687,24 @@ order.
    `10¹²` to `10¹⁸` legal fills of a three-bar span, and agreement with Bach that does not respond to anything the
    rulebook does. The table there is unambiguous about which direction *not* to go: more of the same kind of
    constraint buys tractability and nothing else — though [§8.9](#89-a-better-plan-and-the-first-lever-that-moves-more-than-a-point) later sharpens that
-   into *correct* constraint being the variable rather than *more* of it. Four of the five proposals below have
-   now been built and measured. Four failed, in ways worth keeping; the fourth failed while measuring the largest
-   effect in the project. One remains.
+   into *correct* constraint being the variable rather than *more* of it. **All five proposals below have now been
+   built and measured, and the step is closed.** Three failed in ways worth keeping. The fourth failed while
+   measuring the largest effect in the project. The fifth failed too — and in failing, retracted the claim that had
+   ruled the first one out, so the step ends by adopting the proposal it opened with.
 
-   - ~~Sample the legal set instead of optimising over it.~~ **Done, and it does not work.** Uniform sampling is
-     built — a backward walk through the DAG weighting each predecessor by its path count, drawing every legal
-     fill with probability exactly `1/total` and verified flat on an instance small enough to enumerate. It scores
-     **6.9%** against the objective's 7.8% ([§8.6](#86-realisation-and-the-first-notes)), so *typical* does not
-     beat *extremal* here and WaveFunctionCollapse's Weak C2 does not carry across. It earns its place twice
-     anyway: it is the like-for-like baseline the section had been missing, and it is the only way to ask how many
-     of `10¹⁵` fills are acceptable, because it can now draw them. **Frequency-weighted** sampling was then tried
-     too, with the weights taken from Fux rather than from a corpus, and it is
-     **repertoire-specific** — it helps Bach by about a point and costs 15th-century polyphony more than that
-     ([§8.6](#86-realisation-and-the-first-notes)). Rolled back. Both halves of this proposal are now closed.
+   - ~~Sample the legal set instead of optimising over it.~~ **Done, and — after one retraction — it is the one
+     thing in this step that works.** Uniform sampling is built: a backward walk through the DAG weighting each
+     predecessor by its path count, drawing every legal fill with probability exactly `1/total` and verified flat
+     on an instance small enough to enumerate. It was recorded here as a failure on the strength of **6.9%**
+     against the objective's 7.8%, and that comparison was **pooled over notes**. Paired per span
+     ([§8.10](#810-replacing-the-soft-tier-and-the-degenerate-optimum-of-every-positive-criterion)) it is `−0.74 ± 0.97` on those same spans — nothing — and `+1.07 ± 0.31` and `+4.64 ± 0.61`
+     in its favour on a sample five times the size, on both corpora. **Drawing beats optimising**, and it is the
+     only change step 6 has produced that clears its own decision rule. One caveat the same section supplies: the
+     objective must be dropped *by drawing*, not by zeroing the weights — to a shortest path "no objective" means
+     every path ties and the first one wins, which scores `1.3%`. **Frequency-weighted** sampling was tried too,
+     with the weights taken from Fux rather than from a corpus, and it is **repertoire-specific** — it helps Bach
+     by about a point and costs 15th-century polyphony more than that
+     ([§8.6](#86-realisation-and-the-first-notes)). That half stays rolled back.
    - ~~Enumerate the species as a whitelist.~~ **Done, and it does not account for the music.** Transcribed and
      run as a checker before being used as a constraint, Fux's four figures cannot explain one dissonance in five
      in either century, and reject slices at a rate between the two rules they were written to replace
@@ -1561,13 +1732,19 @@ order.
      [§2.4](#24-form-is-a-grammar)'s grammar rather than to this step. And the row that removes four orders of
      magnitude of legal fills for nothing settles what constraint is: **neither tightness nor looseness predicts
      agreement, correctness does.**
-   - **Replacing the soft tier rather than reweighting it.** Minimising it beats maximising it and beats not
-     optimising, so it is not noise; it moves agreement by about a point, so it is not much either. Four attempts
-     to improve on it from the same source have now failed, and
-     [§8.8](#88-a-criterion-that-is-not-local-and-the-shape-of-every-step-6-failure) says why in one line: a
-     replacement has to state what a line should **do**, and Fux states only what it must not. That points away
-     from the treatises this project has read and towards the ones it has not —
-     **Marpurg** and **Kirnberger**, below, who write about Bach's own practice rather than Palestrina's.
+   - ~~Replacing the soft tier rather than reweighting it.~~ **Done, and it is the tie-break rather than the tier
+     that was the problem.** Marpurg and Kirnberger remain unread — `literature/` holds neither — so what was
+     asked is what can be asked without them: six one-hot ablations, and three positive criteria charged **in
+     place of** the tier ([§8.10](#810-replacing-the-soft-tier-and-the-degenerate-optimum-of-every-positive-criterion)). Three findings. The tier is **six and not one**: no subset carries it,
+     because each criterion's cheap degenerate solution is charged by another, so they are **mutually blocking
+     degeneracies**. Every prescription collapses onto one — *move by step* is satisfied by oscillating between two
+     adjacent notes, *state the harmony* by holding a chord tone — because **a prohibition composes safely under a
+     minimiser and a prescription does not**. And the narrowness that
+     [§8.6](#86-realisation-and-the-first-notes) and
+     [§8.8](#88-a-criterion-that-is-not-local-and-the-shape-of-every-step-6-failure) laid at the rulebook's door is
+     the shortest path's **tie-break**: with no criterion at all the search returns a line of mean interval `0.76`
+     and compass `1.91`, against the composer's `1.66` and `6.94`. Nothing adopted, and the tier is now recommended
+     *off* — see the first bullet.
 
    And escalate to a SAT/CDCL solver, which [§2.7](#27-where-a-solver-takes-over-from-the-dp) put at four or more
    free voices and [§8.6](#86-realisation-and-the-first-notes) measured at **two**. Do not layer: Schottstaedt
@@ -1582,9 +1759,12 @@ order.
 ### Open problems, in rough order of how much they block
 
 - **A criterion that selects.** [§8.6](#86-realisation-and-the-first-notes) is the whole of step 6 and now the
-  central problem of the project: everything downstream of it generates legal music that nothing prefers. Five
-  attempts have narrowed it rather than solved it, and the one that moved anything moved it from step 6 to step 7
-  — the harmony under the line, not the rules over it ([§8.9](#89-a-better-plan-and-the-first-lever-that-moves-more-than-a-point)).
+  central problem of the project: everything downstream of it generates legal music that nothing prefers. Step 6 is
+  closed and it did not solve this. What it established is where the problem is *not*: not in a heavier rulebook,
+  not in a treatise weighting, not in the species list, not in a shape criterion, and not in the soft tier, which
+  [§8.10](#810-replacing-the-soft-tier-and-the-degenerate-optimum-of-every-positive-criterion) shows is no better than leaving the objective out. The two things that moved anything moved it
+  out of step 6 — **draw from the legal set rather than optimise over it**, and **supply the harmony**, which is
+  step 7's job ([§8.9](#89-a-better-plan-and-the-first-lever-that-moves-more-than-a-point)).
 - **Key-finding.** A real functional test needs degree successions relative to a *local* key, and fugues modulate
   constantly. Without it [§2.3](#23-harmony-is-a-second-automaton)'s functional half cannot be built or tested.
 - **A replacement for the two dissonance rules**, which fail in both centuries ([§8.2](#82-the-rulebook-stratified-by-two-corpora)),
@@ -1654,6 +1834,8 @@ the Josquin Research Project for the Renaissance scores.
 | [§8.7](#87-the-species-as-a-whitelist-and-why-it-does-not-tighten-anything) species whitelist | `cargo run --release -- species` |
 | [§8.8](#88-a-criterion-that-is-not-local-and-the-shape-of-every-step-6-failure) shape criteria | `cargo run --release -- shape` |
 | [§8.9](#89-a-better-plan-and-the-first-lever-that-moves-more-than-a-point) harmonic plans | `cargo run --release -- plan` |
+| [§8.10](#810-replacing-the-soft-tier-and-the-degenerate-optimum-of-every-positive-criterion) tier ablation and prescriptions | `cargo run --release -- soft` |
+| [§8.10](#810-replacing-the-soft-tier-and-the-degenerate-optimum-of-every-positive-criterion) the objective, paired on §8.6's spans | `cargo run --release -- obj` |
 | every cross-reference in the repository | `cargo test --release --test references` |
 
 `realise` runs all three of the last. `rank`, `probe`, `exp2`, `exp5`, `harmony`, `cad`, `seg`, `revisit`, `hren2`
@@ -1675,6 +1857,8 @@ seconds, and the reason is the subject of [§8.6](#86-realisation-and-the-first-
 | realiser compass | each voice's range over the **whole piece**, which a form grammar would supply; never the passage's own range, which would be circular |
 | realiser budgets | 60 000 states per layer, 4 000 000 edges per span — both refusals, never beams ([`realise.rs`](src/realise.rs)) |
 | sampler | uniform over the legal set; the treatise weighting `β` is swept in [§8.6](#86-realisation-and-the-first-notes) and left at **0** everywhere else, being repertoire-specific |
+| objective | six soft criteria at equal weight in every table reported here, and **recommended off** by [§8.10](#810-replacing-the-soft-tier-and-the-degenerate-optimum-of-every-positive-criterion), which measures a uniform draw at `+1.07 ± 0.31` and `+4.64 ± 0.61` against it. The tables stand as the record of the runs as made |
+| prescriptions | `Problem::prescribe`, three positive criteria charged *instead of* the tier; all zero everywhere but [§8.10](#810-replacing-the-soft-tier-and-the-degenerate-optimum-of-every-positive-criterion), where each is measured and none adopted |
 | MIDI output | format 1, **960 ticks per quarter** (an exact ×4 of the internal lattice), tempo and time signature from the score, tracks top voice first ([`midi.rs`](src/midi.rs)) |
 | PRNG | SplitMix64 inline; seeds `0x5EED`, `0xC0FFEE`, `0xBEEF`, `0xF00D`, `0xD00D` |
 | trials | 400 random contours for single-subject figures, 60 per subject for corpus tables |
@@ -1704,6 +1888,12 @@ fixed eight quarters in both corpora rather than holding an annotated subject en
 [§8.8](#88-a-criterion-that-is-not-local-and-the-shape-of-every-step-6-failure)'s and [§8.9](#89-a-better-plan-and-the-first-lever-that-moves-more-than-a-point)'s. That is a slightly harder
 problem than the reconstruction table's, and the two are therefore not directly comparable to each other — only
 within themselves, which is all the paired test needs.
+
+**A pooled figure and a paired one are not the same measurement.** [§8.6](#86-realisation-and-the-first-notes)'s
+percentages are pooled over notes, which weights a span by how many notes it has and — in the sampled row — counts
+all eight draws separately. Everything from [§8.8](#88-a-criterion-that-is-not-local-and-the-shape-of-every-step-6-failure)
+onwards pairs per span, with the span as the unit of replication. Where the two disagree the paired one is
+reported, and [§8.10](#810-replacing-the-soft-tier-and-the-degenerate-optimum-of-every-positive-criterion) is the case where they did.
 
 **Timings are from one machine** and are quoted only where they carry an argument — in
 [§8.6](#86-realisation-and-the-first-notes) they carry one, since tractability is the finding. They are not

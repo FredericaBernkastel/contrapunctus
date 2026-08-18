@@ -67,6 +67,8 @@ fn main() {
     "species" => step5::species(),
     "shape" => step5::shape_test(),
     "plan" => step5::plan_test(),
+    "soft" => step5::soft_test(),
+    "obj" => step5::objective_check(),
     "s17" => { analyser_sweep(); analyser_holdout(); analyser_renaissance(); }
     "s16" => { cadence_check(); harmony_renaissance(); segmentation_sensitivity(); step4_revisit(); }
     _ => {

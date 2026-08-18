@@ -459,6 +459,7 @@ fn one(
     plan: plan.clone(),
     tier,
     weights: [w; 6],
+    prescribe: [0.0; 3],
     samples,
     // Deterministic and per span, so a rerun draws the same fills: this is a
     // measurement, not a demo, and §10 says nothing here is unseeded.
@@ -772,6 +773,7 @@ pub fn scalarisations() {
       plan: plan.clone(),
       tier: CONFIRMED,
       weights: *weights,
+      prescribe: [0.0; 3],
       samples: 0,
       seed: 0,
       beta: 0.0,
@@ -1213,6 +1215,7 @@ pub fn shape_test() {
         plan: harmony::analyse_viterbi(&source, p.beat, LAMBDA),
         tier: CONF_MEL,
         weights: [1.0; 6],
+        prescribe: [0.0; 3],
         samples: SHAPE_DRAWS,
         seed: 0x5EED ^ (s.start as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15),
         beta: 0.0,
@@ -1464,6 +1467,7 @@ pub fn plan_test() {
           plan: pl.clone(),
           tier: CONF_MEL,
           weights: [1.0; 6],
+          prescribe: [0.0; 3],
           samples: 0,
           seed: 0x5EED ^ (s.start as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15),
           beta: 0.0,
@@ -1591,4 +1595,458 @@ pub fn plan_test() {
     if ceil.contains(&8) { "`oracle/bar`" } else { "the finest" }
   );
   println!("  analyser is what stands between the search and it.");
+}
+
+// ------------------------------- step 6: replacing the soft tier, not reweighting it ---
+
+/// Uniform draws for the `no objective` row. The same eight §8.6 uses, so the
+/// two figures are produced by one protocol.
+const SOFT_DRAWS: usize = 8;
+
+/// Mean melodic interval of a line, in scale steps, counting a repeated note as
+/// zero. §8.6's diagnosis is that the fills are too narrow and §8.8's is that
+/// they do not go anywhere; this and `spread` are those two faults as numbers,
+/// and the composer's own notes are in the table beside them.
+fn mean_step(v: &Voice) -> Option<f64> {
+  let p: Vec<i16> = v.notes.iter().filter(|n| n.attack).map(|n| n.pitch.step).collect();
+  if p.len() < 2 {
+    return None;
+  }
+  Some(p.windows(2).map(|w| (w[1] - w[0]).abs() as f64).sum::<f64>() / (p.len() - 1) as f64)
+}
+
+/// A line's range over the span, in scale steps.
+fn spread(v: &Voice) -> Option<f64> {
+  let p: Vec<i16> = v.notes.iter().filter(|n| n.attack).map(|n| n.pitch.step).collect();
+  let (lo, hi) = (p.iter().min()?, p.iter().max()?);
+  Some((hi - lo) as f64)
+}
+
+/// The mean of `mean_step` and `spread` over the free voices of one fill.
+fn shapes(cand: &[Voice], free: &[usize]) -> (f64, f64) {
+  let s: Vec<f64> = free.iter().filter_map(|&v| mean_step(&cand[v])).collect();
+  let r: Vec<f64> = free.iter().filter_map(|&v| spread(&cand[v])).collect();
+  let m = |x: &[f64]| if x.is_empty() { 0.0 } else { x.iter().sum::<f64>() / x.len() as f64 };
+  (m(&s), m(&r))
+}
+
+/// **Is the soft tier one criterion or six, and does saying the same thing
+/// positively beat saying it as a prohibition?**
+///
+/// §9 step 6's last proposal, and the one whose stated destination this
+/// repository cannot reach: it points at **Marpurg** and **Kirnberger**, and
+/// `literature/` holds neither. What can be done without them is the two
+/// questions above, and they are the two that have to be answered before any
+/// replacement is worth transcribing.
+///
+/// **First, an ablation.** The tier is six prohibitions charged at equal weight
+/// and worth about a point over not optimising at all (§8.6). Nobody has asked
+/// which of the six that point comes from. Six one-hot runs answer it. This is
+/// not the reweighting §5 refuses — no weight vector is being proposed for
+/// adoption — it is the measurement that says whether "the soft tier" names one
+/// thing or six.
+///
+/// **Then a replacement.** §8.8 closed with the treatise stating only what a
+/// line must not do, and §8.9 with the harmony under the line being the one
+/// lever that moves. Three positive criteria follow from those two sentences and
+/// need no text this repository lacks: **move by step**, **move against the
+/// other voice**, and **state the harmony**. Each replaces the whole tier rather
+/// than joining it — `weights` goes to zero — and each is reported alone,
+/// because combining them needs magnitudes and §5 is about exactly that. The
+/// combination is reported too, at equal weight, since equal weight is what the
+/// incumbent tier already assumes.
+///
+/// Every row searches **the same graph**: a prescription reorders the legal set
+/// and never shrinks it, which is asserted in `realise`'s tests. So the `done`
+/// column is constant by construction and any difference is the objective's.
+///
+/// The bar is §8.2's, fixed before the run: keep a replacement only if it beats
+/// the six-criterion tier on **both** corpora by more than twice the standard
+/// error of the paired per-span difference.
+pub fn soft_test() {
+  println!("\n== step 6: replacing the soft tier rather than reweighting it ==");
+  println!("  The tier is six prohibitions at equal weight, worth about a point over not optimising.");
+  println!("  Two questions: which of the six is that point, and does stating the same thing");
+  println!("  positively do better? The three positive criteria replace the tier — `weights` goes to");
+  println!("  zero — rather than joining it.\n");
+  println!("  Marpurg and Kirnberger are where §9 points and `literature/` holds neither, so what is");
+  println!("  transcribed here is what §8.8 and §8.9 imply and no text this repository lacks.\n");
+  println!("  DECIDED BEFORE THE RUN: keep a replacement only if it beats `soft(6)` on BOTH corpora");
+  println!("  by more than twice the standard error of the paired per-span difference.\n");
+
+  // (label, soft weights, prescription weights, draws)
+  //
+  // Two controls, and the second is easy to leave out and necessary. A one-hot
+  // ablation leaves most paths **tied** at zero cost, so what it reports is
+  // partly its criterion and partly whichever of the tied paths the search
+  // happens to keep. `tie-break only` is that arbitrary choice with no criterion
+  // at all, and an ablation is worth reading against it rather than against the
+  // uniform draw.
+  let mut conds: Vec<(String, [f64; 6], [f64; 3], usize)> = vec![
+    ("no objective".into(), [0.0; 6], [0.0; 3], SOFT_DRAWS),
+    ("tie-break only".into(), [0.0; 6], [0.0; 3], 0),
+    ("soft(6)".into(), [1.0; 6], [0.0; 3], 0),
+  ];
+  /// Index of the row every other one is measured against.
+  const BASE: usize = 2;
+  /// The six one-hot ablations of the tier.
+  const ABL: std::ops::Range<usize> = BASE + 1..BASE + 7;
+  for (i, r) in SOFT.iter().enumerate() {
+    let mut w = [0.0; 6];
+    w[i] = 1.0;
+    let short = match r {
+      Rule::DirectToPerfect => "direct→perfect",
+      Rule::PerfectConsonance => "perfect cons.",
+      Rule::DirectMotion => "direct motion",
+      Rule::VoiceCrossing => "crossing",
+      Rule::UnrecoveredLeap => "leap",
+      _ => "repetition",
+    };
+    conds.push((format!("only {short}"), w, [0.0; 3], 0));
+  }
+  for (i, name) in realise::PRESCRIPTIONS.iter().enumerate() {
+    let mut w = [0.0; 3];
+    w[i] = 1.0;
+    conds.push((format!("→ {name}"), [0.0; 6], w, 0));
+  }
+  conds.push(("→ all three".into(), [0.0; 6], [1.0; 3], 0));
+
+  let bach: Vec<Piece> = (1..=24)
+    .filter_map(|n| kern::read(&std::path::Path::new(KERN).join(format!("wtc1f{n:02}.krn"))).ok())
+    .collect();
+  let ren = renaissance(200);
+  if bach.is_empty() || ren.is_empty() {
+    return println!("  (corpus missing)");
+  }
+  let bs = windows(&bach, 30);
+  let rs = windows(&ren, 3);
+
+  let mut summary: Vec<Vec<(f64, f64)>> = vec![];
+  let names = ["Bach", "Renaissance"];
+
+  for (cname, pieces, spans) in [(names[0], &bach, &bs), (names[1], &ren, &rs)] {
+    let t0 = std::time::Instant::now();
+    let mut rows: Vec<Vec<Option<f64>>> = vec![];
+    let mut shape: Vec<Vec<f64>> = vec![vec![]; conds.len() * 2];
+    let mut theirs: Vec<Vec<f64>> = vec![vec![]; 2];
+
+    for s in spans.iter() {
+      if s.free.len() > 2 {
+        continue;
+      }
+      let p = &pieces[s.piece];
+      let all = &s.clipped;
+      let source: Vec<Voice> =
+        all.iter().enumerate().filter(|(i, _)| !s.freeflag[*i]).map(|(_, v)| v.clone()).collect();
+      let plan = harmony::analyse_viterbi(&source, p.beat, LAMBDA);
+      let mut row: Vec<Option<f64>> = vec![None; conds.len()];
+      for (i, (_, w, pw, draws)) in conds.iter().enumerate() {
+        let pr = Problem {
+          voices: all.clone(),
+          free: s.freeflag.clone(),
+          compass: p.voices.iter().map(compass).collect(),
+          key: p.key,
+          measure: p.measure,
+          plan: plan.clone(),
+          tier: CONF_MEL,
+          weights: *w,
+          prescribe: *pw,
+          samples: *draws,
+          seed: 0x5EED ^ (s.start as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15),
+          beta: 0.0,
+        };
+        let Ok(sol) = realise::fill(&pr) else { continue };
+        // the sampled rows are scored over their draws, the rest over the one
+        // fill the objective chose; either way it is the same scoring function
+        let cands: Vec<&Vec<Voice>> =
+          if *draws > 0 { sol.sampled.iter().collect() } else { vec![&sol.voices] };
+        if cands.is_empty() {
+          continue;
+        }
+        let mut rates = vec![];
+        let (mut ms, mut sp) = (0.0, 0.0);
+        for c in &cands {
+          let (n_, ex) = agreement(c, all, &s.free);
+          if n_ == 0 {
+            continue;
+          }
+          rates.push(ex as f64 / n_ as f64);
+          let (a, b) = shapes(c, &s.free);
+          ms += a;
+          sp += b;
+        }
+        if rates.is_empty() {
+          continue;
+        }
+        row[i] = Some(rates.iter().sum::<f64>() / rates.len() as f64);
+        shape[i * 2].push(ms / cands.len() as f64);
+        shape[i * 2 + 1].push(sp / cands.len() as f64);
+      }
+      // the answer key's own shape on the very same voices
+      if row[BASE].is_some() {
+        let (a, b) = shapes(all, &s.free);
+        theirs[0].push(a);
+        theirs[1].push(b);
+      }
+      rows.push(row);
+    }
+    if rows.is_empty() {
+      println!("  {cname}: no spans");
+      summary.push(vec![(0.0, 0.0); conds.len()]);
+      continue;
+    }
+
+    let avg = |v: &[f64]| -> f64 { if v.is_empty() { 0.0 } else { v.iter().sum::<f64>() / v.len() as f64 } };
+    println!("  {cname}: {} spans of eight quarters, at most two free voices, tier conf+melodic, clean plan", rows.len());
+    println!("   objective            done    |step|   range    exact   gain on soft(6)      n");
+    let mut here = vec![];
+    for i in 0..conds.len() {
+      let done = rows.iter().filter(|r| r[i].is_some()).count();
+      let mine: Vec<f64> = rows.iter().filter_map(|r| r[i]).collect();
+      let d: Vec<f64> = rows
+        .iter()
+        .filter_map(|r| match (r[i], r[BASE]) {
+          (Some(a), Some(b)) => Some(a - b),
+          _ => None,
+        })
+        .collect();
+      let (m, se) = if d.len() < 2 {
+        (0.0, 0.0)
+      } else {
+        let m = d.iter().sum::<f64>() / d.len() as f64;
+        let var = d.iter().map(|x| (x - m).powi(2)).sum::<f64>() / (d.len() - 1) as f64;
+        (100.0 * m, 100.0 * (var / d.len() as f64).sqrt())
+      };
+      here.push((m, se));
+      let gain = if i == BASE { "      —      ".into() } else { format!("{m:>+6.2} +/- {se:>4.2}") };
+      println!(
+        "   {:<20} {:>4}    {:>5.2}   {:>5.2}    {:>5.1}%   {gain}   {:>4}",
+        conds[i].0,
+        done,
+        avg(&shape[i * 2]),
+        avg(&shape[i * 2 + 1]),
+        100.0 * avg(&mine),
+        d.len(),
+      );
+    }
+    println!(
+      "   {:<20} {:>4}    {:>5.2}   {:>5.2}    {:>5.1}%",
+      "the composer's own",
+      theirs[0].len(),
+      avg(&theirs[0]),
+      avg(&theirs[1]),
+      100.0
+    );
+    summary.push(here);
+    println!("   ({:.0}s)\n", t0.elapsed().as_secs_f64());
+  }
+
+  println!("  `|step|` is the mean melodic interval of the free voices in scale steps and `range` their");
+  println!("  compass over the span — §8.6's narrowness and §8.8's deficiency as numbers, with the");
+  println!("  answer key's own values on the same voices in the last row. `done` is constant because");
+  println!("  every row searches the same graph: an objective reorders the legal set, it does not prune it.");
+  println!("  `only X` charges one soft criterion and ignores the other five, and is read against");
+  println!("  `tie-break only` rather than the uniform draw, since most paths tie under it. `→` rows");
+  println!("  charge a positive criterion **instead of** the tier, not beside it.\n");
+
+  if summary.len() < 2 {
+    return;
+  }
+  let clears = |i: usize| -> bool {
+    (0..2).all(|c| summary[c][i].0 > 2.0 * summary[c][i].1 && summary[c][i].1 > 0.0)
+  };
+  let pres: Vec<usize> = (conds.len() - 4..conds.len()).collect();
+  let keep: Vec<usize> = pres.iter().copied().filter(|&i| clears(i)).collect();
+  if keep.is_empty() {
+    let any = pres
+      .iter()
+      .filter(|&&i| (0..2).any(|c| summary[c][i].0 > 2.0 * summary[c][i].1 && summary[c][i].1 > 0.0))
+      .count();
+    println!(
+      "  VERDICT: no prescription beats the six-criterion tier on both corpora ({any} of {} beats it on",
+      pres.len()
+    );
+    println!("  one). Nothing adopted; §8.6's soft tier stands.");
+  } else {
+    println!("  VERDICT: {} beats the six-criterion tier on both corpora:", keep.len());
+    for i in keep {
+      println!("    {:<20} Bach {:+.2}, Renaissance {:+.2}", conds[i].0, summary[0][i].0, summary[1][i].0);
+    }
+  }
+
+  // which of the six the tier's point actually is
+  let abl: Vec<usize> = ABL.collect();
+  println!("\n  And of the six prohibitions, measured one at a time against all six together:");
+  for c in 0..2 {
+    let mut v: Vec<(f64, f64, &str)> =
+      abl.iter().map(|&i| (summary[c][i].0, summary[c][i].1, conds[i].0.as_str())).collect();
+    v.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
+    let best = v.first().unwrap();
+    println!(
+      "    {:<12} best alone is `{}` at {:+.2} +/- {:.2}; worst is `{}` at {:+.2}",
+      names[c],
+      best.2,
+      best.0,
+      best.1,
+      v.last().unwrap().2,
+      v.last().unwrap().0
+    );
+  }
+}
+
+// ------------------------- step 6: is the objective worth anything, restated paired ---
+
+/// **§8.6's three-row control, on §8.6's own spans, paired.**
+///
+/// §8.10 found the six-criterion tier *losing* to no objective at all on both
+/// corpora, which is the reverse of what §8.6 reports. Two things differ between
+/// the two measurements and only one of them can be the cause, so this changes
+/// one at a time.
+///
+/// §8.10 runs on §8.8's windows; §8.6 runs on the annotated entry spans. §8.10
+/// pairs per span; §8.6 pools over notes, and pooling weights a span by how many
+/// notes it has *and* counts each of the eight uniform draws' notes separately.
+/// This runs §8.6's rows on §8.6's spans and reports both accountings side by
+/// side, so that whichever of the two is responsible says so.
+///
+/// A pooled figure and a paired one answering differently is not a tie. The
+/// paired one is correct: the span is the unit of replication, which is the
+/// point §8.2 established and §8.8 and §8.9 have used since.
+pub fn objective_check() {
+  println!("\n== step 6: what the objective is worth, on §8.6's own spans and paired ==");
+  println!("  §8.10 has the six-criterion tier losing to no objective at all. §8.6 has it winning.");
+  println!("  §8.10 uses §8.8's windows and pairs per span; §8.6 uses the annotated entry spans and");
+  println!("  pools over notes. This holds the spans at §8.6's and reports both accountings.\n");
+
+  let (pieces, sp) = spans();
+  if sp.is_empty() {
+    return println!("  (corpus or ground truth missing)");
+  }
+  let conds: [(&str, [f64; 6], usize); 4] = [
+    ("no objective", [0.0; 6], SOFT_DRAWS),
+    ("tie-break only", [0.0; 6], 0),
+    ("soft(6) minimised", [1.0; 6], 0),
+    ("soft(6) maximised", [-1.0; 6], 0),
+  ];
+  const BASE: usize = 2;
+
+  let mut rows: Vec<Vec<Option<(f64, usize, usize)>>> = vec![];
+  let mut shape: Vec<Vec<f64>> = vec![vec![]; conds.len() * 2];
+  let mut theirs: Vec<Vec<f64>> = vec![vec![]; 2];
+
+  for s in sp.iter() {
+    if s.free.len() > 2 {
+      continue;
+    }
+    let p = &pieces[s.piece];
+    let all = &s.clipped;
+    let source: Vec<Voice> =
+      all.iter().enumerate().filter(|(i, _)| !s.freeflag[*i]).map(|(_, v)| v.clone()).collect();
+    let plan = harmony::analyse_viterbi(&source, p.beat, LAMBDA);
+    let mut row: Vec<Option<(f64, usize, usize)>> = vec![None; conds.len()];
+    for (i, (_, w, draws)) in conds.iter().enumerate() {
+      let pr = Problem {
+        voices: all.clone(),
+        free: s.freeflag.clone(),
+        compass: p.voices.iter().map(compass).collect(),
+        key: p.key,
+        measure: p.measure,
+        plan: plan.clone(),
+        tier: CONF_MEL,
+        weights: *w,
+        prescribe: [0.0; 3],
+        samples: *draws,
+        seed: 0x5EED ^ (s.start as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15),
+        beta: 0.0,
+      };
+      let Ok(sol) = realise::fill(&pr) else { continue };
+      let cands: Vec<&Vec<Voice>> =
+        if *draws > 0 { sol.sampled.iter().collect() } else { vec![&sol.voices] };
+      if cands.is_empty() {
+        continue;
+      }
+      let (mut tn, mut te) = (0usize, 0usize);
+      let (mut rate, mut ms, mut spd) = (0.0, 0.0, 0.0);
+      let mut k = 0usize;
+      for c in &cands {
+        let (n_, ex) = agreement(c, all, &s.free);
+        if n_ == 0 {
+          continue;
+        }
+        tn += n_;
+        te += ex;
+        rate += ex as f64 / n_ as f64;
+        let (a, b) = shapes(c, &s.free);
+        ms += a;
+        spd += b;
+        k += 1;
+      }
+      if k == 0 {
+        continue;
+      }
+      // the per-span rate is the paired quantity; the raw counts are what
+      // pooling adds up, and §8.6 reports the second
+      row[i] = Some((rate / k as f64, te, tn));
+      shape[i * 2].push(ms / k as f64);
+      shape[i * 2 + 1].push(spd / k as f64);
+    }
+    if row[BASE].is_some() {
+      let (a, b) = shapes(all, &s.free);
+      theirs[0].push(a);
+      theirs[1].push(b);
+    }
+    rows.push(row);
+  }
+  if rows.is_empty() {
+    return println!("  (no spans)");
+  }
+
+  let avg = |v: &[f64]| -> f64 { if v.is_empty() { 0.0 } else { v.iter().sum::<f64>() / v.len() as f64 } };
+  let pool = |i: usize| -> f64 {
+    let (e, n) = rows.iter().filter_map(|r| r[i]).fold((0usize, 0usize), |(a, b), (_, e, n)| (a + e, b + n));
+    100.0 * e as f64 / n.max(1) as f64
+  };
+  let pooled_base = pool(BASE);
+  println!("  {} annotated entry spans searched, tier conf+melodic, clean plan\n", rows.len());
+  println!("   objective             |step|   range   POOLED over notes   PAIRED per span      n");
+  for i in 0..conds.len() {
+    let d: Vec<f64> = rows
+      .iter()
+      .filter_map(|r| match (r[i], r[BASE]) {
+        (Some(a), Some(b)) => Some(a.0 - b.0),
+        _ => None,
+      })
+      .collect();
+    let (m, se) = if d.len() < 2 {
+      (0.0, 0.0)
+    } else {
+      let m = d.iter().sum::<f64>() / d.len() as f64;
+      let var = d.iter().map(|x| (x - m).powi(2)).sum::<f64>() / (d.len() - 1) as f64;
+      (100.0 * m, 100.0 * (var / d.len() as f64).sqrt())
+    };
+    let mine: Vec<f64> = rows.iter().filter_map(|r| r[i]).map(|x| x.0).collect();
+    let (pl, pr_) = if i == BASE {
+      (format!("{:>5.1}%      —   ", pooled_base), "      —      ".to_string())
+    } else {
+      (format!("{:>5.1}%   {:>+5.2}", pool(i), pool(i) - pooled_base), format!("{m:>+6.2} +/- {se:>4.2}"))
+    };
+    println!(
+      "   {:<18}    {:>5.2}   {:>5.2}   {pl:<18}  {pr_}   {:>4}   [{:>5.1}%]",
+      conds[i].0,
+      avg(&shape[i * 2]),
+      avg(&shape[i * 2 + 1]),
+      d.len(),
+      100.0 * avg(&mine),
+    );
+  }
+  println!(
+    "   {:<18}    {:>5.2}   {:>5.2}",
+    "the composer's own",
+    avg(&theirs[0]),
+    avg(&theirs[1])
+  );
+  println!("\n  `POOLED` adds every note in every span together, which is what §8.6 reports and which");
+  println!("  weights a span by its note count — and, for the sampled row, counts all eight draws.");
+  println!("  `PAIRED` is the mean of the per-span differences, with the span as the unit of");
+  println!("  replication. The bracketed figure is the unweighted mean of the per-span rates.");
 }

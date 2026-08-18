@@ -151,6 +151,17 @@ pub struct Problem<'a> {
   /// position is that no choice is defensible — so it is a parameter here, and
   /// §8.6 runs several and reports that they disagree.
   pub weights: [f64; 6],
+  /// One weight per entry of `PRESCRIPTIONS`, charged **in place of** the soft
+  /// tier rather than beside it — readme §9 step 6's last proposal.
+  ///
+  /// The six soft criteria are six things a line must not do, and §8.8's reading
+  /// of every step-6 failure is that the generator's fault is deficiency rather
+  /// than excess. A replacement therefore has to say what a line should **do**.
+  /// These are the three such statements this repository can make without a text
+  /// it does not hold: move by step, move against the other voice, and state the
+  /// harmony. Set `weights` to zero when using them, or the comparison is a
+  /// seventh criterion rather than a replacement.
+  pub prescribe: [f64; 3],
   /// How many fills to draw **uniformly at random from the legal set**, beside
   /// the cheapest one — readme §9 step 6, and WaveFunctionCollapse's Weak C2
   /// stripped of the part that needs a corpus (§7.1). Zero costs nothing; any
@@ -174,6 +185,59 @@ pub struct Problem<'a> {
   /// which is what §10.2 asks of every superseded result — not because anything
   /// should use it.
   pub beta: f64,
+}
+
+/// The prescriptive criteria, in the order `Problem::prescribe` weights them.
+///
+/// Each is a positive statement, and each is charged by its *distance from*
+/// being satisfied so that a shortest path can minimise it — the sign is an
+/// implementation detail of §2.5's search, not a return to prohibition.
+pub const PRESCRIPTIONS: [&str; 3] = ["move by step", "move against", "state the harmony"];
+
+/// The part of a prescription that depends on one free voice's own choice.
+///
+/// `move by step` charges the distance from *exactly* one step, so standing
+/// still costs as much as a third and an octave costs six. That is what makes it
+/// a prescription rather than the soft tier's two melodic prohibitions: those
+/// charge a leap left unrecovered and a literal repetition, and are silent about
+/// a line that shuffles between two adjacent notes for a bar.
+///
+/// `state the harmony` charges a note outside the prevailing chord, and charges
+/// it double on a downbeat. §2.3's automaton already *permits* such a note only
+/// when prepared or approached by step; this prefers not to need the licence.
+fn prescribe_voice(
+  w: &[f64; 3],
+  prev: Option<Pitch>,
+  now: Option<Pitch>,
+  mode: Mode,
+  chord: Option<Chord>,
+  downbeat: bool,
+) -> f64 {
+  let (Some(p), Mode::Strike) = (now, mode) else { return 0.0 };
+  let mut c = 0.0;
+  if w[0] != 0.0 {
+    if let Some(q) = prev {
+      c += w[0] * ((p.step - q.step).abs() as f64 - 1.0).abs();
+    }
+  }
+  if w[2] != 0.0 {
+    if let Some(ch) = chord {
+      if !ch.contains(p) {
+        c += w[2] * if downbeat { 2.0 } else { 1.0 };
+      }
+    }
+  }
+  c
+}
+
+/// The part that depends on a pair: `move against` charges one for every voice
+/// this one moves *with*. Oblique motion is free, which is Fux's own ordering.
+fn prescribe_pair(w: &[f64; 3], me: Move, other: Move) -> f64 {
+  if w[1] == 0.0 {
+    return 0.0;
+  }
+  let (a, b) = (me.dir(), other.dir());
+  if a != 0 && a == b { w[1] } else { 0.0 }
 }
 
 pub struct Solution {
@@ -495,7 +559,8 @@ pub fn fill(pr: &Problem) -> Result<Solution, String> {
             continue;
           };
           // pairs against the fixed voices
-          let mut o = Opt { p, harm, cost: 0.0, flags: 0, st: [State::default(); MAXPAIR] };
+          let own = prescribe_voice(&pr.prescribe, st.now[k], p, mode, chord, downbeat);
+          let mut o = Opt { p, harm, cost: own, flags: 0, st: [State::default(); MAXPAIR] };
           let mut ok = true;
           for (pi, &(a, b)) in pairs.iter().enumerate() {
             let Kind::Fixed(kk, fv) = kinds[pi] else { continue };
@@ -511,6 +576,7 @@ pub fn fill(pr: &Problem) -> Result<Solution, String> {
             let was_fix = if br { None } else { pitch_at[s - 1][fv] };
             let me = (pp, mode == Mode::Strike, Move::of(was_free, pp));
             let it = (pf, sf, Move::of(was_fix, pf));
+            o.cost += prescribe_pair(&pr.prescribe, me.2, it.2);
             let sym = if v < fv { corpus::pair_sym(me, it, downbeat) } else { corpus::pair_sym(it, me, downbeat) };
             let next = automaton::step_into(st.pair[pi], sym, &mut fired);
             for r in &fired {
@@ -581,11 +647,12 @@ pub fn fill(pr: &Problem) -> Result<Solution, String> {
           let br = broke(a, b);
           let m1 = matches!(cells[s][freeix[k1]], Err(Mode::Strike));
           let m2 = matches!(cells[s][freeix[k2]], Err(Mode::Strike));
-          let sym = corpus::pair_sym(
-            (p1, m1, Move::of(if br { None } else { st.now[k1] }, p1)),
-            (p2, m2, Move::of(if br { None } else { st.now[k2] }, p2)),
-            downbeat,
+          let (mv1, mv2) = (
+            Move::of(if br { None } else { st.now[k1] }, p1),
+            Move::of(if br { None } else { st.now[k2] }, p2),
           );
+          cost += prescribe_pair(&pr.prescribe, mv1, mv2);
+          let sym = corpus::pair_sym((p1, m1, mv1), (p2, m2, mv2), downbeat);
           let next = automaton::step_into(st.pair[pi], sym, &mut fired);
           for r in &fired {
             if pr.tier.contains(r) {
@@ -859,9 +926,77 @@ mod tests {
       plan: vec![],
       tier,
       weights: [1.0; 6],
+      prescribe: [0.0; 3],
       samples: 0,
       seed: 0x5EED,
       beta: 0.0,
+    }
+  }
+
+  /// Every prescription is charged **in place of** the soft tier, so a test for
+  /// one sets `weights` to zero. Charging both would measure a seventh criterion
+  /// rather than a replacement, and readme §9 step 6 asks for a replacement.
+  fn prescriptive<'a>(fixed: Voice, rhythm: Voice, tier: &'a [Rule], w: [f64; 3]) -> Problem<'a> {
+    let mut pr = problem(fixed, rhythm, tier);
+    pr.weights = [0.0; 6];
+    pr.prescribe = w;
+    pr
+  }
+
+  /// `move by step` charges the distance from *exactly* one step, so it must
+  /// reject standing still as firmly as it rejects a leap. The soft tier's two
+  /// melodic criteria do not: a repetition costs one firing and a recovered leap
+  /// costs nothing, so neither prefers a line that actually goes somewhere.
+  #[test]
+  fn moving_by_step_rejects_standing_still_as_well_as_leaping() {
+    let cf = line(&[28, 30, 29, 31, 28]);
+    let mut pr = prescriptive(cf, line(&[35, 35, 35, 35, 35]), CONFIRMED, [1.0, 0.0, 0.0]);
+    pr.compass = vec![(0, 0), (33, 40)];
+    let sol = fill(&pr).expect("a fill exists");
+    let steps: Vec<i16> = sol.voices[1].notes.iter().map(|n| n.pitch.step).collect();
+    for w in steps.windows(2) {
+      assert_eq!((w[1] - w[0]).abs(), 1, "{steps:?} is not conjunct");
+    }
+  }
+
+  /// `state the harmony` must put a chord tone on every downbeat it can. §2.3's
+  /// automaton already licenses a foreign note that is prepared or approached by
+  /// step; this is the criterion that prefers not to need the licence.
+  #[test]
+  fn stating_the_harmony_puts_chord_tones_on_the_downbeat() {
+    let cf = line(&[28, 28, 28, 28, 28]); // C4 held under a C major plan
+    let c = Chord { root: 0, quality: 0 };
+    let mut pr = prescriptive(cf, line(&[35, 35, 35, 35, 35]), CONFIRMED, [0.0, 0.0, 1.0]);
+    pr.compass = vec![(0, 0), (33, 40)];
+    pr.plan = vec![Segment { start: 0, end: 8 * Q, chord: Some(c), fit: 1.0 }];
+    let sol = fill(&pr).expect("a fill exists");
+    for n in sol.voices[1].notes.iter().filter(|n| n.attack && n.onset % (4 * Q) == 0) {
+      assert!(c.contains(n.pitch), "{} is foreign on a downbeat", n.pitch.name());
+    }
+  }
+
+  /// `move against` charges similar motion and leaves oblique motion free, which
+  /// is Fux's own ordering of the three.
+  #[test]
+  fn moving_against_charges_similar_motion_only() {
+    let w = [0.0, 1.0, 0.0];
+    assert_eq!(prescribe_pair(&w, Move::StepUp, Move::LeapUp), 1.0);
+    assert_eq!(prescribe_pair(&w, Move::StepUp, Move::StepDown), 0.0);
+    assert_eq!(prescribe_pair(&w, Move::StepUp, Move::Hold), 0.0);
+    assert_eq!(prescribe_pair(&w, Move::Hold, Move::Hold), 0.0);
+  }
+
+  /// The prescriptions replace the tier rather than joining it: with `weights`
+  /// at zero and nothing prescribed, every legal fill costs the same, and the
+  /// count of them must not change when a prescription is switched on. A
+  /// prescription that pruned the legal set would be a hard rule in disguise.
+  #[test]
+  fn a_prescription_reorders_the_legal_set_without_shrinking_it() {
+    let cf = line(&[28, 30, 29]);
+    let plain = fill(&prescriptive(cf.clone(), line(&[35, 35, 35]), CONFIRMED, [0.0; 3])).unwrap();
+    for w in [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0], [1.0; 3]] {
+      let got = fill(&prescriptive(cf.clone(), line(&[35, 35, 35]), CONFIRMED, w)).unwrap();
+      assert_eq!(got.legal_fills, plain.legal_fills, "prescription {w:?} changed the legal set");
     }
   }
 
