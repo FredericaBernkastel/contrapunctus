@@ -32,6 +32,7 @@
 
 use crate::{answer, kern::Piece};
 
+
 /// One annotated subject entry.
 #[derive(Clone, Copy, Debug)]
 pub struct Entry {

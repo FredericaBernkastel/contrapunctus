@@ -2064,14 +2064,20 @@ close at home. From BWV 847's subject, in three voices:
 | 18, 21 | episode, then entry | IV |
 | 23, 26 | episode, then the last entry | home |
 
-**Twelve blocks, 27 bars, filled in 0.8 seconds.** Read back through §8.15's own parser it covers the voices,
+**Twelve blocks, 27 bars, filled in 0.5 seconds.** Read back through §8.15's own parser it covers the voices,
 alternates, has a middle and ends at home — and fails `exposition runs unbroken`, which is the link, written on
-purpose. Against §8.2's checker: **628 slices**, one confirmed-tier violation at a block seam, and 57 on the full
-five — `90.8` per thousand against Bach's `112.3`
+purpose. Against §8.2's checker: **772 slices, zero violations on the confirmed tier**, and 57 on the full five —
+`73.8` per thousand against Bach's `112.3`
 ([§8.12](#812-the-fourth-and-the-scope-a-dissonance-is-judged-in)).
 
-That figure is the second version. The first was generated on `conf+melodic` and scored `366.2`, and the subsection
-below is about why, because the answer turned out to be worth more than the fugue.
+**That is the third version, and each of the first two was corrected by a listener rather than by a test.** The two
+subsections below are about how, because in both cases the answer was worth more than the fugue.
+
+| | dissonance /1000 | confirmed-tier violations | fill |
+|---|---:|---:|---:|
+| first — `conf+melodic` | 366.2 | 0 | 3.9s |
+| second — the full tier | 90.8 | 1 | 0.8s |
+| **third — continuous voices** | **73.8** | **0** | **0.5s** |
 
 #### The second listening test, and a rule that is wrong as a description and right as a constraint
 
@@ -2117,6 +2123,35 @@ confirmed-tier violation where `conf+melodic` carried none — a single parallel
 limitation the section above describes and not a consequence of the stricter rules. Tightening the tier makes each
 block harder to fill, so more of them run close to the edge of what is legal, and the one place the search cannot
 see is where that shows.
+
+#### The third listening test, and four tenths of a second of nothing
+
+The second version was listened to. Dissonance *"reduced meaningfully"*, and then a new report: **"0.4s long
+silence breaks repeating every 3-6s."**
+
+That is a diagnosis, not a complaint. At the 76 to the minute this writes, four tenths of a second is **an eighth
+note** — and BWV 847's subject begins on an **upbeat**, its first note at tick 120 rather than 0. Every free voice
+was given the subject's rhythm *with its onsets*, tiled, so every voice inherited the same 120-tick gap at the head
+of every tile. They all rested in the same place, together, once per tile. Three voices breathing in unison is
+silence, and no rule in this document has anything to say about it: the checker counts what sounds against what
+sounds, and nothing sounding is not a violation of anything.
+
+The fix is to lay the subject's note **values** end to end from the first tick rather than copying its onsets, and
+to rotate the sequence by a different phase per voice so that even the note boundaries do not line up. The
+dissonance rate fell again as a side effect — `90.8` to `73.8` — because a texture with no holes in it is a
+texture the search has more chances to get right, and the piece gained 144 slices of actual counterpoint.
+
+Fixing it exposed **two more of the same kind**, both found by tests once the fixture was given an upbeat of its
+own. A voice that finished an entry and immediately took the next episode's motive **leapt nine steps between
+them**, because both lines are *placed* and nothing in the search stands between the end of one and the start of
+the other; the derivation now never gives two consecutive blocks to the same voice. And the test fixture itself had
+no upbeat, so **it could not have caught the bug it was written for** — a subject beginning on the beat has no gap
+to share. It has one now.
+
+> **The checker cannot hear silence.** Every instrument in this document measures a relation between notes that
+> sound. A fault that consists of *nothing sounding* is invisible to all of them, and was found by the only
+> instrument that had not been used until §8.6 — somebody listening. The test that now guards it asserts a property
+> of the piece rather than of the rhythm function, so any future way of inventing rhythm has to satisfy it too.
 
 #### Three things it had to be built around, and what each cost
 

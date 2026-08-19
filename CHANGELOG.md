@@ -928,6 +928,30 @@ four, and five times faster, since a tighter tier prunes the search.
 This is the first place the endorsed tier and the generating tier come apart, which is why `--gen-tier` is separate
 from `--tier`. §8.6–§8.15 describe and use `conf+melodic`; §8.16 generates and uses `full(5)`.
 
+### The third listening test — four tenths of a second of nothing
+
+[`PLACEHOLDER`](../../commit/PLACEHOLDER)
+
+Dissonance "reduced meaningfully", and then: **"0.4s long silence breaks repeating every 3-6s."** A diagnosis
+rather than a complaint. At 76 to the minute four tenths of a second is an **eighth note**, and BWV 847's subject
+begins on an **upbeat** — its first note at tick 120. Every free voice took the subject's rhythm *with its onsets*,
+tiled, so every voice inherited the same gap at the head of every tile and they all rested together, once per tile.
+
+Laid end to end from the first tick instead, with a per-voice phase so the note boundaries do not line up either.
+Dissonance fell again as a side effect — **90.8 to 73.8** per thousand, against Bach's 112.3 — because a texture
+with no holes has more places the search can get right, and the piece gained 144 slices of counterpoint. The
+confirmed-tier violation at the seam went with it.
+
+Two more of the same kind fell out, both caught by tests once the fixture was given an upbeat of its own. A voice
+that finished an entry and immediately took the next episode's motive **leapt nine steps**, since both lines are
+*placed* and nothing in the search stands between them — the derivation now never gives two consecutive blocks to
+the same voice. And the fixture itself had no upbeat, so **it could not have caught the bug it was written for**.
+
+> **The checker cannot hear silence.** Every instrument here measures a relation between notes that sound. A fault
+> that consists of *nothing sounding* is invisible to all of them. Three listening reports have now corrected this
+> project: one disagreed with the numbers (§8.6), one agreed with them, and one found something no number was
+> looking at.
+
 ### Four faults, each found by a test, each in code that had already produced a plausible fugue
 
 **A parallel fifth across a block seam.** The search's state resets at every edge, so a parallel that straddles one

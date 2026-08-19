@@ -81,6 +81,14 @@ pub struct Block {
   pub key_of: i16,
 }
 
+/// Which voice a block places its line in.
+fn held_of(b: Option<&Block>) -> usize {
+  match b.map(|x| &x.kind) {
+    Some(Kind::Entry { voice, .. }) | Some(Kind::Episode { voice, .. }) => *voice,
+    None => 0,
+  }
+}
+
 /// The subject's length in ticks, rounded up to a whole bar so that entries and
 /// episodes fall on bar lines — which is where §8.15 measured them.
 fn subject_bars(d: &Design) -> i64 {
@@ -120,30 +128,46 @@ pub fn derive(d: &Design) -> Vec<Block> {
 
   // Three middles, each an episode and then one entry, at the dominant, the
   // submediant and the subdominant — a walk out and back.
-  for (k, &key_of) in [4i16, 5, 3].iter().enumerate() {
+  //
+  // The episode's motive never goes to the voice that just finished an entry.
+  // Both lines are *placed*, so nothing in the search stands between the end of
+  // one and the start of the other, and a voice asked to do both in succession
+  // jumps whatever distance separates them — eight steps, in the run that found
+  // this. Handing the motive to another voice costs nothing and is what a fugue
+  // does anyway.
+  for &key_of in [4i16, 5, 3].iter() {
+    let after = held_of(out.last());
     out.push(Block {
       at: t,
       len: ep,
-      kind: Kind::Episode { voice: k % d.voices, shift: 0 },
+      kind: Kind::Episode { voice: (after + 1) % d.voices, shift: 0 },
       key_of,
     });
     t += ep;
+    let after = held_of(out.last());
     out.push(Block {
       at: t,
       len: sl,
-      kind: Kind::Entry { voice: (k + 1) % d.voices, shift: key_of, tonal: false },
+      kind: Kind::Entry { voice: (after + 1) % d.voices, shift: key_of, tonal: false },
       key_of,
     });
     t += sl;
   }
 
   // Final: home, and the last entry in the bass.
-  out.push(Block { at: t, len: ep, kind: Kind::Episode { voice: 0, shift: 0 }, key_of: 0 });
+  let after = held_of(out.last());
+  out.push(Block {
+    at: t,
+    len: ep,
+    kind: Kind::Episode { voice: (after + 1) % d.voices, shift: 0 },
+    key_of: 0,
+  });
   t += ep;
+  let after = held_of(out.last());
   out.push(Block {
     at: t,
     len: sl,
-    kind: Kind::Entry { voice: d.voices - 1, shift: 0, tonal: false },
+    kind: Kind::Entry { voice: (after + 1) % d.voices, shift: 0, tonal: false },
     key_of: 0,
   });
   out
@@ -203,18 +227,33 @@ fn sequence(d: &Design, at: i64, len: i64, shift: i16) -> Voice {
 /// The subject's rhythm, tiled to fill `[at, at+len)` — §2.6's cost, paid where
 /// it falls. A free voice needs onsets before it can be given pitches, and a
 /// generator has nowhere else to get them.
-fn rhythm(d: &Design, at: i64, len: i64) -> Vec<Note> {
-  let sl = subject_bars(d);
+fn rhythm(d: &Design, at: i64, len: i64, phase: usize) -> Vec<Note> {
+  // The subject's note *values*, laid end to end from the first tick rather than
+  // copied with their onsets.
+  //
+  // Copying the onsets was the first version and it had an audible fault. A
+  // subject with an upbeat — BWV 847's begins at tick 120 — leaves that gap at
+  // the head of every tile; every free voice carries the same tiled rhythm, so
+  // every voice fell silent in the same 120 ticks, together, once per tile. At
+  // 76 to the minute that is four tenths of a second of nothing, every six
+  // seconds, and a listener reported it before any test did.
+  //
+  // Laid end to end there is no gap to share. `phase` rotates the sequence per
+  // voice so that even the note *boundaries* do not line up, which is a
+  // separate fault of the same kind and cheaper to prevent than to hear.
+  let durs: Vec<(i64, Pitch)> =
+    d.subject.notes.iter().filter(|n| n.attack).map(|n| (n.dur.max(1), n.pitch)).collect();
+  if durs.is_empty() {
+    return vec![];
+  }
   let mut out = vec![];
-  let mut k = 0i64;
-  while k * sl < len {
-    for n in &d.subject.notes {
-      let onset = at + k * sl + n.onset;
-      if onset + n.dur <= at + len {
-        out.push(Note { onset, ..*n });
-      }
-    }
-    k += 1;
+  let (mut t, mut i) = (0i64, phase);
+  while t < len {
+    let (dur, pitch) = durs[i % durs.len()];
+    let dur = dur.min(len - t);
+    out.push(Note { onset: at + t, dur, pitch, attack: true });
+    t += dur;
+    i += 1;
   }
   out
 }
@@ -241,7 +280,7 @@ pub fn skeleton(d: &Design, blocks: &[Block]) -> (Vec<Voice>, Vec<bool>) {
       if placed[v].iter().any(|&(a, z)| a <= b.at && b.at < z) {
         continue;
       }
-      voices[v].notes.extend(rhythm(d, b.at, b.len));
+      voices[v].notes.extend(rhythm(d, b.at, b.len, v));
     }
   }
   for v in voices.iter_mut() {
@@ -387,9 +426,9 @@ pub fn generate(
         if v == held {
           line.clone()
         } else if Some(v) == next && quiet > 0 {
-          Voice { notes: rhythm(d, 0, b.len - quiet) }
+          Voice { notes: rhythm(d, 0, b.len - quiet, v) }
         } else {
-          Voice { notes: rhythm(d, 0, b.len) }
+          Voice { notes: rhythm(d, 0, b.len, v) }
         }
       })
       .collect();
@@ -503,15 +542,17 @@ mod tests {
   use super::*;
   use crate::{automaton::CONFIRMED, cli::CONF_MEL, corpus, kern::TICKS_PER_QUARTER as Q};
 
-  /// A four-note subject of one bar in C major, three voices well apart.
+  /// A subject of one bar in C major, three voices well apart — and beginning
+  /// on an **upbeat**, like BWV 847's, because the upbeat is what made the whole
+  /// texture fall silent together and a fixture without one cannot catch it.
   fn design() -> Design {
     Design {
       subject: Voice {
-        notes: (0..4)
+        notes: (0..3)
           .map(|i| Note {
-            onset: i * Q,
+            onset: Q + i * Q,
             dur: Q,
-            pitch: Pitch::new(28 + [0, 2, 4, 2][i as usize], 0),
+            pitch: Pitch::new(28 + [0, 2, 4][i as usize], 0),
             attack: true,
           })
           .collect(),
@@ -560,8 +601,9 @@ mod tests {
     let d = design();
     let v = sequence(&d, 0, 3 * d.measure, 0);
     let steps: Vec<i16> = v.notes.iter().map(|n| n.pitch.step).collect();
-    assert!(steps.len() >= 8, "{steps:?}");
-    let bar = 4;
+    // however many notes the subject puts in its first bar
+    let bar = d.subject.notes.iter().filter(|n| n.onset < d.measure).count();
+    assert!(bar >= 2 && steps.len() >= 2 * bar, "{steps:?}");
     for i in 0..bar {
       assert_eq!(steps[i + bar], steps[i] - 1, "bar two must be bar one a step lower");
     }
@@ -638,6 +680,41 @@ mod tests {
         b.at / d.measure + 1
       );
     }
+  }
+
+  /// **The whole texture must never fall silent.** A listener heard this before
+  /// any test did: four tenths of a second of nothing, every six seconds.
+  ///
+  /// The cause was that every free voice carried the subject's rhythm *with its
+  /// onsets*, and BWV 847's subject begins on an upbeat — so every voice
+  /// inherited the same gap at the head of every tile and they all rested
+  /// together. Laying the note values end to end removes the gap; a per-voice
+  /// phase keeps the boundaries from lining up either. This is the test that
+  /// says so, and it is stated as a property of the piece rather than of the
+  /// rhythm function, so any future way of inventing rhythm has to satisfy it
+  /// too.
+  #[test]
+  fn the_texture_never_falls_silent() {
+    let d = design();
+    let (blocks, voices, _) = generate(&d, CONF_MEL, 0x5EED).expect("a fugue");
+    let end = length(&blocks);
+    let step = d.beat / 4;
+    let mut worst = 0i64;
+    let mut run = 0i64;
+    let mut t = 0;
+    while t < end {
+      let sounding = voices
+        .iter()
+        .any(|v| v.notes.iter().any(|n| n.onset <= t && t < n.onset + n.dur));
+      run = if sounding { 0 } else { run + step };
+      worst = worst.max(run);
+      t += step;
+    }
+    assert_eq!(
+      worst, 0,
+      "the whole texture rests for {worst} ticks — {:.2} of a beat",
+      worst as f64 / d.beat as f64
+    );
   }
 
   /// Every voice must sound through every block, or what was written is not in
