@@ -32,6 +32,10 @@ pub const QUALITIES: [(&str, u16); 9] = [
   ("M7", 0b1000_1001_0001),    // major 7       0 4 7 11
 ];
 
+/// §10.5: the functional layer compiles and is not exercised by any reported
+/// number. It is kept because §2.3's functional half is a stated open problem
+/// and deleting the half that exists would not make it less open.
+#[allow(dead_code)]
 const NAMES: [&str; 12] = ["C", "C#", "D", "E-", "E", "F", "F#", "G", "A-", "A", "B-", "B"];
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -43,11 +47,12 @@ pub struct Chord {
 impl Chord {
   pub fn mask(&self) -> u16 {
     let m = QUALITIES[self.quality].1 as u32;
-    ((((m << self.root as u32) | (m >> (12 - self.root as u32))) & 0xFFF) as u16) as u16
+    (((m << self.root as u32) | (m >> (12 - self.root as u32))) & 0xFFF) as u16
   }
   pub fn contains(&self, p: Pitch) -> bool {
     self.mask() & (1 << p.chroma().rem_euclid(12)) != 0
   }
+  #[allow(dead_code)] // §10.5, with `NAMES` above
   pub fn name(&self) -> String {
     format!("{}{}", NAMES[self.root as usize], QUALITIES[self.quality].0)
   }
@@ -96,7 +101,7 @@ pub fn best_chord(voices: &[Voice], t0: i64, t1: i64) -> (Option<Chord>, f64) {
       let hit: i64 = w.iter().filter(|(p, _)| c.contains(*p)).map(|(_, x)| *x).sum();
       // Prefer the simpler chord on ties: triads are listed before sevenths, so
       // a plain `>` keeps the first (simplest) winner.
-      if best.map_or(true, |(_, h)| hit > h) {
+      if best.is_none_or(|(_, h)| hit > h) {
         best = Some((c, hit));
       }
     }
@@ -146,6 +151,11 @@ fn classify(v: &Voice, i: usize, seg: &Segment) -> Option<Nct> {
   let in_step = step(prev);
   let out_step = step(next);
   // A note at the end of its voice is not left at all, so nothing is owed.
+  //
+  // Spelled out rather than as the bare `next?;` clippy suggests: a `?` whose
+  // value is discarded is an early return disguised as an expression, and reads
+  // as a typo to anyone who has not just been told otherwise.
+  #[allow(clippy::question_mark)]
   if next.is_none() {
     return None;
   }
@@ -244,6 +254,7 @@ pub fn report(voices: &[Voice], beat: i64) -> Report {
 /// functional moves. This is the part of §2.3 that makes a cadence a *labelled
 /// path* rather than a coincidence — `V → I` is an edge with a name, and a
 /// progression that never reaches it never cadences.
+#[allow(dead_code)] // §10.5: §2.3's functional half, built and not exercised
 pub fn degree_of(c: Chord, tonic: u8) -> u8 {
   ((c.root as i16 - tonic as i16).rem_euclid(12)) as u8
 }
@@ -257,6 +268,7 @@ pub fn progression_ok(a: u8, b: u8) -> bool {
 }
 
 /// The cadential figure: dominant to tonic.
+#[allow(dead_code)] // §10.5, with `degree_of` above
 pub fn is_cadence(a: Chord, b: Chord, tonic: u8) -> bool {
   degree_of(a, tonic) == 7 && degree_of(b, tonic) == 0
 }

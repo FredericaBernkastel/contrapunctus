@@ -91,6 +91,8 @@ impl Subject {
 #[derive(Clone, Debug)]
 pub struct Verdict {
   pub hard: usize,
+  /// Counted and reported by step 2's own output, and read by nothing since.
+  #[allow(dead_code)]
   pub soft: usize,
   pub worst: Vec<(&'static str, usize)>,
 }
@@ -281,6 +283,7 @@ pub fn interval_from(sub: &Subject, first: Pitch) -> (i16, i16) {
   (iv.steps, iv.semis)
 }
 
+#[allow(dead_code)] // superseded by `Rule::is_hard`, kept for the step-2 API
 pub fn rule_is_hard(name: &str) -> bool {
   is_hard_name(name)
 }

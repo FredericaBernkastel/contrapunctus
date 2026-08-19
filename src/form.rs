@@ -32,7 +32,6 @@
 
 use crate::{answer, kern::Piece};
 
-
 /// One annotated subject entry.
 #[derive(Clone, Copy, Debug)]
 pub struct Entry {
@@ -55,7 +54,6 @@ pub struct Plan {
   /// time in which no entry is *sounding*, so it runs from where one entry ends
   /// to where the next begins, not from one start to the next.
   pub subject: i64,
-  pub end: i64,
   pub cadences: Vec<(i64, String)>,
 }
 
@@ -230,7 +228,6 @@ pub fn plan_of(
     entries: es,
     measure: p.measure,
     subject,
-    end: p.voices.iter().flat_map(|v| v.notes.iter().map(|n| n.onset + n.dur)).max().unwrap_or(0),
     cadences: cadences.to_vec(),
   }
 }
@@ -247,7 +244,6 @@ mod tests {
       entries: es.iter().map(|&(v, s, d)| Entry { voice: v, start: s, degree: d }).collect(),
       measure: 960,
       subject: 1920,
-      end: 100_000,
       cadences: cad.iter().map(|(t, l)| (*t, l.to_string())).collect(),
     }
   }

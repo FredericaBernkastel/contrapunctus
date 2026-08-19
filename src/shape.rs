@@ -83,7 +83,10 @@ pub fn combined(v: &Voice) -> f64 {
   (climax(v) + compass(v) + variety(v)) / 3.0
 }
 
-pub const CRITERIA: [(&str, fn(&Voice) -> f64); 4] =
+/// A named criterion over one line — §8.8's unit of measurement.
+pub type Criterion = (&'static str, fn(&Voice) -> f64);
+
+pub const CRITERIA: [Criterion; 4] =
   [("climax", climax), ("compass", compass), ("variety", variety), ("all three", combined)];
 
 #[cfg(test)]

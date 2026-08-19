@@ -84,7 +84,7 @@ pub fn figure_of(v: &Voice, i: usize, strong: bool, metric: bool) -> Figure {
 
   // fourth species: tied over, and it must fall
   if !n.attack {
-    let falls = next.map_or(false, |m| steps(n.pitch, m.pitch) == -1);
+    let falls = next.is_some_and(|m| steps(n.pitch, m.pitch) == -1);
     if falls && (!metric || strong) {
       return Figure::Suspension;
     }
@@ -201,6 +201,11 @@ pub fn check_piece(p: &kern::Piece, metric: bool, fourth: bool) -> Tally {
 
 /// Unused by the checker, and here because the generator will want it: does this
 /// slice belong to the whitelist at all?
+/// §8.7 reports the tally rather than asking the whitelist about one note, so
+/// nothing in a published figure calls this. It is the whitelist stated as a
+/// predicate, which is what a *generator* would want if the whitelist had been
+/// adopted — and §8.7 is the section explaining why it was not.
+#[allow(dead_code)]
 pub fn permitted(v: &Voice, i: usize, consonant: bool, strong: bool, metric: bool) -> bool {
   consonant || figure_of(v, i, strong, metric).listed()
 }

@@ -192,7 +192,7 @@ mod tests {
   #[test]
   fn the_file_timebase_is_an_exact_multiple_of_the_lattice() {
     assert_eq!(PPQ % TICKS_PER_QUARTER, 0);
-    assert!(PPQ <= 0x7FFF, "division must fit the 15-bit field");
+    const { assert!(PPQ <= 0x7FFF, "division must fit the 15-bit field") };
   }
 
   /// A whole note must land on a bar line and a semiquaver on its sixteenth, at

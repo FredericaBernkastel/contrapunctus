@@ -303,6 +303,13 @@ fn voice_of(p: &Piece, letter: char) -> usize {
 /// left open". It is computed from the same predicate the search uses, without
 /// the outstanding obligations, which makes it a slight over-count and therefore
 /// a slightly *generous* baseline rather than a flattering one.
+// Nine arguments, and clippy is right that it is a lot. They are the exact
+// inputs the search's own predicate takes, and grouping them into a struct here
+// would put a second description of a slice's context beside the one
+// `realise.rs` already has — which is how a baseline drifts from the thing it is
+// a baseline for. §8.6 says this is computed from the same predicate the search
+// uses, and this is what that costs.
+#[allow(clippy::too_many_arguments)]
 fn local_choices(
   voices: &[Voice],
   v: usize,
@@ -356,7 +363,7 @@ fn legal_here(
     }
   }
   if let Some(c) = chord {
-    if !c.contains(p) && !prev.map_or(false, |a| Move::of(Some(a), p).is_step()) {
+    if !c.contains(p) && !prev.is_some_and(|a| Move::of(Some(a), p).is_step()) {
       return false;
     }
   }
@@ -766,7 +773,7 @@ pub fn scalarisations() {
     w[i] = 1.0;
     named.push((r.name().into(), w));
   }
-  println!("   {:<22} {:>5}   {}", "objective", "cost", "soft-criterion counts, and the line it chooses");
+  println!("   {:<22} {:>5}   soft-criterion counts, and the line it chooses", "objective", "cost");
 
   for (name, weights) in &named {
     let pr = Problem {

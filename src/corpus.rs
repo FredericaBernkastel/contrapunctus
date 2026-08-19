@@ -152,7 +152,7 @@ pub fn check_voices_in(
         Fourth::Consonant => true,
         // strictly below, so a voice doubling the pair's own bass does not
         // support it — that is the same note, not a foundation under it
-        Fourth::OverBass => bass(time).map_or(false, |b| b.chroma() < lo_p.chroma()),
+        Fourth::OverBass => bass(time).is_some_and(|b| b.chroma() < lo_p.chroma()),
         Fourth::Pairwise => false,
       };
       if s.steps == 3 && s.semis == 5 && exempt {

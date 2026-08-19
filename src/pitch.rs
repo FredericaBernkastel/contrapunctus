@@ -89,6 +89,10 @@ impl Interval {
     Self { steps, semis }
   }
 
+  /// Unused since the melodic rule was folded into `is_forbidden_melodic`,
+  /// which tests the same thing more directly. Kept because an interval type
+  /// that cannot say whether it is compound is a worse interval type.
+  #[allow(dead_code)]
   pub fn is_compound(&self) -> bool {
     self.steps.abs() > 7
   }
@@ -115,6 +119,7 @@ impl Interval {
     self.steps.abs() == 1
   }
 
+  #[allow(dead_code)] // the complement of `is_step`, and used by neither
   pub fn is_leap(&self) -> bool {
     self.steps.abs() >= 2
   }

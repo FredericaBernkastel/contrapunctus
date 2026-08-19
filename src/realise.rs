@@ -623,6 +623,11 @@ pub fn fill(pr: &Problem) -> Result<Solution, String> {
         // hundreds of millions over a corpus run, and by a wide margin the
         // slowest thing in the search before it was removed.
         let ncand = if mode == Mode::Strike { doms[s][k].len() } else { 1 };
+        // and by index rather than by iterator, because the count is `1` for a
+        // rest or a hold — where there is no domain to iterate at all — and
+        // clippy's suggested `for p in &doms[s][k]` would skip those two modes
+        // entirely rather than run them once
+        #[allow(clippy::needless_range_loop)]
         for ci in 0..ncand {
           let p = match mode {
             Mode::Rest => None,
@@ -1248,8 +1253,8 @@ mod tests {
       }
       let prev = i.checked_sub(1).map(|j| notes[j].pitch);
       let next = notes.get(i + 1).map(|m| m.pitch);
-      assert!(prev.map_or(false, |p| Move::of(Some(p), n.pitch).is_step()), "{} unprepared", n.pitch.name());
-      assert!(next.map_or(true, |m| Move::of(Some(n.pitch), m).is_step()), "{} unresolved", n.pitch.name());
+      assert!(prev.is_some_and(|p| Move::of(Some(p), n.pitch).is_step()), "{} unprepared", n.pitch.name());
+      assert!(next.is_none_or(|m| Move::of(Some(n.pitch), m).is_step()), "{} unresolved", n.pitch.name());
     }
   }
 }

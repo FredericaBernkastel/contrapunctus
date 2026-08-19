@@ -164,10 +164,7 @@ pub fn step_in_key(p: Pitch, n: i16, key: &[i8; 7]) -> Pitch {
 /// Returned in order of the mutation point, earliest first, with the unmutated
 /// transpositions before them. A subject of `n` attacks yields at most `2n`
 /// before Rules I and II are applied, and in practice a handful after.
-pub fn admissible_legs(degrees: &[usize]) -> Vec<Vec<Leg>> {
-  admissible_legs_opt(degrees, true)
-}
-
+///
 /// The same, with Rule II optionally dropped.
 ///
 /// Marpurg states Rule I flatly and hedges Rule II — it *"öfters nach
@@ -182,7 +179,7 @@ pub fn admissible_legs_opt(degrees: &[usize], pin_last: bool) -> Vec<Vec<Leg>> {
   let want_first = first_leg(degrees[0]);
   let want_last = if pin_last { last_leg(degrees[n - 1]) } else { None };
   let ok = |legs: &[Leg]| {
-    want_first.map_or(true, |w| legs[0] == w) && want_last.map_or(true, |w| legs[n - 1] == w)
+    want_first.is_none_or(|w| legs[0] == w) && want_last.is_none_or(|w| legs[n - 1] == w)
   };
   let mut out = vec![];
   // no mutation at all: the answer is a plain transposition
@@ -261,20 +258,6 @@ pub fn real(subject: &Voice, leg: Leg, key: &[i8; 7]) -> Voice {
 /// degrees are the claim.
 pub fn degrees(v: &Voice, tonic: usize) -> Vec<usize> {
   v.notes.iter().filter(|n| n.attack).map(|n| degree(n.pitch, tonic)).collect()
-}
-
-/// The same, with the chromatic inflection kept: `(degree, alteration relative
-/// to the key)`. Strict, and the one that says whether the *spelling* agrees and
-/// not merely the degree.
-pub fn degrees_exact(v: &Voice, tonic: usize, key: &[i8; 7]) -> Vec<(usize, i8)> {
-  v.notes
-    .iter()
-    .filter(|n| n.attack)
-    .map(|n| {
-      let l = n.pitch.step.rem_euclid(7) as usize;
-      (degree(n.pitch, tonic), n.pitch.alter - key[l])
-    })
-    .collect()
 }
 
 #[cfg(test)]

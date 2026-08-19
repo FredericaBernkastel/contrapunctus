@@ -43,6 +43,9 @@ pub struct Key {
   pub minor: bool,
 }
 
+/// For reading a key back in a diagnostic. §8.14 reports rates rather than
+/// names, so nothing in a published figure calls this.
+#[allow(dead_code)]
 const NAMES: [&str; 12] = ["C", "C#", "D", "E-", "E", "F", "F#", "G", "A-", "A", "B-", "B"];
 
 impl Key {
@@ -64,6 +67,7 @@ impl Key {
     let r = self.tonic as u32;
     ((((base as u32) << r) | ((base as u32) >> (12 - r))) & 0xFFF) as u16
   }
+  #[allow(dead_code)] // with `NAMES` above
   pub fn name(&self) -> String {
     format!("{}{}", NAMES[self.tonic as usize], if self.minor { "m" } else { "" })
   }
@@ -310,7 +314,7 @@ mod tests {
         })
         .collect(),
     };
-    let tight = analyse(&[v.clone()], 4 * 240, 240, 100.0);
+    let tight = analyse(std::slice::from_ref(&v), 4 * 240, 240, 100.0);
     let loose = analyse(&[v], 4 * 240, 240, 0.0);
     assert_eq!(key_rhythm(&tight), tight.len() as f64, "a large penalty must hold one key");
     assert!(key_rhythm(&loose) <= key_rhythm(&tight));

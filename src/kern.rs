@@ -146,7 +146,7 @@ pub fn read(path: &std::path::Path) -> Result<Piece, String> {
           let mut letter: Option<usize> = None;
           for ch in body.chars() {
             match ch {
-              'a'..='g' => letter = "cdefgab".find(ch).map(|i| i),
+              'a'..='g' => letter = "cdefgab".find(ch),
               '#' => { if let Some(l) = letter { key[l] += 1 } }
               '-' => { if let Some(l) = letter { key[l] -= 1 } }
               _ => {}

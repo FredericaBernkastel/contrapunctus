@@ -263,45 +263,6 @@ fn rhythm(d: &Design, at: i64, len: i64, phase: usize) -> Vec<Note> {
   out
 }
 
-/// The skeleton: every voice's notes, and which of them are **held** — placed by
-/// the derivation and not to be chosen. Free notes carry a rhythm and a
-/// placeholder pitch the search discards.
-pub fn skeleton(d: &Design, blocks: &[Block]) -> (Vec<Voice>, Vec<bool>) {
-  let mut voices: Vec<Voice> = vec![Voice { notes: vec![] }; d.voices];
-  let mut placed: Vec<Vec<(i64, i64)>> = vec![vec![]; d.voices];
-
-  for b in blocks {
-    let (v, line) = match &b.kind {
-      Kind::Entry { voice, shift, tonal } => (*voice, state(d, b.at, *shift, *tonal)),
-      Kind::Episode { voice, shift } => (*voice, sequence(d, b.at, b.len, *shift)),
-    };
-    placed[v].push((b.at, b.at + b.len));
-    voices[v].notes.extend(line.notes);
-  }
-
-  // and everything not placed gets the subject's rhythm
-  for b in blocks {
-    for v in 0..d.voices {
-      if placed[v].iter().any(|&(a, z)| a <= b.at && b.at < z) {
-        continue;
-      }
-      voices[v].notes.extend(rhythm(d, b.at, b.len, v));
-    }
-  }
-  for v in voices.iter_mut() {
-    v.notes.sort_by_key(|n| n.onset);
-    v.notes.dedup_by_key(|n| n.onset);
-  }
-  // a voice is free if any of its notes was not placed
-  let free: Vec<bool> = (0..d.voices)
-    .map(|v| {
-      let total: i64 = placed[v].iter().map(|&(a, z)| z - a).sum();
-      total < length(blocks)
-    })
-    .collect();
-  (voices, free)
-}
-
 /// The harmonic plan, **per beat** — [§8.9](../readme.md)'s requirement, which
 /// measured a chord per bar as losing more than half of what a correct plan is
 /// worth.
@@ -311,7 +272,7 @@ pub fn skeleton(d: &Design, blocks: &[Block]) -> (Vec<Voice>, Vec<bool>) {
 /// sequence, which is what a sequence is harmonically.
 pub fn plan(d: &Design, blocks: &[Block]) -> Vec<harmony::Segment> {
   let mut out = vec![];
-  let heard = harmony::analyse_viterbi(&[d.subject.clone()], d.beat, 1.0);
+  let heard = harmony::analyse_viterbi(std::slice::from_ref(&d.subject), d.beat, 1.0);
   for b in blocks {
     let mut t = b.at;
     let mut step = 0i64;

@@ -298,45 +298,6 @@ fn corpus_run() {
   }
 }
 
-#[cfg(test)]
-mod tests {
-  use super::*;
-
-  #[test]
-  fn parallel_fifths_are_flagged() {
-    let v = walk(&[("c", "g", false, false), ("d", "a", false, false)], &[true, true]);
-    assert!(v.contains(&Rule::ParallelPerfect));
-  }
-
-  #[test]
-  fn contrary_motion_between_fifths_is_not_parallel() {
-    // Both sound a fifth, but the voices move in opposite directions.
-    let v = walk(&[("c", "g", false, false), ("B", "ff", false, false)], &[true, true]);
-    assert!(!v.contains(&Rule::ParallelPerfect));
-  }
-
-  #[test]
-  fn a_prepared_suspension_outranks_the_same_struck_interval() {
-    let prepared = walk(
-      &[("c", "cc", false, false), ("d", "cc", false, true), ("d", "b", false, false)],
-      &[false, true, false],
-    );
-    let struck = walk(
-      &[("c", "a", false, false), ("d", "cc", false, false), ("d", "b", false, false)],
-      &[false, true, false],
-    );
-    assert!(!prepared.iter().any(|r| r.is_hard()), "suspension rejected: {prepared:?}");
-    assert!(struck.contains(&Rule::UnpreparedDissonance));
-  }
-
-  #[test]
-  fn the_state_space_is_small_and_finite() {
-    let (reachable, crude) = automaton::reachable_states();
-    assert!(reachable.len() < crude, "reachability bought nothing");
-    assert!(reachable.len() > 1);
-  }
-}
-
 // ---------------------------------------------------------------- step 2 ---
 
 /// BWV 867's five final entries, in quarters from the start of the fugue,
@@ -1782,4 +1743,43 @@ fn functional_test() {
   println!("  Renaissance {:>6.1}%   ({ro} of {rt})", 100.0 * ro as f64 / rt.max(1) as f64);
   println!("  difference  {:>+6.1} points", 100.0 * bo as f64 / bt.max(1) as f64 - 100.0 * ro as f64 / rt.max(1) as f64);
   println!("\n  prediction: tonal music should be MORE functional than modal.");
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn parallel_fifths_are_flagged() {
+    let v = walk(&[("c", "g", false, false), ("d", "a", false, false)], &[true, true]);
+    assert!(v.contains(&Rule::ParallelPerfect));
+  }
+
+  #[test]
+  fn contrary_motion_between_fifths_is_not_parallel() {
+    // Both sound a fifth, but the voices move in opposite directions.
+    let v = walk(&[("c", "g", false, false), ("B", "ff", false, false)], &[true, true]);
+    assert!(!v.contains(&Rule::ParallelPerfect));
+  }
+
+  #[test]
+  fn a_prepared_suspension_outranks_the_same_struck_interval() {
+    let prepared = walk(
+      &[("c", "cc", false, false), ("d", "cc", false, true), ("d", "b", false, false)],
+      &[false, true, false],
+    );
+    let struck = walk(
+      &[("c", "a", false, false), ("d", "cc", false, false), ("d", "b", false, false)],
+      &[false, true, false],
+    );
+    assert!(!prepared.iter().any(|r| r.is_hard()), "suspension rejected: {prepared:?}");
+    assert!(struck.contains(&Rule::UnpreparedDissonance));
+  }
+
+  #[test]
+  fn the_state_space_is_small_and_finite() {
+    let (reachable, crude) = automaton::reachable_states();
+    assert!(reachable.len() < crude, "reachability bought nothing");
+    assert!(reachable.len() > 1);
+  }
 }

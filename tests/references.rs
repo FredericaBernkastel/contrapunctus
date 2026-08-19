@@ -202,7 +202,7 @@ fn the_readme_is_numbered_consistently() {
   let hs = headings(&rd);
   let mut bad = vec![];
 
-  let tops: Vec<&Heading> = hs.iter().filter(|h| h.num.as_deref().map_or(false, |n| !n.contains('.'))).collect();
+  let tops: Vec<&Heading> = hs.iter().filter(|h| h.num.as_deref().is_some_and(|n| !n.contains('.'))).collect();
   for (k, h) in tops.iter().enumerate() {
     let want = k.to_string();
     if h.num.as_deref() != Some(want.as_str()) {
@@ -333,7 +333,7 @@ fn every_bare_reference_names_a_section_that_exists() {
   let mut src: Vec<String> = std::fs::read_dir("src")
     .expect("src/")
     .filter_map(|e| e.ok().map(|e| e.path()))
-    .filter(|p| p.extension().map_or(false, |x| x == "rs"))
+    .filter(|p| p.extension().is_some_and(|x| x == "rs"))
     .map(|p| p.to_string_lossy().replace('\\', "/"))
     .collect();
   src.sort();
@@ -350,8 +350,8 @@ fn every_bare_reference_names_a_section_that_exists() {
         continue;
       }
       checked += 1;
-      let known = if r.foreign { rnums.iter().any(|n| *n == r.num) } else { nums.iter().any(|n| *n == r.num) };
-      if !known && !(r.foreign && ric.is_empty()) {
+      let known = if r.foreign { rnums.contains(&r.num) } else { nums.iter().any(|n| *n == r.num) };
+      if !(known || r.foreign && ric.is_empty()) {
         let which = if r.foreign { "ricercar/readme.md" } else { "readme.md" };
         bad.push(format!("{f}:{}: §{} names no section of {which}", line_of(&text, r.at), r.num));
       }
