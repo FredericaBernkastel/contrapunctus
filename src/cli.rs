@@ -21,7 +21,7 @@
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use std::{path::PathBuf, sync::OnceLock};
 
-use crate::automaton::{Rule, CONFIRMED, HARD};
+use contrapunctus::automaton::{Rule, CONFIRMED, CONF_MEL as CM, HARD};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -135,14 +135,14 @@ pub enum TierArg {
   Full,
 }
 
-/// The melodic prohibition added to the confirmed pair — §8.6's `conf+melodic`.
-pub const CONF_MEL: &[Rule] = &[Rule::ParallelPerfect, Rule::DirectPerfectOnDownbeat, Rule::ForbiddenMelodic];
+/// Re-exported from the library, where the tiers live.
+pub use contrapunctus::automaton::CONF_MEL;
 
 impl TierArg {
   pub fn rules(self) -> &'static [Rule] {
     match self {
       TierArg::Confirmed => CONFIRMED,
-      TierArg::ConfMelodic => CONF_MEL,
+      TierArg::ConfMelodic => CM,
       TierArg::Full => HARD,
     }
   }

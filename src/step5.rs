@@ -32,7 +32,8 @@ use crate::{
   yes,
   automaton::{self, Move, Rule, CONFIRMED, HARD, SOFT},
   corpus, harmony, kern,
-  kern::{Note, Piece, Voice, TICKS_PER_QUARTER},
+  midi::write_score,
+  kern::{clip, compass, meter, Piece, Voice, TICKS_PER_QUARTER},
   pitch::{Interval, Pitch},
   realise::{self, Problem},
   answer,
@@ -40,7 +41,7 @@ use crate::{
   episode,
   form,
   key,
-  step7,
+  compose,
   plan, refdata, shape, species, stretto,
 };
 
@@ -50,101 +51,10 @@ fn kern_dir() -> &'static std::path::Path {
   cli::params().kern.as_path()
 }
 
-/// Clip a voice to `[t0, t1)`, keeping notes that sound across the boundary
-/// rather than dropping them. A note that began earlier is *held* into the span,
-/// so it is not an attack there.
-fn clip(v: &Voice, t0: i64, t1: i64) -> Voice {
-  Voice {
-    notes: v
-      .notes
-      .iter()
-      .filter(|n| n.onset < t1 && n.onset + n.dur > t0)
-      .map(|n| {
-        let a = n.onset.max(t0);
-        Note { onset: a - t0, dur: (n.onset + n.dur).min(t1) - a, pitch: n.pitch, attack: n.attack && n.onset >= t0 }
-      })
-      .collect(),
-  }
-}
-
-/// A voice's compass over the whole piece, rounded outwards to whole octaves.
-///
-/// Taken from the piece rather than from the passage on purpose: how high a
-/// given part goes is a fact about the fugue's layout, which a form grammar
-/// would supply, whereas the passage's own range is a fact about the notes being
-/// reconstructed and using it would be circular.
-fn compass(v: &Voice) -> (i16, i16) {
-  let lo = v.notes.iter().map(|n| n.pitch.step).min().unwrap_or(21);
-  let hi = v.notes.iter().map(|n| n.pitch.step).max().unwrap_or(35);
-  (lo, hi)
-}
-
 fn out_dir() -> std::path::PathBuf {
   let d = cli::params().out.clone();
   let _ = std::fs::create_dir_all(&d);
   d
-}
-
-/// The score's own time signature, recovered from the tick counts the reader
-/// took off the `*M` interpretation: a bar of `measure` ticks divided into notes
-/// of `beat` ticks each, with the whole note as the unit.
-fn meter(p: &Piece) -> (u8, u8) {
-  if p.beat <= 0 {
-    return (4, 4);
-  }
-  (((p.measure / p.beat).max(1)) as u8, ((crate::kern::TICKS_PER_WHOLE / p.beat).max(1)) as u8)
-}
-
-/// Write a texture as MIDI **in score order**, top voice first, with each track
-/// named by where it sits and what it is.
-///
-/// Both halves of this matter, and both were wrong first time. The tracks were
-/// emitted in `**kern` spine order — lowest voice first — and named `voice 0`,
-/// `voice 1`, `voice 2` after that index. Two consequences, both reported from a
-/// DAW rather than found here. The top voice of three arrives as *voice 2*,
-/// which reads as reversed to anyone expecting the ground truth's own top-down
-/// `S A T B C`; and `stretto.mid` numbered its entries downward from the top
-/// while `stretto-bach.mid` numbered its voices upward from the bottom, so
-/// `entry 1` and `voice 4` were the same line and nothing said so.
-///
-/// The order is taken from the **mean sounding pitch**, not from the spine
-/// index, so the label is a description of what will be heard rather than a
-/// restatement of an assumption about the file. The range in each name makes the
-/// pairing checkable by eye between two files without playing either.
-fn write_score(
-  path: &std::path::Path,
-  voices: &[Voice],
-  roles: &[String],
-  qpm: u32,
-  sig: (u8, u8),
-) -> std::io::Result<()> {
-  let mean = |v: &Voice| -> f64 {
-    if v.notes.is_empty() {
-      return f64::MIN;
-    }
-    v.notes.iter().map(|n| n.pitch.chroma() as f64).sum::<f64>() / v.notes.len() as f64
-  };
-  let mut order: Vec<usize> = (0..voices.len()).collect();
-  order.sort_by(|&a, &b| mean(&voices[b]).partial_cmp(&mean(&voices[a])).unwrap());
-
-  let n = order.len();
-  let (mut out, mut names) = (Vec::with_capacity(n), Vec::with_capacity(n));
-  for (pos, &v) in order.iter().enumerate() {
-    let where_ = match pos {
-      0 => "top",
-      p if p + 1 == n => "bass",
-      _ => "inner",
-    };
-    let lo = voices[v].notes.iter().map(|x| x.pitch).min_by_key(|p| p.chroma());
-    let hi = voices[v].notes.iter().map(|x| x.pitch).max_by_key(|p| p.chroma());
-    let span = match (lo, hi) {
-      (Some(a), Some(b)) => format!("{}..{}", a.name(), b.name()),
-      _ => "silent".into(),
-    };
-    names.push(format!("{} {where_} {span} {}", pos + 1, roles.get(v).map(|s| s.as_str()).unwrap_or("")));
-    out.push(voices[v].clone());
-  }
-  crate::midi::write(path, &out, &names, qpm, sig)
 }
 
 // --------------------------------------------------------------- the demo ---
@@ -2932,7 +2842,7 @@ pub fn fugue() {
     return println!("  (subject not found)");
   }
 
-  let d = step7::Design {
+  let d = compose::Design {
     subject: subject.clone(),
     voices: 3,
     key: p.key,
@@ -2948,34 +2858,37 @@ pub fn fugue() {
     subject.notes.iter().filter(|n| n.attack).count(),
     spec.len as f64 / p.measure as f64);
 
-  let t0 = std::time::Instant::now();
-  match step7::generate(&d, cli::params().gen_tier.rules(), cli::params().seed) {
+  // The whole driver, through the library's own one-call API — which is also
+  // the check that the API is usable. If reproducing §8.16 needed anything a
+  // caller outside this crate cannot reach, that would show up here as a
+  // reference to a private helper rather than as an opinion.
+  let layout = compose::Layout::default();
+  match compose::fugue(&d, &layout, cli::params().gen_tier.rules(), cli::params().seed) {
     Err(e) => println!("\n   REFUSED: {e}"),
-    Ok((blocks, voices, relaxed)) => {
-      let len = step7::length(&blocks);
-      println!("   derived {} blocks over {} bars, filled in {:.1}s",
-        blocks.len(), len / p.measure, t0.elapsed().as_secs_f64());
+    Ok(o) => {
+      println!("   derived {} blocks over {} bars, filled in {:.1}s", o.blocks.len(), o.bars, o.seconds);
       println!(
         "   {} of {} blocks needed a constraint dropped: {} lost the join, {} the plan too\n",
-        relaxed.blocks, blocks.len(), relaxed.without_prior, relaxed.without_plan
+        o.relaxed.blocks, o.blocks.len(), o.relaxed.without_prior, o.relaxed.without_plan
       );
 
       println!("   bar   block");
-      for b in &blocks {
+      for b in &o.blocks {
         let what = match &b.kind {
-          step7::Kind::Entry { voice, tonal, .. } => {
+          compose::Kind::Entry { voice, tonal, .. } => {
             format!("entry in voice {voice}{}", if *tonal { ", the comes" } else { "" })
           }
-          step7::Kind::Episode { voice, .. } => format!("episode, motive in voice {voice}"),
+          compose::Kind::Episode { voice, .. } => format!("episode, motive in voice {voice}"),
         };
         let names = ["home", "II", "III", "IV", "V", "VI", "VII"];
-        println!("   {:>3}   {what:<34} key {}", b.at / p.measure + 1, names[b.key_of.rem_euclid(7) as usize]);
+        println!(
+          "   {:>3}   {what:<34} key {}",
+          b.at / p.measure + 1,
+          names[b.key_of.rem_euclid(7) as usize]
+        );
       }
 
-      // does the generated fugue parse under the grammar the book was held to?
-      let made = Piece { voices: voices.clone(), ..p.clone() };
-      let gp = step7::as_plan(&d, &blocks, &made);
-      let v = form::parse(&gp);
+      let v = o.verdict;
       println!("\n   and under §8.15's parser, applied to what was just generated:");
       println!("     exposition covers the voices        {}", yes(v.exposition_covers_the_voices));
       println!("     exposition alternates               {}", yes(v.exposition_alternates));
@@ -2987,29 +2900,23 @@ pub fn fugue() {
       );
       println!("                                                carry a link, and this writes one)");
 
-      // and against the rulebook, by the same checker §8.2 uses
-      let mut t = corpus::Tally::default();
-      for a in 0..voices.len() {
-        for b in a + 1..voices.len() {
-          t.merge(&corpus::check_voices(&voices[a], &voices[b], p.measure));
-        }
-      }
-      for v in voices.iter() {
-        corpus::check_melody(v, &mut t);
-      }
-      let hard: usize = HARD.iter().map(|r| t.by_rule.get(r.name()).copied().unwrap_or(0)).sum();
-      let conf: usize = CONFIRMED.iter().map(|r| t.by_rule.get(r.name()).copied().unwrap_or(0)).sum();
-      println!("\n   against the rulebook, by §8.2's own checker: {} slices, {conf} violations on the", t.slices);
+      let conf: usize =
+        CONFIRMED.iter().map(|r| o.tally.by_rule.get(r.name()).copied().unwrap_or(0)).sum();
+      let hard: usize =
+        HARD.iter().map(|r| o.tally.by_rule.get(r.name()).copied().unwrap_or(0)).sum();
+      println!(
+        "\n   against the rulebook, by §8.2's own checker: {} slices, {conf} violations on the",
+        o.tally.slices
+      );
       println!("   confirmed tier and {hard} on the full five. Bach's own rate on the full tier is");
-      println!("   112.3 per thousand slices (§8.12), so {:.1} here is the number to compare.",
-        1000.0 * hard as f64 / t.slices.max(1) as f64);
+      println!(
+        "   112.3 per thousand slices (§8.12), so {:.1} here is the number to compare.",
+        o.per_thousand(HARD)
+      );
 
-      let out = out_dir();
-      let roles: Vec<String> = (0..voices.len())
-        .map(|i| format!("- {}", ["top", "middle", "bass"][i.min(2)]))
-        .collect();
-      let _ = write_score(&out.join("fugue.mid"), &voices, &roles, 76, meter(&p));
-      println!("\n   wrote {}", out.join("fugue.mid").display());
+      let out = out_dir().join("fugue.mid");
+      let _ = compose::write(&o, &d, &out, 76);
+      println!("\n   wrote {}", out.display());
     }
   }
 }

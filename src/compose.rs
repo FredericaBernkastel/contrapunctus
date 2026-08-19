@@ -101,21 +101,61 @@ fn subject_bars(d: &Design) -> i64 {
   ((end + d.measure - 1) / d.measure).max(1) * d.measure
 }
 
-/// Derive a plan: exposition, three middles, a close at home.
+/// The shape of the piece, as a caller may vary it.
 ///
-/// The key plan is a bounded walk on the circle of fifths, which is §2.4's own
-/// phrase and the only part of that production this kept. `0` is home, `4` is the
-/// dominant, `3` the subdominant, `5` the submediant — diatonic steps, so the
-/// mode of each follows from the key signature rather than being chosen.
-pub fn derive(d: &Design) -> Vec<Block> {
+/// Separate from [`Design`] because the two answer different questions.
+/// `Design` is *what the music is made of* — a subject, a key, a number of
+/// voices — and this is *what is done with it*. A user interface wants a
+/// control for each of these; a measurement wants the defaults, which are
+/// §8.15's and §8.13's readings of the book and not anybody's taste.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Layout {
+  /// One middle group per entry, giving its key as **diatonic steps above the
+  /// home tonic** — so `4` is the dominant, `3` the subdominant, `5` the
+  /// submediant, and the mode of each follows from the key signature rather
+  /// than being chosen. §2.4 calls this a bounded walk on the circle of fifths
+  /// and it is the only part of that production this kept.
+  ///
+  /// §8.15 measured a median of **three** middle groups across the book, with a
+  /// range of nought to nine.
+  pub middles: Vec<i16>,
+  /// Bars per episode. §8.13 measured a median of **three**.
+  pub episode_bars: i64,
+  /// Bars of link inside the exposition, and after which entry it falls.
+  ///
+  /// §2.4's `Exposition` forbids this and §8.15 found **82%** of Bach's contain
+  /// one, which is the single largest correction that section made. `None`
+  /// writes the exposition §2.4 describes and 18% of the book has.
+  pub link: Option<(usize, i64)>,
+  /// Whether to close with an episode and a final entry at home. §8.15 found
+  /// every fugue in the book ending at home, 22 of 22.
+  pub close_at_home: bool,
+}
+
+impl Default for Layout {
+  /// The book's own shape, as [§8.15](../readme.md) and [§8.13](../readme.md)
+  /// measured it. Every published figure uses this.
+  fn default() -> Self {
+    Layout {
+      middles: vec![4, 5, 3],
+      episode_bars: 3,
+      // after the second entry, which is where a three-voice exposition takes
+      // one; `voices - 2` in the general case
+      link: Some((1, 1)),
+      close_at_home: true,
+    }
+  }
+}
+
+/// Derive a plan from a design and a layout.
+pub fn derive(d: &Design, l: &Layout) -> Vec<Block> {
   let sl = subject_bars(d);
-  let ep = 3 * d.measure; // §8.13's median episode
+  let ep = l.episode_bars.max(1) * d.measure;
   let mut out = vec![];
   let mut t = 0i64;
 
-  // Exposition: one entry per voice, alternating dux and comes, top voice down.
-  // §8.15 found 82% of real expositions carry a link; one is written here
-  // before the last entry, which is the commonest place for it.
+  // Exposition: one entry per voice, alternating dux and comes, top voice down,
+  // with the link §2.4 forbids and §8.15 found in 82% of the book.
   for i in 0..d.voices {
     let tonal = i % 2 == 1;
     out.push(Block {
@@ -125,14 +165,21 @@ pub fn derive(d: &Design) -> Vec<Block> {
       key_of: if tonal { 4 } else { 0 },
     });
     t += sl;
-    if d.voices >= 3 && i + 2 == d.voices {
-      out.push(Block { at: t, len: d.measure, kind: Kind::Episode { voice: 0, shift: 0 }, key_of: 0 });
-      t += d.measure;
+    if let Some((after, bars)) = l.link {
+      if i == after && bars > 0 && i + 1 < d.voices {
+        let held = held_of(out.last());
+        out.push(Block {
+          at: t,
+          len: bars * d.measure,
+          kind: Kind::Episode { voice: (held + 1) % d.voices, shift: 0 },
+          key_of: 0,
+        });
+        t += bars * d.measure;
+      }
     }
   }
 
-  // Three middles, each an episode and then one entry, at the dominant, the
-  // submediant and the subdominant — a walk out and back.
+  // Each middle is an episode and then an entry.
   //
   // The episode's motive never goes to the voice that just finished an entry.
   // Both lines are *placed*, so nothing in the search stands between the end of
@@ -140,7 +187,7 @@ pub fn derive(d: &Design) -> Vec<Block> {
   // jumps whatever distance separates them — eight steps, in the run that found
   // this. Handing the motive to another voice costs nothing and is what a fugue
   // does anyway.
-  for &key_of in [4i16, 5, 3].iter() {
+  for &key_of in l.middles.iter() {
     let after = held_of(out.last());
     out.push(Block {
       at: t,
@@ -159,22 +206,23 @@ pub fn derive(d: &Design) -> Vec<Block> {
     t += sl;
   }
 
-  // Final: home, and the last entry in the bass.
-  let after = held_of(out.last());
-  out.push(Block {
-    at: t,
-    len: ep,
-    kind: Kind::Episode { voice: (after + 1) % d.voices, shift: 0 },
-    key_of: 0,
-  });
-  t += ep;
-  let after = held_of(out.last());
-  out.push(Block {
-    at: t,
-    len: sl,
-    kind: Kind::Entry { voice: (after + 1) % d.voices, shift: 0, tonal: false },
-    key_of: 0,
-  });
+  if l.close_at_home {
+    let after = held_of(out.last());
+    out.push(Block {
+      at: t,
+      len: ep,
+      kind: Kind::Episode { voice: (after + 1) % d.voices, shift: 0 },
+      key_of: 0,
+    });
+    t += ep;
+    let after = held_of(out.last());
+    out.push(Block {
+      at: t,
+      len: sl,
+      kind: Kind::Entry { voice: (after + 1) % d.voices, shift: 0, tonal: false },
+      key_of: 0,
+    });
+  }
   out
 }
 
@@ -360,10 +408,11 @@ pub struct Relaxed {
 /// uniform draw rather than from a tie-break it measured at 1.3%.
 pub fn generate(
   d: &Design,
+  l: &Layout,
   tier: &[Rule],
   seed: u64,
 ) -> Result<(Vec<Block>, Vec<Voice>, Relaxed), String> {
-  let blocks = derive(d);
+  let blocks = derive(d, l);
   let plan = plan(d, &blocks);
   let mut out: Vec<Voice> = vec![Voice { notes: vec![] }; d.voices];
   let mut prior: Vec<Option<Pitch>> = vec![None; d.voices];
@@ -510,10 +559,120 @@ pub fn as_plan(d: &Design, blocks: &[Block], p: &Piece) -> crate::form::Plan {
   crate::form::plan_of(p, &entries, &[(last, "I:PAC".into())], subject_bars(d))
 }
 
+
+// ------------------------------------------------- everything, in one call ---
+
+/// A finished fugue and every judgement this repository can pass on it.
+///
+/// One struct rather than five return values, because the thing a caller does
+/// after generating is always the same: show the plan, show the notes, and say
+/// what is wrong with them. A user interface wants all of that to repaint one
+/// panel; a driver wants it to print one table. Neither wants to remember to run
+/// the checker afterwards, and a result that can be displayed without being
+/// checked is one that will be.
+pub struct Outcome {
+  /// The derivation, block by block — what a plan view draws.
+  pub blocks: Vec<Block>,
+  /// The notes, one voice per part, in the order [`Design::compass`] gives.
+  pub voices: Vec<Voice>,
+  /// Where the fill had to give something up, and which blocks.
+  pub relaxed: Relaxed,
+  /// Whether the result parses under the grammar it was derived from — §8.15's
+  /// own parser, turned on the generator. It caught this generator dropping
+  /// every entry when the subject had an upbeat.
+  pub verdict: crate::form::Verdict,
+  /// Rule firings over the whole piece, by §8.2's checker, which does not know
+  /// it is looking at generated music.
+  pub tally: crate::corpus::Tally,
+  pub bars: i64,
+  /// Wall clock for the fill, which a caller iterating wants to see.
+  pub seconds: f64,
+}
+
+impl Outcome {
+  /// Firings of the rules in `tier`, per thousand slices — the figure §8.16
+  /// compares against Bach's 112.3 on the full five.
+  pub fn per_thousand(&self, tier: &[Rule]) -> f64 {
+    let n: usize = tier.iter().map(|r| self.tally.by_rule.get(r.name()).copied().unwrap_or(0)).sum();
+    1000.0 * n as f64 / self.tally.slices.max(1) as f64
+  }
+  /// Whether the piece breaks any rule of `tier`.
+  pub fn clean_on(&self, tier: &[Rule]) -> bool {
+    tier.iter().all(|r| self.tally.by_rule.get(r.name()).copied().unwrap_or(0) == 0)
+  }
+}
+
+/// Compose, and judge what was composed.
+///
+/// The call a caller outside this crate should reach for. [`generate`] returns
+/// the notes; this adds every check §8 can make and the timings, so that a
+/// result cannot be shown without also being able to say what is wrong with it.
+///
+/// `tier` is what the **search** must obey. [§8.16](../readme.md) is the section
+/// arguing that this is not the tier [§8.2](../readme.md) endorses for
+/// *describing* the repertoire: a generator on `CONFIRMED + melodic` writes
+/// dissonance at 366 per thousand and a listener calls it cacophony, and one on
+/// the full five writes 69, below Bach's own 112. A rule can be wrong as a
+/// description and right as a constraint.
+pub fn fugue(d: &Design, l: &Layout, tier: &[Rule], seed: u64) -> Result<Outcome, String> {
+  let t0 = std::time::Instant::now();
+  let (blocks, voices, relaxed) = generate(d, l, tier, seed)?;
+  let seconds = t0.elapsed().as_secs_f64();
+
+  let piece = Piece {
+    id: "generated".into(),
+    voices: voices.clone(),
+    measure: d.measure,
+    beat: d.beat,
+    key: d.key,
+    tonic: None,
+    polyphonic_instants: 0,
+  };
+  let verdict = crate::form::parse(&as_plan(d, &blocks, &piece));
+
+  let mut tally = crate::corpus::Tally::default();
+  for a in 0..voices.len() {
+    for b in a + 1..voices.len() {
+      tally.merge(&crate::corpus::check_voices(&voices[a], &voices[b], d.measure));
+    }
+  }
+  for v in &voices {
+    crate::corpus::check_melody(v, &mut tally);
+  }
+
+  Ok(Outcome {
+    bars: length(&blocks) / d.measure.max(1),
+    blocks,
+    voices,
+    relaxed,
+    verdict,
+    tally,
+    seconds,
+  })
+}
+
+/// Write an outcome as MIDI, tracks top voice first and named by their role.
+pub fn write(o: &Outcome, d: &Design, path: &std::path::Path, qpm: u32) -> std::io::Result<()> {
+  let roles: Vec<String> = (0..o.voices.len())
+    .map(|v| {
+      let entries = o
+        .blocks
+        .iter()
+        .filter(|b| matches!(&b.kind, Kind::Entry { voice, .. } if *voice == v))
+        .count();
+      format!("- {entries} subject entries")
+    })
+    .collect();
+  crate::midi::write_score(path, &o.voices, &roles, qpm, crate::kern::meter_of(d.measure, d.beat))
+}
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::{automaton::CONFIRMED, cli::CONF_MEL, corpus, kern::TICKS_PER_QUARTER as Q};
+  use crate::{
+    automaton::{CONFIRMED, CONF_MEL},
+    corpus,
+    kern::TICKS_PER_QUARTER as Q,
+  };
 
   /// A subject of one bar in C major, three voices well apart — and beginning
   /// on an **upbeat**, like BWV 847's, because the upbeat is what made the whole
@@ -556,7 +715,7 @@ mod tests {
   #[test]
   fn the_derivation_has_the_shape_the_book_has() {
     let d = design();
-    let b = derive(&d);
+    let b = derive(&d, &Layout::default());
     let entries = b.iter().filter(|x| matches!(x.kind, Kind::Entry { .. })).count();
     let episodes = b.iter().filter(|x| matches!(x.kind, Kind::Episode { .. })).count();
     assert_eq!(entries, 3 + 3 + 1, "three in the exposition, three middles, one final");
@@ -588,7 +747,7 @@ mod tests {
   #[test]
   fn what_is_generated_parses_under_the_grammar_it_came_from() {
     let d = design();
-    let (blocks, voices, _) = generate(&d, CONFIRMED, 0x5EED).expect("a fugue");
+    let (blocks, voices, _) = generate(&d, &Layout::default(), CONFIRMED, 0x5EED).expect("a fugue");
     let piece = piece_of(&d, &voices);
     let v = crate::form::parse(&as_plan(&d, &blocks, &piece));
     assert!(v.exposition_covers_the_voices, "{v:?}");
@@ -638,7 +797,7 @@ mod tests {
   #[test]
   fn no_block_contains_counterpoint_the_checker_flags() {
     let d = design();
-    let (blocks, voices, _) = generate(&d, CONFIRMED, 0x5EED).expect("a fugue");
+    let (blocks, voices, _) = generate(&d, &Layout::default(), CONFIRMED, 0x5EED).expect("a fugue");
     assert!(
       flagged(&voices, d.measure, CONFIRMED) < 5,
       "the seams should cost a violation or two, not a piece full of them"
@@ -669,7 +828,7 @@ mod tests {
   #[test]
   fn the_texture_never_falls_silent() {
     let d = design();
-    let (blocks, voices, _) = generate(&d, CONF_MEL, 0x5EED).expect("a fugue");
+    let (blocks, voices, _) = generate(&d, &Layout::default(), CONF_MEL, 0x5EED).expect("a fugue");
     let end = length(&blocks);
     let step = d.beat / 4;
     let mut worst = 0i64;
@@ -695,7 +854,7 @@ mod tests {
   #[test]
   fn every_voice_sounds_in_every_block() {
     let d = design();
-    let (blocks, voices, _) = generate(&d, CONFIRMED, 0x5EED).expect("a fugue");
+    let (blocks, voices, _) = generate(&d, &Layout::default(), CONFIRMED, 0x5EED).expect("a fugue");
     for b in &blocks {
       for (i, v) in voices.iter().enumerate() {
         assert!(
@@ -718,7 +877,7 @@ mod tests {
   #[test]
   fn the_join_keeps_the_free_voices_from_leaping_between_blocks() {
     let d = design();
-    let (blocks, voices, relaxed) = generate(&d, CONF_MEL, 0x5EED).expect("a fugue");
+    let (blocks, voices, relaxed) = generate(&d, &Layout::default(), CONF_MEL, 0x5EED).expect("a fugue");
     assert!(relaxed.without_plan == 0, "the plan should not have needed dropping here");
     assert!(relaxed.cold.len() < blocks.len() / 2, "most joins should hold");
     for (bi, b) in blocks.iter().enumerate().skip(1) {

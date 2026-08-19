@@ -14,6 +14,18 @@ version = "0.1.0"
 edition = "2021"
 publish = false
 
+# The model and the generator, for anything built on top — a user interface,
+# another program. `readme.md` §10.6 says what is in it.
+[lib]
+name = "contrapunctus"
+path = "src/lib.rs"
+
+# The measurements. Every figure in §8 comes out of this, and `list` maps each
+# section to the command that produces it.
+[[bin]]
+name = "contrapunctus"
+path = "src/main.rs"
+
 [dependencies]
 clap = { version = "4.6", features = ["derive"] }
 

@@ -301,3 +301,56 @@ pub fn slices(a: &Voice, b: &Voice) -> Vec<i64> {
   t.dedup();
   t
 }
+
+// ---------------------------------------------- operations on a texture ---
+//
+// Lifted here from step 5's drivers when the project became a library: a
+// caller that wants a subject out of a score needs `clip`, and one that wants
+// a voice's range needs `compass`, and neither is a fact about any
+// measurement.
+
+/// Clip a voice to `[t0, t1)`, keeping notes that sound across the boundary
+/// rather than dropping them. A note that began earlier is *held* into the span,
+/// so it is not an attack there.
+pub fn clip(v: &Voice, t0: i64, t1: i64) -> Voice {
+  Voice {
+    notes: v
+      .notes
+      .iter()
+      .filter(|n| n.onset < t1 && n.onset + n.dur > t0)
+      .map(|n| {
+        let a = n.onset.max(t0);
+        Note { onset: a - t0, dur: (n.onset + n.dur).min(t1) - a, pitch: n.pitch, attack: n.attack && n.onset >= t0 }
+      })
+      .collect(),
+  }
+}
+
+/// A voice's compass over the whole piece, rounded outwards to whole octaves.
+///
+/// Taken from the piece rather than from the passage on purpose: how high a
+/// given part goes is a fact about the fugue's layout, which a form grammar
+/// would supply, whereas the passage's own range is a fact about the notes being
+/// reconstructed and using it would be circular.
+pub fn compass(v: &Voice) -> (i16, i16) {
+  let lo = v.notes.iter().map(|n| n.pitch.step).min().unwrap_or(21);
+  let hi = v.notes.iter().map(|n| n.pitch.step).max().unwrap_or(35);
+  (lo, hi)
+}
+
+/// The score's own time signature, recovered from the tick counts the reader
+/// took off the `*M` interpretation: a bar of `measure` ticks divided into notes
+/// of `beat` ticks each, with the whole note as the unit.
+pub fn meter(p: &Piece) -> (u8, u8) {
+  meter_of(p.measure, p.beat)
+}
+
+/// The same from the two tick counts alone, for music that has no `Piece` yet
+/// because it has not been generated.
+pub fn meter_of(measure: i64, beat: i64) -> (u8, u8) {
+  if beat <= 0 {
+    return (4, 4);
+  }
+  (((measure / beat).max(1)) as u8, ((TICKS_PER_WHOLE / beat).max(1)) as u8)
+}
+

@@ -58,6 +58,7 @@ are built and measured — [§8](#8-what-is-built-and-what-it-measures). Realisa
   - [10.3 Parameters](#103-parameters)
   - [10.4 How the samples were taken](#104-how-the-samples-were-taken)
   - [10.5 What is not reproducible from this repository](#105-what-is-not-reproducible-from-this-repository)
+  - [10.6 Using it as a library](#106-using-it-as-a-library)
 ---
 
 ## Abstract
@@ -2044,7 +2045,7 @@ book by duration**, the object to build is now clear and it is not the one §2.4
 
 ### 8.16 A fugue, from a subject
 
-`src/step7.rs`, `out/fugue.mid`. Everything before this filled voices **against music that already existed**.
+`src/compose.rs`, `out/fugue.mid`. Everything before this filled voices **against music that already existed**.
 [§8.6](#86-realisation-and-the-first-notes) held one of Bach's entries and reconstructed the others;
 [§8.3](#83-the-clique-test) placed entries into a span Bach had written. This emits the span too, so for the first
 time nothing in the output is Bach's except the subject.
@@ -2066,18 +2067,24 @@ close at home. From BWV 847's subject, in three voices:
 
 **Twelve blocks, 27 bars, filled in 0.5 seconds.** Read back through §8.15's own parser it covers the voices,
 alternates, has a middle and ends at home — and fails `exposition runs unbroken`, which is the link, written on
-purpose. Against §8.2's checker: **772 slices, zero violations on the confirmed tier**, and 57 on the full five —
-`73.8` per thousand against Bach's `112.3`
+purpose. Against §8.2's checker: **785 slices, zero violations on the confirmed tier**, and 55 on the full five —
+`70.1` per thousand against Bach's `112.3`
 ([§8.12](#812-the-fourth-and-the-scope-a-dissonance-is-judged-in)).
 
-**That is the third version, and each of the first two was corrected by a listener rather than by a test.** The two
-subsections below are about how, because in both cases the answer was worth more than the fugue.
+**That is the fourth version, and the first two corrections came from a listener rather than from a test.** The two
+subsections below are about how, because in both cases the answer was worth more than the fugue. The fourth
+correction came from **clippy**, which had never been run: the episode plan read
+`quality: if deg == 4 { 0 } else { 0 }`, an intention written down and not finished, and giving the local dominant
+its seventh took `73.8` to `70.1`. Splitting the repository into a library and a binary
+([§10.6](#106-using-it-as-a-library)) moved it once more, by one bar of link — the exposition's link now goes to a
+voice chosen by the same rule as every other block rather than to voice 0 by hand.
 
 | | dissonance /1000 | confirmed-tier violations | fill |
 |---|---:|---:|---:|
 | first — `conf+melodic` | 366.2 | 0 | 3.9s |
 | second — the full tier | 90.8 | 1 | 0.8s |
-| **third — continuous voices** | **73.8** | **0** | **0.5s** |
+| third — continuous voices | 73.8 | 0 | 0.5s |
+| **fourth — a seventh on the dominant, and the library split** | **70.1** | **0** | **0.6s** |
 
 #### The second listening test, and a rule that is wrong as a description and right as a constraint
 
@@ -2387,7 +2394,7 @@ or swept.
 ```
 rustc 1.96.1   cargo 1.96.1     # one dependency: clap, for the command line
 git clone --recurse-submodules <this repo>
-cargo test --release            # 42 unit tests, 5 reference checks
+cargo test --release            # 64 library tests, 10 in the binary, 5 reference checks
 cargo run --release -- list     # every command and the section it produces
 cargo run --release -- --help   # that, plus §10.3's parameters as flags
 cargo run --release -- realise  # writes out/*.mid
@@ -2538,3 +2545,87 @@ benchmarks.
   out if they are downloaded into that directory.
 - **The Shostakovich annotations**, which have no scores here.
 - **The functional-harmony layer**, which compiles but is not exercised by any reported number.
+
+### 10.6 Using it as a library
+
+The repository is a **library and a binary**. The library is the model and the
+generator; the binary is the measurement of them, and every figure in
+[§8](#8-what-is-built-and-what-it-measures) comes out of it. The line falls where
+it does because of one test: **a caller who wants to compose a fugue needs the
+first and none of the second.**
+
+```
+src/lib.rs        the model and the generator — 17 modules
+src/main.rs       the command line and the drivers, §10.2's table
+src/cli.rs        §10.3's parameters as flags
+src/step5.rs      the drivers for §8.6 onwards
+src/experiments.rs  the five that resolved §8.2's deadlock
+```
+
+Everything else in `src/` is library. `cargo test` runs both halves separately —
+**64 tests in the library, 10 in the binary, 5 reference checks** — and
+`cargo build --lib` builds the model with no knowledge that a command line
+exists.
+
+#### Composing
+
+```rust
+use contrapunctus::{automaton::HARD, compose, kern};
+
+let piece = kern::read(Path::new("corpus/bach-wtc-fugues/kern/wtc1f02.krn"))?;
+let design = compose::Design {
+  subject: kern::clip(&piece.voices[1], 0, 2 * piece.measure),
+  voices: 3,
+  key: piece.key,
+  tonic: 0,
+  measure: piece.measure,
+  beat: piece.beat,
+  compass: vec![(33, 45), (28, 40), (21, 33)],
+};
+
+let out = compose::fugue(&design, &compose::Layout::default(), HARD, 0x5EED)?;
+compose::write(&out, &design, Path::new("fugue.mid"), 76)?;
+```
+
+**[`Design`] is what the music is made of and [`Layout`] is what is done with
+it**, and the split is the one a user interface wants: a control per field of
+`Layout` — how many middle entries and in which keys, how long an episode runs,
+whether the exposition takes a link, whether it closes at home — over a `Design`
+that changes rarely. `Layout::default()` is the book's own shape as
+[§8.15](#815-does-the-form-grammar-derive-the-book) and
+[§8.13](#813-are-episodes-sequences-and-how-much-of-a-fugue-is-episode) measured
+it, and is what every published figure uses.
+
+**`Outcome` carries the notes and every judgement this document can pass on
+them** — the derivation block by block, whether it parses under §8.15's own
+grammar, the rule firings by §8.2's checker, which blocks had a constraint
+dropped, and the wall clock. One struct rather than five return values, because
+a result that *can* be displayed without being checked is one that will be.
+
+| you want | you call |
+|---|---|
+| a whole fugue, checked | `compose::fugue` |
+| the derivation only, to draw a plan | `compose::derive` |
+| the notes only | `compose::generate` |
+| a fill against voices you already have | `realise::fill` |
+| a subject out of a score | `kern::read`, `kern::clip` |
+| the annotated entries and cadences | `refdata::read` |
+| what a texture breaks | `corpus::check_voices`, `corpus::check_melody` |
+| a chord path, or a key path | `harmony::analyse_viterbi`, `key::analyse` |
+| Marpurg's answer | `answer::admissible` |
+| MIDI out, tracks named and ordered | `midi::write_score` |
+
+#### Two things a caller should know before trusting it
+
+**The tier to generate against is not the tier this document endorses.**
+[§8.2](#82-the-rulebook-stratified-by-two-corpora) stratified the two dissonance
+rules out because they misdescribe Bach; a generator that omits them writes
+cacophony at 366 violations per thousand and one that enforces them writes 70,
+below Bach's own 112. Pass `HARD`.
+[§8.16](#816-a-fugue-from-a-subject) is the argument.
+
+**Three voices.** [§2.7](#27-where-a-solver-takes-over-from-the-dp) predicted the
+search's wall at four free voices and [§8.6](#86-realisation-and-the-first-notes)
+measured it at two, so `compose::fugue` refuses a four-voice design rather than
+beaming. Half the Well-Tempered Clavier is out of reach until a solver replaces
+the DP, and the refusal says so.

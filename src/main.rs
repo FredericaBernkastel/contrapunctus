@@ -7,26 +7,13 @@
 //! tree and the parameters; §10.2 of the readme maps each section to its command
 //! and `list` prints the same map from the code.
 
-mod answer;
-mod automaton;
+// The library is a separate crate now; these three are the measurement half and
+// stay with the binary. §10.6 says why the line falls where it does.
+use contrapunctus::*;
+
 mod cli;
-mod corpus;
-mod episode;
 mod experiments;
-mod form;
-mod harmony;
-mod midi;
-mod plan;
-mod realise;
-mod refdata;
-mod shape;
-mod species;
 mod step5;
-mod step7;
-mod stretto;
-mod kern;
-mod key;
-mod pitch;
 
 use automaton::{Move, Rule, State, Sym, Vert};
 use pitch::{parse_kern_pitch, Interval};

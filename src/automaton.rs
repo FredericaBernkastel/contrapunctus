@@ -174,6 +174,15 @@ pub const HARD: &[Rule] = &[
 /// what is in question.
 pub const CONFIRMED: &[Rule] = &[Rule::ParallelPerfect, Rule::DirectPerfectOnDownbeat];
 
+/// The confirmed pair plus the melodic prohibition — §8.6 onwards writes
+/// against this, and §8.16 argues that a *generator* should not.
+///
+/// It lived in the command line until the library was split out, which was the
+/// wrong home for it by one obvious test: a caller composing a fugue needs this
+/// tier and does not need a command line.
+pub const CONF_MEL: &[Rule] =
+  &[Rule::ParallelPerfect, Rule::DirectPerfectOnDownbeat, Rule::ForbiddenMelodic];
+
 pub const SOFT: &[Rule] = &[
   Rule::DirectToPerfect,
   Rule::PerfectConsonance,

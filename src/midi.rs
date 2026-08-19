@@ -166,6 +166,58 @@ pub fn write(
   std::fs::write(path, out)
 }
 
+/// Write a texture as MIDI **in score order**, top voice first, with each track
+/// named by where it sits and what it is.
+///
+/// Both halves of this matter, and both were wrong first time. The tracks were
+/// emitted in `**kern` spine order — lowest voice first — and named `voice 0`,
+/// `voice 1`, `voice 2` after that index. Two consequences, both reported from a
+/// DAW rather than found here. The top voice of three arrives as *voice 2*,
+/// which reads as reversed to anyone expecting the ground truth's own top-down
+/// `S A T B C`; and `stretto.mid` numbered its entries downward from the top
+/// while `stretto-bach.mid` numbered its voices upward from the bottom, so
+/// `entry 1` and `voice 4` were the same line and nothing said so.
+///
+/// The order is taken from the **mean sounding pitch**, not from the spine
+/// index, so the label is a description of what will be heard rather than a
+/// restatement of an assumption about the file. The range in each name makes the
+/// pairing checkable by eye between two files without playing either.
+pub fn write_score(
+  path: &std::path::Path,
+  voices: &[Voice],
+  roles: &[String],
+  qpm: u32,
+  sig: (u8, u8),
+) -> std::io::Result<()> {
+  let mean = |v: &Voice| -> f64 {
+    if v.notes.is_empty() {
+      return f64::MIN;
+    }
+    v.notes.iter().map(|n| n.pitch.chroma() as f64).sum::<f64>() / v.notes.len() as f64
+  };
+  let mut order: Vec<usize> = (0..voices.len()).collect();
+  order.sort_by(|&a, &b| mean(&voices[b]).partial_cmp(&mean(&voices[a])).unwrap());
+
+  let n = order.len();
+  let (mut out, mut names) = (Vec::with_capacity(n), Vec::with_capacity(n));
+  for (pos, &v) in order.iter().enumerate() {
+    let where_ = match pos {
+      0 => "top",
+      p if p + 1 == n => "bass",
+      _ => "inner",
+    };
+    let lo = voices[v].notes.iter().map(|x| x.pitch).min_by_key(|p| p.chroma());
+    let hi = voices[v].notes.iter().map(|x| x.pitch).max_by_key(|p| p.chroma());
+    let span = match (lo, hi) {
+      (Some(a), Some(b)) => format!("{}..{}", a.name(), b.name()),
+      _ => "silent".into(),
+    };
+    names.push(format!("{} {where_} {span} {}", pos + 1, roles.get(v).map(|s| s.as_str()).unwrap_or("")));
+    out.push(voices[v].clone());
+  }
+  write(path, &out, &names, qpm, sig)
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
