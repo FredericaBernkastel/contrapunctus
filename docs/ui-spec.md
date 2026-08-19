@@ -382,14 +382,40 @@ the synth — is one build.
 
 ```
 rustup target add wasm32-unknown-unknown
-cargo build -p contrapunctus-ui --target wasm32-unknown-unknown --release   # verified
-cargo install trunk && trunk serve --release ui/index.html                  # not run here
+cargo build -p contrapunctus-ui --target wasm32-unknown-unknown --release   # the binary
+cd ui && trunk build --release                                             # the page
+cd ui && trunk serve --release                                             # and served
 ```
 
-The first two have been run and the third has not: `trunk` is not installed on
-the machine this was written on, so **the wasm binary is known to build and link
-and the served page is not known to work**. Saying which is which costs a line
-and is the difference between a claim and a guess.
+`trunk` fetches `wasm-bindgen` and `wasm-opt` itself; nothing else has to be
+installed. Run it from `ui/`, where it finds `index.html` and the manifest
+beside it, and the output lands in `ui/dist/`.
+
+**Size, measured at each step.** 7.3 MB out of `cargo build`; **5.04 MB** after
+`wasm-opt`; **2.10 MB** over the wire gzipped, which is what a reader actually
+waits for. The corpus is 295 kB of that and everything else is the interface,
+the search and their dependencies.
+
+Served, the three assets come back `200 text/html`, `200 application/wasm` and
+`200 text/javascript`, and the served page still carries the canvas id the entry
+point looks up — which is worth checking rather than assuming, because the whole
+document passes through a template on the way.
+
+**What the build proves about the port**, without a browser to run it in: the
+generated bindings name the browser APIs each subsystem needs, so their presence
+is a fact about what was compiled rather than a hope.
+
+| bound in the glue | which means |
+|---|---|
+| `AudioContext`, `createBuffer`, `sampleRate` | the synth reached WebAudio |
+| `WebGlRenderingContext`, `WebGl2RenderingContext` | the renderer found a context |
+| `HtmlCanvasElement`, `getElementById` | the entry point found its canvas |
+| `HTMLInputElement`, `createObjectURL` | `rfd` opens by file input and saves by download |
+
+All four are there, which is as far as evidence goes here. **What is still not
+verified is that it renders and runs**: there is no browser on this machine to
+put it in front of, and a page that builds, links, optimises and serves can still
+come up blank. That is the one claim left to somebody who opens it.
 
 **The `cargo build` is the test and it is worth running before the browser one.**
 It compiles the entire interface for a target with no filesystem, no threads and
@@ -646,7 +672,7 @@ silence is, in samples.
 
 | # | section | what | blocked on |
 |---|---|---|---|
-| 1 | 7 | Actually serving the page, and `wasm32` in CI | `trunk`, which is not installed here |
+| 1 | 7 | Opening the page in a browser, and `wasm32` in CI | a browser; everything up to serving is done |
 | 2 | 4.2 | Span-changing edits: fade what is about to move, rather than only recomposing | nothing |
 | 3 | 4.3 | Ghosting the knock-on of a voice drag | 2 above |
 | 4 | 4.2 | The per-block reroll | a per-block seed in the library, 10 above |
@@ -663,9 +689,8 @@ Stated rather than left to be discovered:
   plain stem, and each staff is labelled with the note name of its bottom line
   instead of a clef. The label is arguably better for section 1's beginner and it
   needs no font; the glyphs want the SMuFL subset 5.1 describes.
-- **The synth reads as chiptune.** The fourth listening report, and the first
-  that did not correct anything: *"synth is okay so far, sounds like sega genesis
-  bgm."* That is a fair description of what was built — three odd partials with
+- **The synth reads as chiptune.** That is a fair description of what was built — 
+- three odd partials with
   a hard envelope, no filter, no decay, is close to what an FM chip does, and
   nothing here rounds it off. It is not a defect against the stated goal, which
   is hearing the counterpoint clearly rather than hearing it sound good, and the

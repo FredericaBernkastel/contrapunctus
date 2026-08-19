@@ -8,3 +8,7 @@ out/
 # than licensed like the five PDFs beside it, so there is nothing to keep here
 # that a link cannot supply. Readme §7 and §10.5 give the Internet Archive item.
 literature/Marpurg, Friedrich Wilhelm - Abhandlung von der Fuge (1753)/
+
+# The web build. `cd ui && trunk build --release` regenerates it, and the wasm
+# in it is 5 MB — nothing here is an input to anything.
+ui/dist/
