@@ -22,7 +22,6 @@ pub struct Subject {
   /// How many voices Bach wrote it in — not how many we will.
   pub scored_for: usize,
   pub notes: Voice,
-  pub bars: f64,
   pub key: [i8; 7],
   pub tonic: usize,
   pub measure: i64,
@@ -103,7 +102,6 @@ fn subject_of(
     id: p.id.clone(),
     name: format!("No. {} in {}, BWV {}", n + 1, key_name(tonic, &p.key, minor), 845 + n + 1),
     scored_for: p.voices.len(),
-    bars: spec.len as f64 / p.measure as f64,
     notes,
     key: p.key,
     tonic,

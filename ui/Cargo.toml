@@ -20,3 +20,15 @@ path = "src/main.rs"
 contrapunctus = { path = "..", features = ["serde", "embedded-corpus"] }
 eframe = { version = "0.36", default-features = false, features = ["default_fonts", "glow"] }
 egui = "0.36"
+# File dialogs. `rfd`'s async API is the one that exists on both targets — a
+# native dialog on the desktop, a file input and a download in a browser — so
+# spec 7.2 says always to use it and never the blocking form.
+rfd = { version = "0.17", default-features = false, features = ["xdg-portal"] }
+
+# A future has to be driven by something, and that something is the one part of
+# this crate that cannot be written once: a browser has no threads.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+pollster = "0.4"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen-futures = "0.4"

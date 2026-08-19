@@ -163,8 +163,23 @@ nothing else is a parameter.
 **Two classes of edit, and the interface must not blur them.**
 
 *Span-preserving* — a key change, a voice change, a per-block reroll. The piece
-stays the same length, `compose::refill` rewrites that block alone, and
-**every other note stays exactly where it was**. Sub-100 ms; repaint immediately.
+stays the same length, `compose::refill_span` rewrites the blocks that edit owns,
+and **every other note stays exactly where it was**. Sub-100 ms; repaint
+immediately.
+
+Two things learned by building it. **One edit is not one block:** changing where
+a return goes changes the key of the episode that travels to it *and* the entry
+that arrives, so a middle owns two blocks and they have to be refilled as a span
+— refilled one at a time, the seam between them is pinned to notes chosen for the
+key being edited away.
+
+And **about a quarter of key changes are not local at all**: 110 of 144 tried
+succeeded, and the rest could not reach the pinned ending from where the piece
+happened to be. That is not a failure — the edit is possible, it is simply not
+local — so the interface recomposes and *says which of the two happened*. The
+promise is the whole value of the fast path, and an interface that quietly
+recomposed while claiming locality would be worth less than one that never
+claimed it.
 
 *Span-changing* — episode length, adding or removing a middle, toggling the
 close. Everything after moves in time. `compose::refill` refuses these by
@@ -443,7 +458,8 @@ Ordered by whether an interface can start without it.
 |---|---|---|---|
 | 1 | Ghosting for a voice drag | 4.3 above, so the knock-on is visible | interface only |
 | 2 | A resumable `generate` | 7.3, so a fill can run a block per frame instead of blocking one | small |
-| 3 | A CDCL solver | four voices, and five | §9 |
+| 3 | A per-block seed | 4.2’s double-click reroll. One `seed` is stored, so a rerolled block is not reproducible from a settings file and the guarantee in 8 would break | format change |
+| 4 | A CDCL solver | four voices, and five | §9 |
 
 Everything else on this list is now done:
 
@@ -522,8 +538,12 @@ Status is one of **done**, **partial** — usable and honestly incomplete — or
 | 7.1 | The corpus with no filesystem: all **24** subjects from `embedded::FUGUES` | `every_offered_subject_composes` |
 | 9 | Four voices present and disabled, with the reason on hover | by inspection |
 | 11 | Every number with its yardstick; the reroll framed as exploration | by inspection |
+| 8 | Save and load, as JSON, with the fingerprint checked and a banner when it does not match | `Fidelity` is shown, not swallowed |
+| 6.4 | Export MIDI, through `compose::encode` | by inspection |
+| 4.2 | The plan strip's key edit — click a middle, choose where it goes | `a_local_key_change_leaves_every_other_note_alone` |
+| 7.2 | One code path for files: `rfd`'s async API, on both targets | `ui/src/files.rs` mentions no `Path` |
 
-Three tests, all headless, in `ui/src/app.rs`. The interesting one is
+Five tests, all headless, in `ui/src/app.rs`. The interesting one is
 `every_offered_subject_composes`: each of the 24 subjects is composed on the
 shortest layout that is still a fugue, because a picker whose entries have not
 been tried is a picker that wastes the one click a beginner is sure to make. It
@@ -536,16 +556,15 @@ section numbers this crate's doc comments cite are checked like every other.
 
 | # | section | what | blocked on |
 |---|---|---|---|
-| 1 | 8 | Save and load, with the fingerprint check | nothing — `settings::Settings` is written |
-| 2 | 6.4 | Export MIDI, through `midi::encode_score` | nothing |
-| 3 | 4.2 | The plan strip's span-preserving edits, through `compose::refill` | nothing |
-| 4 | 6.1–6.2 | The scheduler and the built-in synth | a `cpal` dependency |
-| 5 | 4.1, 5.2 | The playhead, shared by both views | 4 above — the sample clock is the position |
-| 6 | 7 | The web shell, and `wasm32` in CI | nothing; the entry point is a stub today |
-| 7 | 4.2 | Span-changing edits: recompose, and fade what is about to move | nothing |
-| 8 | 4.3 | Ghosting the knock-on of a voice drag | 7 above |
-| 9 | 6.3 | System MIDI out, behind a feature | a `midir` dependency |
-| 10 | 3.2 | Importing a subject from a file | 6 above, for the async dialog |
+| 1 | 6.1–6.2 | The scheduler and the built-in synth | a `cpal` dependency |
+| 2 | 4.1, 5.2 | The playhead, shared by both views | 1 above — the sample clock is the position |
+| 3 | 7 | The web shell, and `wasm32` in CI | nothing; the entry point is a stub today |
+| 4 | 4.2 | Span-changing edits: fade what is about to move, rather than only recomposing | nothing |
+| 5 | 4.3 | Ghosting the knock-on of a voice drag | 4 above |
+| 6 | 3.2 | Importing a subject from a file | nothing — the dialog is written |
+| 7 | 4.2 | The per-block reroll | a per-block seed in the library, 10 above |
+| 8 | 6.3 | System MIDI out, behind a feature | a `midir` dependency |
+| 9 | 3.3 | The compass as draggable ranges on a staff | nothing |
 
 ### 12.3 Known gaps in what is built
 
@@ -563,4 +582,10 @@ Stated rather than left to be discovered:
   locked to it. Both views scale to fit instead, which is right for 27 bars and
   wrong for 60.
 - **Nothing is persisted between runs.** 8.4's interface state wants `eframe`'s
-  persistence feature, which is not enabled.
+  persistence feature, which is not enabled. The *music* is persisted, through 8.
+- **Only one plan-strip gesture is wired** — the key of a return. The rest of
+  4.2's table is items 4 to 7 above, and the two classes of edit are kept apart
+  in the code rather than in a comment.
+- **A key change that is not local recomposes**, which is right, but the blocks
+  about to change are not faded while it happens. It is fast enough at three
+  voices that nothing is seen; at five it would be.

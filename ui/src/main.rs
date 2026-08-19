@@ -10,9 +10,11 @@
 
 mod app;
 mod catalog;
+mod files;
 mod report;
 mod score;
 mod strip;
+mod task;
 mod theme;
 
 #[cfg(not(target_arch = "wasm32"))]

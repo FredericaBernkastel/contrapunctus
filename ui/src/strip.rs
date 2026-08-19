@@ -6,11 +6,14 @@
 //! and that is the one judgement someone with no theory can make and be right
 //! about.
 //!
-//! Drawing only, so far. Every gesture in spec 4.2 maps to a `Layout` field and
-//! none of them is wired up yet; the roadmap says so rather than this pretending
-//! otherwise.
+//! Editing is spec 4.2, and one gesture of it is wired: clicking a middle's
+//! block chooses its key. That edit is **span-preserving** — the piece keeps its
+//! length, and `compose::refill` rewrites the two blocks that middle owns while
+//! every other note stays exactly where it was. The gestures that change the
+//! span are a different class and the roadmap keeps them apart, because an
+//! interface that blurred the two would promise locality it cannot deliver.
 
-use contrapunctus::compose::{Block, Kind, Outcome};
+use contrapunctus::compose::{Block, Kind, Origin, Outcome};
 use egui::{Align2, Color32, CornerRadius, FontId, Pos2, Rect, Response, Sense, Stroke, StrokeKind, Ui, Vec2};
 
 use crate::catalog::degree_name;
@@ -26,11 +29,24 @@ pub fn height(voices: usize) -> f32 {
   RULER + voices as f32 * (LANE + GAP) + RIBBON + 6.0
 }
 
-/// Draw the strip. Returns the response, so a caller can hang a playhead or a
-/// scroll on it.
-pub fn show(ui: &mut Ui, out: &Outcome, voices: usize, measure: i64) -> Response {
+/// What a gesture on the strip asks for. Every variant is a `Layout` field,
+/// because nothing else is a parameter — spec 4.2.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Edit {
+  /// `middles[k]` becomes this degree. Span-preserving.
+  Key(usize, i16),
+}
+
+/// Draw the strip, and report any edit the user asked for.
+pub fn show(
+  ui: &mut Ui,
+  out: &Outcome,
+  voices: usize,
+  measure: i64,
+  origins: &[Origin],
+) -> (Response, Option<Edit>) {
   let want = Vec2::new(ui.available_width(), height(voices));
-  let (resp, p) = ui.allocate_painter(want, Sense::click_and_drag());
+  let (resp, p) = ui.allocate_painter(want, Sense::hover());
   let area = resp.rect;
   let dark = ui.visuals().dark_mode;
   let faint = ui.visuals().weak_text_color();
@@ -57,6 +73,7 @@ pub fn show(ui: &mut Ui, out: &Outcome, voices: usize, measure: i64) -> Response
     p.rect_filled(r, CornerRadius::same(3), theme::wash(v, dark, if dark { 18 } else { 14 }));
   }
 
+  let mut rects: Vec<(usize, Rect)> = vec![];
   for (i, b) in out.blocks.iter().enumerate() {
     let (voice, label, solid) = match &b.kind {
       Kind::Entry { voice, tonal, .. } => (*voice, if *tonal { "answer" } else { "theme" }, true),
@@ -70,6 +87,7 @@ pub fn show(ui: &mut Ui, out: &Outcome, voices: usize, measure: i64) -> Response
       Pos2::new(x_of(b.at + b.len) - 1.0, lane_top(voice) + LANE - 3.0),
     );
     let c = theme::voice(voice, dark);
+    rects.push((i, r));
 
     if solid {
       p.rect_filled(r, CornerRadius::same(4), c);
@@ -121,45 +139,57 @@ pub fn show(ui: &mut Ui, out: &Outcome, voices: usize, measure: i64) -> Response
     }
   }
 
-  // Which block is under the pointer, and what is true of it. The tooltip is
-  // where a beginner learns the vocabulary — it names the thing and then says
-  // what it does, in that order.
-  if let Some(pos) = resp.hover_pos() {
-    if let Some((i, b)) = out.blocks.iter().enumerate().find(|(_, b)| {
-      let v = voice_of(&b.kind);
-      v < voices
-        && pos.x >= x_of(b.at)
-        && pos.x < x_of(b.at + b.len)
-        && pos.y >= lane_top(v)
-        && pos.y < lane_top(v) + LANE
-    }) {
-      let cold = out.relaxed.cold.contains(&i);
-      let (at, len, key_of, what) = (b.at, b.len, b.key_of, describe(b));
-      resp.clone().show_tooltip_ui(|ui| {
-        ui.label(egui::RichText::new(what).strong());
-        ui.label(format!(
-          "bar {} to {}, in {}",
-          at / measure.max(1) + 1,
-          (at + len) / measure.max(1) + 1,
-          degree_name(key_of),
-        ));
-        if cold {
-          ui.colored_label(
-            theme::warn(ui.visuals().dark_mode),
-            "This block would not fill under every constraint, so one was dropped. The report says which.",
-          );
+  // One interactive region per block, rather than one hit test over the strip.
+  // egui's own layering then decides what the pointer is on, and each block gets
+  // a tooltip and a menu for free — which is also why the strip itself only
+  // senses hover: two things competing for the same click is a bug that only
+  // shows up under the pointer.
+  let mut edit = None;
+  for (i, r) in rects {
+    let block = &out.blocks[i];
+    let of = origins.get(i).copied();
+    let middle = match of {
+      Some(Origin::Middle(k)) => Some(k),
+      _ => None,
+    };
+    let sense = if middle.is_some() { Sense::click() } else { Sense::hover() };
+    let hit = ui.interact(r, ui.id().with(("block", i)), sense);
+
+    let cold = out.relaxed.cold.contains(&i);
+    let (at, len, key_of, what) = (block.at, block.len, block.key_of, describe(block));
+    hit.clone().on_hover_ui(|ui| {
+      ui.label(egui::RichText::new(what).strong());
+      ui.label(format!(
+        "bar {} to {}, in {}",
+        at / measure.max(1) + 1,
+        (at + len) / measure.max(1) + 1,
+        degree_name(key_of),
+      ));
+      if middle.is_some() {
+        ui.label(egui::RichText::new("Click to send it somewhere else.").weak().small());
+      }
+      if cold {
+        ui.colored_label(
+          theme::warn(ui.visuals().dark_mode),
+          "This block would not fill under every constraint, so one was dropped. The report says which.",
+        );
+      }
+    });
+
+    if let Some(k) = middle {
+      egui::Popup::menu(&hit).show(|ui| {
+        ui.label(egui::RichText::new("send this return to").weak().small());
+        for deg in 0..7i16 {
+          if ui.selectable_label(deg == key_of, degree_name(deg)).clicked() {
+            edit = Some(Edit::Key(k, deg));
+            ui.close();
+          }
         }
       });
     }
   }
 
-  resp
-}
-
-fn voice_of(k: &Kind) -> usize {
-  match k {
-    Kind::Entry { voice, .. } | Kind::Episode { voice, .. } => *voice,
-  }
+  (resp, edit)
 }
 
 fn describe(b: &Block) -> String {

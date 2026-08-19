@@ -6,24 +6,37 @@
 //! the library's own name for the thing, in mono, so a beginner reads *How far
 //! it travels* and an expert reads `middles = [4, 5, 3]` underneath. Nobody is
 //! lied to.
+//!
+//! **The design is the state, not the subject picker.** A settings file carries
+//! its own `Design` — the subject as notes, in the library's own units — so a
+//! file can be opened whose subject is not one of the 24 and everything still
+//! works. The picker *sets* the design; it does not define it.
 
 use contrapunctus::{
   automaton::Tier,
-  compose::{self, Layout, Outcome},
+  compose::{self, Design, Layout, Outcome},
+  settings::Fidelity,
 };
 use egui::{RichText, Ui};
 
 use crate::catalog::{self, Catalog, Journey};
+use crate::files::{self, Loaded, Note};
+use crate::task::Slot;
 use crate::{report, score, strip, theme};
 
 pub struct App {
   cat: Catalog,
-  chosen: usize,
-  voices: usize,
+  /// Which catalogue entry the design came from, if it came from one. A design
+  /// loaded from a file came from none, and saying so is better than pointing at
+  /// whichever entry happens to be first.
+  chosen: Option<usize>,
+  design: Design,
   layout: Layout,
   tier: Tier,
   seed: u64,
   advanced: bool,
+  /// Quarter notes per minute, for the MIDI export.
+  qpm: u32,
 
   out: Option<Outcome>,
   /// The search refused, and refusing is a result — §2.5 does not beam.
@@ -32,6 +45,16 @@ pub struct App {
   stale: bool,
   /// Compose once on the first frame, so the window appears before the work.
   first: bool,
+
+  /// What the last file operation or edit did, in one line.
+  status: Option<String>,
+  /// Whether a loaded file reproduced the fugue it recorded. `None` once the
+  /// music has been changed since, because the answer would no longer be about
+  /// anything on screen.
+  fidelity: Option<Fidelity>,
+
+  saving: Slot<Note>,
+  loading: Slot<Result<Loaded, Note>>,
 }
 
 impl Default for App {
@@ -40,33 +63,31 @@ impl Default for App {
     // BWV 847, which is §8.16's own subject and therefore the one whose figures
     // this interface can be checked against.
     let chosen = cat.subjects.iter().position(|s| s.id == "wtc-i-02").unwrap_or(0);
+    let design = cat.subjects[chosen].design(3);
     App {
       cat,
-      chosen,
-      voices: 3,
+      chosen: Some(chosen),
+      design,
       layout: Layout::default(),
       tier: Tier::Full,
       seed: 0x5EED,
       advanced: false,
+      qpm: 76,
       out: None,
       refused: None,
       stale: false,
       first: true,
+      status: None,
+      fidelity: None,
+      saving: Slot::default(),
+      loading: Slot::default(),
     }
   }
 }
 
 impl App {
-  fn design(&self) -> Option<compose::Design> {
-    self.cat.subjects.get(self.chosen).map(|s| s.design(self.voices))
-  }
-
   fn compose(&mut self) {
-    let Some(d) = self.design() else {
-      self.refused = Some("no subject".into());
-      return;
-    };
-    match compose::fugue(&d, &self.layout, self.tier.rules(), self.seed) {
+    match compose::fugue(&self.design, &self.layout, self.tier.rules(), self.seed) {
       Ok(o) => {
         self.out = Some(o);
         self.refused = None;
@@ -74,6 +95,110 @@ impl App {
       Err(e) => self.refused = Some(e),
     }
     self.stale = false;
+    self.fidelity = None;
+  }
+
+  /// Apply an edit from the plan strip.
+  ///
+  /// **Span-preserving, and the interface must not blur that.** A key change
+  /// keeps the piece the same length, so `compose::refill` rewrites the two
+  /// blocks that middle owns — its episode and its entry, because changing where
+  /// a return goes changes both the journey and the arrival — and every other
+  /// note stays exactly where it was. If any part of it refuses, nothing is
+  /// applied: a half-edited piece is worse than an unedited one.
+  fn apply(&mut self, e: strip::Edit) {
+    let strip::Edit::Key(k, deg) = e;
+    if self.layout.middles.get(k) == Some(&deg) {
+      return;
+    }
+    let Some(prev) = self.out.take() else { return };
+    let mut l = self.layout.clone();
+    l.middles[k] = deg;
+
+    // The two blocks as one span, not one after the other. A middle owns its
+    // episode and its entry, and refilling them separately pins the seam between
+    // them to notes chosen for the key being edited away — which is usually
+    // unsatisfiable, so an ordinary edit came back refused.
+    let owned = compose::blocks_of_middle(&self.design, &l, k);
+    let (Some(&first), Some(&last)) = (owned.first(), owned.last()) else { return };
+
+    let t0 = std::time::Instant::now();
+    let next = match compose::refill_span(&self.design, &l, self.tier.rules(), self.seed, &prev, first, last) {
+      Ok(o) => o,
+      Err(why) => {
+        // A refusal here means the edit is not *local* — not that it is
+        // impossible. About a quarter of key changes come back this way, so
+        // stopping would refuse an ordinary request on a technicality. Recompose
+        // the whole piece instead and say which of the two happened, because the
+        // difference is exactly the promise the interface made: everything else
+        // stayed where it was, or it did not.
+        match compose::fugue(&self.design, &l, self.tier.rules(), self.seed) {
+          Ok(o) => {
+            self.status = Some(format!(
+              "return {} sent to {} — not reachable from where the piece was, so the whole                fugue was rewritten ({why})",
+              k + 1,
+              catalog::degree_name(deg)
+            ));
+            self.layout = l;
+            self.out = Some(o);
+            self.fidelity = None;
+          }
+          Err(e) => {
+            self.status = Some(format!("that key will not fill: {e}"));
+            self.out = Some(prev);
+          }
+        }
+        return;
+      }
+    };
+    let ms = t0.elapsed().as_secs_f64() * 1000.0;
+    self.status = Some(format!(
+      "return {} sent to {} — {} blocks rewritten in {ms:.0} ms, the rest untouched",
+      k + 1,
+      catalog::degree_name(deg),
+      last - first + 1,
+    ));
+    self.layout = l;
+    self.out = Some(next);
+    self.fidelity = None;
+  }
+
+  /// Take whatever the file tasks have finished, once per frame.
+  fn collect(&mut self) {
+    if let Some(n) = self.saving.take() {
+      self.status = Some(match n {
+        Note::Saved(name) => format!("saved {name}"),
+        Note::Cancelled => "nothing saved".into(),
+        Note::Failed(e) => format!("could not save: {e}"),
+      });
+    }
+    if let Some(r) = self.loading.take() {
+      match r {
+        Ok(l) => {
+          let want = contrapunctus::settings::fingerprint(std::slice::from_ref(&l.settings.design.subject));
+          self.chosen = self
+            .cat
+            .subjects
+            .iter()
+            .position(|s| contrapunctus::settings::fingerprint(std::slice::from_ref(&s.notes)) == want);
+          self.design = l.settings.design;
+          self.layout = l.settings.layout;
+          self.tier = l.settings.tier;
+          self.seed = l.settings.seed;
+          self.status = Some(match &l.how {
+            Fidelity::Exact => "opened — the same fugue, note for note".to_string(),
+            other => other.message().unwrap_or_default(),
+          });
+          self.fidelity = Some(l.how);
+          self.out = Some(l.outcome);
+          self.refused = None;
+          self.stale = false;
+        }
+        Err(Note::Cancelled) => self.status = Some("nothing opened".into()),
+        Err(Note::Failed(e)) => self.status = Some(format!("could not open: {e}")),
+        Err(Note::Saved(_)) => {}
+      }
+    }
   }
 }
 
@@ -94,7 +219,11 @@ impl App {
       self.first = false;
       self.compose();
     }
+    self.collect();
 
+    let mut save = false;
+    let mut open = false;
+    let mut export = false;
     egui::Panel::top("bar").show(ui, |ui| {
       ui.horizontal(|ui| {
         ui.heading("Contrapunctus");
@@ -102,29 +231,65 @@ impl App {
         ui.selectable_value(&mut self.advanced, false, "Simple");
         ui.selectable_value(&mut self.advanced, true, "Advanced");
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-          ui.add_enabled(false, egui::Button::new("Open"))
-            .on_disabled_hover_text("Settings files are next — the library writes them already.");
-          ui.add_enabled(false, egui::Button::new("Save"))
-            .on_disabled_hover_text("Settings files are next — the library writes them already.");
+          open |= ui.button("Open").on_hover_text("A settings file, which writes the same fugue back.").clicked();
+          save |= ui
+            .add_enabled(self.out.is_some(), egui::Button::new("Save"))
+            .on_hover_text("Everything that determines this fugue, as JSON, with a fingerprint over the notes.")
+            .clicked();
+          export |= ui
+            .add_enabled(self.out.is_some(), egui::Button::new("Export MIDI"))
+            .on_hover_text("Tracks top voice first, each named with how many entries it carries.")
+            .clicked();
           ui.add_enabled(false, egui::Button::new("▶"))
-            .on_disabled_hover_text("Sound is not wired up yet.");
+            .on_disabled_hover_text("Sound is not wired up yet — it is next on the roadmap.");
         });
       });
     });
+
+    if open {
+      files::load_settings(self.loading.clone());
+    }
+    if let (true, Some(out)) = (save, self.out.as_ref()) {
+      files::save_settings(&self.design, &self.layout, self.tier, self.seed, out, self.saving.clone());
+    }
+    if let (true, Some(out)) = (export, self.out.as_ref()) {
+      files::export_midi(out, &self.design, self.qpm, self.saving.clone());
+    }
 
     egui::Panel::left("controls").default_size(288.0).show(ui, |ui| {
       egui::ScrollArea::vertical().show(ui, |ui| self.controls(ui));
     });
 
+    let mut edit = None;
     egui::CentralPanel::default_margins().show(ui, |ui| {
+      let dark = ui.visuals().dark_mode;
+
+      // A loaded file that did not reproduce says so, above the music rather
+      // than beside it. The music is shown either way — refusing to show it
+      // would hide the very thing the reader needs in order to judge.
+      if let Some(f) = &self.fidelity {
+        if let Some(msg) = f.message() {
+          ui.add_space(4.0);
+          ui.colored_label(theme::warn(dark), RichText::new("Not the fugue this file recorded").strong());
+          ui.label(msg);
+          ui.label(
+            RichText::new(
+              "The settings are the ones the file holds; what they now produce is below.                Saving again records this engine and this music.",
+            )
+            .weak()
+            .small(),
+          );
+          ui.add_space(6.0);
+        }
+      }
+
       if let Some(why) = &self.refused {
         ui.add_space(6.0);
-        ui.colored_label(theme::warn(ui.visuals().dark_mode), RichText::new("Refused").strong());
+        ui.colored_label(theme::warn(dark), RichText::new("Refused").strong());
         ui.label(why);
         ui.label(
           RichText::new(
-            "The search is exact: where no legal filling exists it says so rather than \
-             writing an approximate one.",
+            "The search is exact: where no legal filling exists it says so rather than              writing an approximate one.",
           )
           .weak()
           .small(),
@@ -133,18 +298,19 @@ impl App {
       }
 
       let Some(out) = &self.out else { return };
-      let measure = self.cat.subjects.get(self.chosen).map(|s| s.measure).unwrap_or(960);
+      let measure = self.design.measure;
+      let origins = compose::origins(&self.design, &self.layout);
 
       ui.add_space(4.0);
       ui.label(RichText::new("PLAN").monospace().weak().small());
-      strip::show(ui, out, self.voices, measure);
+      let (_, asked) = strip::show(ui, out, self.design.voices, measure, &origins);
+      edit = asked;
 
       ui.add_space(10.0);
       ui.label(RichText::new("SCORE").monospace().weak().small());
-      let key = self.cat.subjects.get(self.chosen).map(|s| s.key).unwrap_or([0; 7]);
       egui::ScrollArea::both().max_height(score::height(out.voices.len()) + 12.0).show(ui, |ui| {
         let want = (out.bars as f32 * 46.0).max(ui.available_width());
-        score::show(ui, &out.voices, &key, measure, want);
+        score::show(ui, &out.voices, &self.design.key, measure, want);
       });
 
       ui.add_space(10.0);
@@ -152,7 +318,18 @@ impl App {
       ui.label(RichText::new("HOW IT TURNED OUT").monospace().weak().small());
       ui.add_space(2.0);
       report::show(ui, out, self.tier, self.advanced);
+
+      if let Some(line) = &self.status {
+        ui.add_space(6.0);
+        ui.label(RichText::new(line).weak().small());
+      }
     });
+
+    // Applied after the panel, not inside it: the panel holds a borrow of the
+    // outcome it is drawing, and an edit replaces that outcome.
+    if let Some(e) = edit {
+      self.apply(e);
+    }
   }
 }
 
@@ -161,26 +338,37 @@ impl App {
     let mut changed = false;
 
     group(ui, "THE TUNE");
-    let name = self.cat.subjects.get(self.chosen).map(|s| s.name.clone()).unwrap_or_default();
+    let name = self
+      .chosen
+      .and_then(|i| self.cat.subjects.get(i))
+      .map(|s| s.name.clone())
+      // A design that came from a file is not one of the 24, and the picker says
+      // so rather than pointing at whichever entry happens to be selected.
+      .unwrap_or_else(|| "from a file".to_string());
+    let mut pick = None;
     egui::ComboBox::from_id_salt("subject").width(248.0).selected_text(name).show_ui(ui, |ui| {
       for (i, s) in self.cat.subjects.iter().enumerate() {
-        if ui.selectable_value(&mut self.chosen, i, &s.name).changed() {
-          changed = true;
+        if ui.selectable_label(self.chosen == Some(i), &s.name).clicked() {
+          pick = Some(i);
         }
       }
     });
-    if let Some(s) = self.cat.subjects.get(self.chosen) {
-      ui.label(
-        RichText::new(format!(
-          "{} notes over {:.1} bars · Bach set it for {}",
-          s.notes.notes.iter().filter(|n| n.attack).count(),
-          s.bars,
-          s.scored_for
-        ))
-        .weak()
-        .small(),
-      );
+    if let Some(i) = pick {
+      self.chosen = Some(i);
+      self.design = self.cat.subjects[i].design(self.design.voices);
+      changed = true;
     }
+    let notes = self.design.subject.notes.iter().filter(|n| n.attack).count();
+    let bars = self.design.subject.notes.iter().map(|n| n.onset + n.dur).max().unwrap_or(0) as f64
+      / self.design.measure.max(1) as f64;
+    ui.label(
+      RichText::new(match self.chosen.and_then(|i| self.cat.subjects.get(i)) {
+        Some(s) => format!("{notes} notes over {bars:.1} bars · Bach set it for {}", s.scored_for),
+        None => format!("{notes} notes over {bars:.1} bars"),
+      })
+      .weak()
+      .small(),
+    );
     ui.add_enabled(false, egui::Button::new("Import…"))
       .on_disabled_hover_text("Importing a subject from a file is on the roadmap.");
 
@@ -190,15 +378,17 @@ impl App {
     labelled(ui, "How many voices", "Design::voices");
     ui.horizontal(|ui| {
       for n in [2usize, 3] {
-        if ui.selectable_value(&mut self.voices, n, format!("{n}")).changed() {
+        if ui.selectable_label(self.design.voices == n, format!("{n}")).clicked() {
+          self.design.voices = n;
+          // The compass has one range per voice, so it moves with the count.
+          self.design.compass = catalog::compass(n);
           changed = true;
         }
       }
       // Present and disabled, with the reason — spec 9. Hiding it would conceal
       // a fact about the program, and this repository's habit is the opposite.
       ui.add_enabled(false, egui::Button::new("4")).on_disabled_hover_text(
-        "Four voices needs three free voices at once. The search is exact up to two and \
-         refuses beyond rather than beaming. It is §9's solver item.",
+        "Four voices needs three free voices at once. The search is exact up to two and          refuses beyond rather than beaming. It is §9's solver item.",
       );
     });
 
@@ -444,6 +634,97 @@ mod tests {
       }
     }
     assert!(refused.is_empty(), "subjects offered that will not compose:\n  {}", refused.join("\n  "));
+  }
+
+  /// A second application holding a given piece, for trying an edit against it
+  /// without disturbing the first.
+  fn probe_from(start: &Outcome, layout: &Layout) -> App {
+    App { out: Some(start.clone()), layout: layout.clone(), ..App::default() }
+  }
+
+  /// A key change that stays local rewrites only the blocks that middle owns
+  /// and **leaves every other note exactly where it was**.
+  ///
+  /// This is the claim spec 4.2 makes to the user and the one an interface is
+  /// most tempted to fudge: recomposing would look almost right, differ
+  /// everywhere, and be much easier. Checked over the whole piece rather than at
+  /// the seams, because a splice that tore one bar later would pass a boundary
+  /// check and still be wrong on screen.
+  ///
+  /// About a quarter of key changes are *not* local — the pinned ending is not
+  /// reachable from where the piece happens to be — and those are recomposed
+  /// instead. The test asserts the promise on whichever ones hold it, and that
+  /// at least one does, so it cannot pass by never taking the local path.
+  #[test]
+  fn a_local_key_change_leaves_every_other_note_alone() {
+    let mut app = App::default();
+    app.compose();
+    let start = app.out.clone().expect("a fugue");
+    let l0 = app.layout.clone();
+    let mut local = 0;
+
+    for k in 0..l0.middles.len() {
+      for deg in 0..7i16 {
+        if l0.middles[k] == deg {
+          continue;
+        }
+        let mut probe = probe_from(&start, &l0);
+        probe.apply(strip::Edit::Key(k, deg));
+        let after = probe.out.as_ref().expect("still a fugue");
+        let said = probe.status.clone().unwrap_or_default();
+
+        if said.contains("the rest untouched") {
+          local += 1;
+          let owned = compose::blocks_of_middle(&probe.design, &probe.layout, k);
+          let from = start.blocks[owned[0]].at;
+          let to = start.blocks[owned[owned.len() - 1]].at + start.blocks[owned[owned.len() - 1]].len;
+          let outside = |v: &contrapunctus::kern::Voice| -> Vec<(i64, i64, i16, i8)> {
+            v.notes
+              .iter()
+              .filter(|n| n.onset < from || n.onset >= to)
+              .map(|n| (n.onset, n.dur, n.pitch.step, n.pitch.alter))
+              .collect()
+          };
+          for (a, b) in start.voices.iter().zip(&after.voices) {
+            assert_eq!(outside(a), outside(b), "middle {k} to degree {deg} changed notes outside its span");
+          }
+          assert_eq!(start.bars, after.bars, "a span-preserving edit must not change the length");
+        } else {
+          // not local: the piece was rewritten, and the layout still took the edit
+          assert_eq!(probe.layout.middles[k], deg, "neither local nor rewritten: {said}");
+        }
+      }
+    }
+    assert!(local > 0, "no key change was local, so the promise was never tested");
+  }
+
+  /// Whatever happens, an edit either applies or leaves nothing behind.
+  ///
+  /// The half-applied case is the one worth ruling out: a layout that took the
+  /// edit beside music that did not, which would show a plan and a score saying
+  /// different things about where the piece is.
+  #[test]
+  fn an_edit_is_all_or_nothing() {
+    let mut app = App::default();
+    app.compose();
+    let start = app.out.clone().expect("a fugue");
+    let l0 = app.layout.clone();
+
+    for deg in 0..7i16 {
+      let mut probe = probe_from(&start, &l0);
+      probe.apply(strip::Edit::Key(0, deg));
+      let after = probe.out.as_ref().expect("still a fugue");
+      let took = probe.layout.middles[0] == deg;
+      let same = contrapunctus::settings::fingerprint(&start.voices)
+        == contrapunctus::settings::fingerprint(&after.voices);
+      if l0.middles[0] == deg {
+        continue;
+      }
+      assert!(
+        took != same,
+        "degree {deg}: layout took the edit = {took}, music unchanged = {same} — one of those is a lie"
+      );
+    }
   }
 
   /// The presets are the ones spec 3.2 names, and `Journey::of` recognises each

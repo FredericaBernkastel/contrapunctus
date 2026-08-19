@@ -2587,9 +2587,11 @@ for a build with no filesystem. Off by default so that **nothing a figure in
 `serde` is not enabled when the measurements run.
 
 **No path is required anywhere.** `kern::read` and `refdata::read` are wrappers
-on `kern::parse` and `refdata::parse`, and `midi::write` and `write_score` on
-`midi::encode` and `encode_score`. A caller with bytes and no filesystem — a
-browser — uses the second of each and never mentions a `Path`.
+on `kern::parse` and `refdata::parse`; `midi::write` and `write_score` on
+`midi::encode` and `encode_score`; and `compose::write` on `compose::encode`,
+which is the same split made once more when the interface needed the bytes of a
+MIDI file rather than a file. A caller with bytes and no filesystem — a browser
+— uses the second of each and never mentions a `Path`.
 
 **And there is a first caller.** `ui/` is a graphical interface over this
 library — `eframe`, a subject picker over the embedded corpus, the derivation
@@ -2638,7 +2640,7 @@ a result that *can* be displayed without being checked is one that will be.
 | you want | you call |
 |---|---|
 | a whole fugue, checked | `compose::fugue` |
-| **one block rewritten, the rest untouched** | `compose::refill` |
+| **one block rewritten, the rest untouched** | `compose::refill`, or `compose::refill_span` for several |
 | the derivation only, to draw a plan | `compose::derive` |
 | the notes only | `compose::generate` |
 | a fill against voices you already have | `realise::fill` |
@@ -2658,6 +2660,13 @@ An interface over this wants to change one thing and see one thing change. It ca
 [`compose::refill`](src/compose.rs) rewrites a single block and leaves every other note where it was, which a test
 asserts over the whole piece rather than at the seam.
 
+**One edit is not always one block**, which the interface found. Changing where a return goes changes the key of
+the episode that travels to it *and* the entry that arrives, so `compose::refill_span` takes a range and pins only
+its **outer** seams — refilled one at a time, the seam between them is fixed to notes chosen for the key being
+edited away. Whether that matters is honestly small: over 144 key changes on 8 subjects a span refill succeeded
+110 times against 108, which is two discordant pairs and no evidence at all. The argument is the principle, and
+that a span of two is the smallest case there is.
+
 It works because the fill is blockwise and the only thing crossing a block boundary is **the pitch each voice ends
 on**. `Problem::terminal` pins those — the mirror of `Problem::prior` — so a refilled block is a drop-in
 replacement and nothing after it is searched again. On a twelve-block fugue that is a twelfth of the work; at five
@@ -2667,7 +2676,9 @@ responds and one that recomputes.
 Two limits, both refusals rather than surprises. **Span-preserving edits only** — changing a block's key or its
 voice keeps the piece the same length and refills locally; lengthening an episode or adding a middle moves every
 later bar, and no pin makes that local. And the pinned ending may simply be **unreachable** once the block's
-contents have changed, which is reported so the caller can fall back to [`compose::fugue`].
+contents have changed, which is reported so the caller can fall back to [`compose::fugue`]. That is not rare:
+**about a quarter of key changes are not local**, 34 of 144 in the same sweep. A caller that wants the fast path
+has to be one that can also say it did not get it.
 
 The seed is keyed on **what a block is** — its kind, voice, key and length — and not on its position, so editing
 one block does not reseed the others. The index-keyed seed it replaced would have redrawn the whole piece under any

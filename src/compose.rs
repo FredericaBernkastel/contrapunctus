@@ -621,6 +621,10 @@ pub fn as_plan(d: &Design, blocks: &[Block], p: &Piece) -> crate::form::Plan {
 /// panel; a driver wants it to print one table. Neither wants to remember to run
 /// the checker afterwards, and a result that can be displayed without being
 /// checked is one that will be.
+///
+/// `Clone` because an editor keeps the previous one: `refill` splices into a
+/// copy, and an edit that any block refuses must leave nothing changed.
+#[derive(Clone)]
 pub struct Outcome {
   /// The derivation, block by block — what a plan view draws.
   pub blocks: Vec<Block>,
@@ -716,24 +720,8 @@ fn judge(
 
 /// Refill **one block**, leaving every other note exactly where it was.
 ///
-/// The operation a plan editor needs. §8.16 fills a piece block by block and the
-/// only thing crossing a block boundary is the pitch each voice ends on, so a
-/// block refilled to the *same* ending is a drop-in replacement: every later
-/// block keeps the notes it already had, and none of them is searched again. On
-/// a twelve-block fugue that is a twelfth of the work, and at five voices —
-/// where a single block costs far more than a whole three-voice piece does — it
-/// is the difference between an editor that responds and one that recomputes.
-///
-/// **Span-preserving edits only.** Changing which voice takes a block, or what
-/// key it is in, leaves the piece the same length and this applies. Changing an
-/// episode's length, or adding a middle, moves everything after it in time;
-/// there is no sense in which those later bars are unchanged, and this refuses
-/// rather than pretending. The caller falls back to [`fugue`].
-///
-/// It also refuses when the pinned ending is unreachable — the block's new
-/// contents may not be able to arrive where the old ones did. That is a real
-/// answer and not an error: the edit is possible, it just is not local, and the
-/// caller regenerates from `bi` onwards.
+/// [`refill_span`] with a span of one. See there for what this costs and when it
+/// refuses.
 pub fn refill(
   d: &Design,
   l: &Layout,
@@ -742,6 +730,54 @@ pub fn refill(
   prev: &Outcome,
   bi: usize,
 ) -> Result<Outcome, String> {
+  refill_span(d, l, tier, seed, prev, bi, bi)
+}
+
+/// Refill blocks `from..=to`, leaving every note outside them where it was.
+///
+/// The operation a plan editor needs. §8.16 fills a piece block by block and the
+/// only thing crossing a block boundary is the pitch each voice ends on, so a
+/// span refilled to the *same* ending is a drop-in replacement: every later
+/// block keeps the notes it already had, and none of them is searched again. On
+/// a twelve-block fugue a single block is a twelfth of the work, and at five
+/// voices — where one block costs far more than a whole three-voice piece does —
+/// it is the difference between an editor that responds and one that recomputes.
+///
+/// **A span, and not only a block, because one edit is not always one block.**
+/// Changing where a return goes changes the key of the episode that travels to
+/// it *and* the entry that arrives. Refilling those one at a time pins the seam
+/// between them to notes chosen for the key being edited away, which is an
+/// arbitrary constraint on the inside of an edit; here the interior seams are
+/// free and only the **outer** ones are pinned.
+///
+/// **The measurement does not support that argument, and is recorded anyway.**
+/// Over 144 key changes on 8 subjects, a span refill succeeded 110 times and a
+/// block-at-a-time refill 108, disagreeing on 2 cases — two discordant pairs is
+/// no evidence at all. What can be said is the principle, and that a span of two
+/// is the smallest case there is: every interior seam is one more arbitrary pin,
+/// so whatever the effect is, it grows with the span while this measurement
+/// cannot see it. Roughly a quarter of key changes refuse under either, which is
+/// the number a caller should plan around.
+///
+/// **Span-preserving edits only.** Changing which voice takes a block, or what
+/// key it is in, leaves the piece the same length and this applies. Changing an
+/// episode's length, or adding a middle, moves everything after it in time;
+/// there is no sense in which those later bars are unchanged, and this refuses
+/// rather than pretending. The caller falls back to [`fugue`].
+///
+/// It also refuses when the pinned ending is unreachable — the span's new
+/// contents may not be able to arrive where the old ones did. That is a real
+/// answer and not an error: the edit is possible, it just is not local, and the
+/// caller regenerates from `from` onwards.
+pub fn refill_span(
+  d: &Design,
+  l: &Layout,
+  tier: &[Rule],
+  seed: u64,
+  prev: &Outcome,
+  from: usize,
+  to: usize,
+) -> Result<Outcome, String> {
   let blocks = derive(d, l);
   if blocks.len() != prev.blocks.len() {
     return Err("the layout changed the number of blocks; refill is span-preserving".into());
@@ -749,82 +785,96 @@ pub fn refill(
   if blocks.iter().zip(&prev.blocks).any(|(a, b)| a.at != b.at || a.len != b.len) {
     return Err("the layout moved a block in time; refill is span-preserving".into());
   }
-  let b = blocks.get(bi).ok_or("no such block")?;
-
-  // What the neighbours already sound, read off the notes rather than recorded:
-  // the piece is the source of truth for its own seams.
-  let prior: Vec<Option<Pitch>> = (0..d.voices)
-    .map(|v| {
-      prev.voices[v]
-        .notes
-        .iter()
-        .filter(|n| n.onset < b.at)
-        .max_by_key(|n| n.onset)
-        .map(|n| n.pitch)
-    })
-    .collect();
-  let terminal: Vec<Option<Pitch>> = (0..d.voices)
-    .map(|v| crate::kern::sounding(&prev.voices[v], b.at + b.len - 1).map(|(p, _)| p))
-    .collect();
-
-  let held = held_of(Some(b));
-  let line = match &b.kind {
-    Kind::Entry { shift, tonal, .. } => state(d, 0, *shift, *tonal),
-    Kind::Episode { shift, .. } => sequence(d, 0, b.len, *shift),
-  };
-  let next = blocks.get(bi + 1).map(held_of_ref);
-  let quiet = d.measure.min(b.len / 2);
-  let voices: Vec<Voice> = (0..d.voices)
-    .map(|v| {
-      if v == held {
-        line.clone()
-      } else if Some(v) == next && quiet > 0 {
-        Voice { notes: rhythm(d, 0, b.len - quiet, v) }
-      } else {
-        Voice { notes: rhythm(d, 0, b.len, v) }
-      }
-    })
-    .collect();
+  if to < from || to >= blocks.len() {
+    return Err(format!("no such span: {from}..={to} of {} blocks", blocks.len()));
+  }
 
   let full = plan(d, &blocks);
-  let here: Vec<harmony::Segment> = full
-    .iter()
-    .filter(|s| s.start >= b.at && s.start < b.at + b.len)
-    .map(|s| harmony::Segment { start: s.start - b.at, end: s.end - b.at, ..s.clone() })
-    .collect();
-
-  let pr = Problem {
-    voices,
-    free: (0..d.voices).map(|v| v != held).collect(),
-    compass: d.compass.clone(),
-    key: d.key,
-    measure: d.measure,
-    plan: here,
-    tier,
-    weights: [1.0; 6],
-    prescribe: [0.0; 3],
-    prior,
-    terminal,
-    samples: 0,
-    seed: seeds(&blocks, seed)[bi],
-    beta: 0.0,
-  }
-  .drawing();
-  let sol = realise::fill(&pr).map_err(|e| format!("block {bi}: {e}"))?;
-
-  // splice: the block's own bars replaced, everything else untouched
+  let seeds = seeds(&blocks, seed);
+  // The running result. Each block's prior is read off *this*, so a block sees
+  // what the one before it in the span actually wrote; the terminal is read off
+  // `prev`, because that is what the untouched tail still expects.
   let mut out = prev.voices.clone();
-  for (v, filled) in sol.chosen().iter().enumerate() {
-    out[v].notes.retain(|n| n.onset < b.at || n.onset >= b.at + b.len);
-    out[v].notes.extend(filled.notes.iter().map(|n| Note { onset: n.onset + b.at, ..*n }));
-    out[v].notes.sort_by_key(|n| n.onset);
+
+  for bi in from..=to {
+    let b = &blocks[bi];
+    let prior: Vec<Option<Pitch>> = (0..d.voices)
+      .map(|v| out[v].notes.iter().filter(|n| n.onset < b.at).max_by_key(|n| n.onset).map(|n| n.pitch))
+      .collect();
+    // Only the last block of the span is pinned at its end. Pinning the others
+    // would fix the seams *inside* the edit to notes chosen for what is being
+    // edited away.
+    let terminal: Vec<Option<Pitch>> = if bi == to {
+      (0..d.voices)
+        .map(|v| crate::kern::sounding(&prev.voices[v], b.at + b.len - 1).map(|(p, _)| p))
+        .collect()
+    } else {
+      vec![]
+    };
+
+    let held = held_of(Some(b));
+    let line = match &b.kind {
+      Kind::Entry { shift, tonal, .. } => state(d, 0, *shift, *tonal),
+      Kind::Episode { shift, .. } => sequence(d, 0, b.len, *shift),
+    };
+    let next = blocks.get(bi + 1).map(held_of_ref);
+    let quiet = d.measure.min(b.len / 2);
+    let voices: Vec<Voice> = (0..d.voices)
+      .map(|v| {
+        if v == held {
+          line.clone()
+        } else if Some(v) == next && quiet > 0 {
+          Voice { notes: rhythm(d, 0, b.len - quiet, v) }
+        } else {
+          Voice { notes: rhythm(d, 0, b.len, v) }
+        }
+      })
+      .collect();
+
+    let here: Vec<harmony::Segment> = full
+      .iter()
+      .filter(|s| s.start >= b.at && s.start < b.at + b.len)
+      .map(|s| harmony::Segment { start: s.start - b.at, end: s.end - b.at, ..s.clone() })
+      .collect();
+
+    let pr = Problem {
+      voices,
+      free: (0..d.voices).map(|v| v != held).collect(),
+      compass: d.compass.clone(),
+      key: d.key,
+      measure: d.measure,
+      plan: here,
+      tier,
+      weights: [1.0; 6],
+      prescribe: [0.0; 3],
+      prior,
+      terminal,
+      samples: 0,
+      seed: seeds[bi],
+      beta: 0.0,
+    }
+    .drawing();
+    let sol = realise::fill(&pr).map_err(|e| format!("block {bi}: {e}"))?;
+
+    // splice: the block's own bars replaced, everything else untouched
+    for (v, filled) in sol.chosen().iter().enumerate() {
+      out[v].notes.retain(|n| n.onset < b.at || n.onset >= b.at + b.len);
+      out[v].notes.extend(filled.notes.iter().map(|n| Note { onset: n.onset + b.at, ..*n }));
+      out[v].notes.sort_by_key(|n| n.onset);
+    }
   }
+
   Ok(judge(d, blocks, out, prev.relaxed.clone(), 0.0))
 }
 
 
 /// Write an outcome as MIDI, tracks top voice first and named by their role.
 pub fn write(o: &Outcome, d: &Design, path: &std::path::Path, qpm: u32) -> std::io::Result<()> {
+  std::fs::write(path, encode(o, d, qpm))
+}
+
+/// The same as bytes, for a caller with no filesystem.
+pub fn encode(o: &Outcome, d: &Design, qpm: u32) -> Vec<u8> {
   let roles: Vec<String> = (0..o.voices.len())
     .map(|v| {
       let entries = o
@@ -835,7 +885,63 @@ pub fn write(o: &Outcome, d: &Design, path: &std::path::Path, qpm: u32) -> std::
       format!("- {entries} subject entries")
     })
     .collect();
-  crate::midi::write_score(path, &o.voices, &roles, qpm, crate::kern::meter_of(d.measure, d.beat))
+  crate::midi::encode_score(&o.voices, &roles, qpm, crate::kern::meter_of(d.measure, d.beat))
+}
+
+/// Which part of the [`Layout`] a block came from.
+///
+/// [`derive`] is the only thing that knows this, and an editor has to: a gesture
+/// on a block is meaningless until it can be turned back into the field that
+/// produced it. Deriving the mapping a second time somewhere else is how the two
+/// come apart, so it is computed here, from the same walk, and checked against
+/// `derive` by a test.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Origin {
+  /// One of the exposition's entries.
+  Exposition(usize),
+  /// The episode [`Layout::link`] inserts into the exposition.
+  Link,
+  /// The episode or the entry of `middles[k]`.
+  Middle(usize),
+  /// The closing episode and entry of [`Layout::close_at_home`].
+  Close,
+}
+
+/// One [`Origin`] per block of `derive(d, l)`, in the same order.
+pub fn origins(d: &Design, l: &Layout) -> Vec<Origin> {
+  let mut out = vec![];
+  for i in 0..d.voices {
+    out.push(Origin::Exposition(i));
+    if let Some((after, bars)) = l.link {
+      if i == after && bars > 0 && i + 1 < d.voices {
+        out.push(Origin::Link);
+      }
+    }
+  }
+  for k in 0..l.middles.len() {
+    out.push(Origin::Middle(k));
+    out.push(Origin::Middle(k));
+  }
+  if l.close_at_home {
+    out.push(Origin::Close);
+    out.push(Origin::Close);
+  }
+  out
+}
+
+/// The blocks `middles[k]` produced — its episode and its entry.
+///
+/// Both, because changing a middle's degree changes the key of the episode that
+/// travels to it as well as the entry that arrives, and an editor that refilled
+/// only one of the two would leave the piece saying two different things about
+/// where it is.
+pub fn blocks_of_middle(d: &Design, l: &Layout, k: usize) -> Vec<usize> {
+  origins(d, l)
+    .iter()
+    .enumerate()
+    .filter(|(_, o)| **o == Origin::Middle(k))
+    .map(|(i, _)| i)
+    .collect()
 }
 #[cfg(test)]
 mod tests {
@@ -867,6 +973,39 @@ mod tests {
       measure: 4 * Q,
       beat: Q,
       compass: vec![(33, 42), (28, 37), (21, 30)],
+    }
+  }
+
+  /// `origins` walks the same shape `derive` does, and nothing keeps them in
+  /// step but this. One entry per block, in order, over every layout an
+  /// interface can produce — because the failure this prevents is silent: an
+  /// editor would refill the wrong block and the piece would simply be wrong
+  /// somewhere else.
+  #[test]
+  fn origins_line_up_with_the_blocks_derive_makes() {
+    let d = design();
+    for middles in [vec![4], vec![4, 5, 3], vec![4, 5, 1, 3, 6]] {
+      for link in [None, Some((0, 1)), Some((1, 2)), Some((5, 1))] {
+        for close in [true, false] {
+          let l = Layout { middles: middles.clone(), episode_bars: 2, link, close_at_home: close };
+          let blocks = derive(&d, &l);
+          let os = origins(&d, &l);
+          assert_eq!(blocks.len(), os.len(), "{l:?}");
+
+          // every middle owns exactly two blocks, and they carry its degree
+          for (k, &deg) in l.middles.iter().enumerate() {
+            let owned = blocks_of_middle(&d, &l, k);
+            assert_eq!(owned.len(), 2, "middle {k} of {l:?}");
+            for bi in owned {
+              assert_eq!(blocks[bi].key_of, deg, "block {bi} of {l:?}");
+            }
+          }
+          // and a link exists in the origins exactly when derive made one
+          let linked = os.iter().filter(|o| **o == Origin::Link).count();
+          assert!(linked <= 1, "{l:?}");
+          assert_eq!(linked == 1, l.link.is_some_and(|(a, b)| b > 0 && a + 1 < d.voices), "{l:?}");
+        }
+      }
     }
   }
 
