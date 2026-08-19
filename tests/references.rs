@@ -16,8 +16,8 @@
 //!    where a link reads `[§N](#anchor)` the heading at that anchor **is**
 //!    section N. That last one is the check whose absence let the numbering
 //!    drift silently.
-//! 3. **Bare references.** Every `§N` in `readme.md`, `CHANGELOG.md` and
-//!    `src/**.rs` names a section that exists.
+//! 3. **Bare references.** Every `§N` in `readme.md`, `CHANGELOG.md`, `docs/`
+//!    and the Rust sources of both crates names a section that exists.
 //!
 //! A reference to `ricercar`'s sections is resolved against *that* document
 //! instead. Such a reference is identified without guesswork: either it is a
@@ -355,14 +355,20 @@ fn every_bare_reference_names_a_section_that_exists() {
   let rnums: Vec<String> = headings(&ric).iter().filter_map(|h| h.num.clone()).collect();
 
   let mut files: Vec<String> = docs();
-  let mut src: Vec<String> = std::fs::read_dir("src")
-    .expect("src/")
-    .filter_map(|e| e.ok().map(|e| e.path()))
-    .filter(|p| p.extension().is_some_and(|x| x == "rs"))
-    .map(|p| p.to_string_lossy().replace('\\', "/"))
-    .collect();
-  src.sort();
-  files.append(&mut src);
+  // The library and the binary, and the interface crate beside them. `ui/src`
+  // is swept for the same reason `docs/` is: its doc comments cite readme
+  // sections to say why the interface does what it does, and a citation that
+  // nothing checks is one that goes stale without saying so.
+  for dir in ["src", "ui/src"] {
+    let mut src: Vec<String> = std::fs::read_dir(dir)
+      .unwrap_or_else(|_| panic!("{dir}/"))
+      .filter_map(|e| e.ok().map(|e| e.path()))
+      .filter(|p| p.extension().is_some_and(|x| x == "rs"))
+      .map(|p| p.to_string_lossy().replace('\\', "/"))
+      .collect();
+    src.sort();
+    files.append(&mut src);
+  }
 
   let mut bad = vec![];
   let mut checked = 0usize;

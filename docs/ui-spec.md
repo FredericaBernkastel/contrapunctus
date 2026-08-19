@@ -1,10 +1,14 @@
 # Contrapunctus Workbench — interface specification
 
-A desktop and browser interface over the `contrapunctus` library, in [egui] 0.36.
+A desktop and browser interface over the `contrapunctus` library, in [egui] 0.36
+through [`eframe`], which is the framework that gives the same code a window on
+the desktop and a canvas in a browser. Built as `ui/`, a member of the same
+workspace. Section 12 is the roadmap and says what is implemented.
 [`ui-sketch.html`](ui-sketch.html) is the visual sketch this specifies; open it
 beside this document.
 
 [egui]: https://github.com/emilk/egui
+[`eframe`]: https://github.com/emilk/egui/tree/master/crates/eframe
 
 Section numbers of the form §8.16 refer to [`../readme.md`](../readme.md), which
 is the argument this program is built on and the record of what it can and
@@ -438,7 +442,8 @@ Ordered by whether an interface can start without it.
 | # | change | why | size |
 |---|---|---|---|
 | 1 | Ghosting for a voice drag | 4.3 above, so the knock-on is visible | interface only |
-| 2 | A CDCL solver | four voices, and five | §9 |
+| 2 | A resumable `generate` | 7.3, so a fill can run a block per frame instead of blocking one | small |
+| 3 | A CDCL solver | four voices, and five | §9 |
 
 Everything else on this list is now done:
 
@@ -492,3 +497,70 @@ as a bug in the interface; the report shows it, and §8.16 explains it.
 the numbers, one agreed with them, and one found something no number was looking
 at (three voices resting in unison, four tenths of a second, every six seconds).
 The interface's real job is to make the fourth easier to get.
+
+---
+
+## 12. Roadmap
+
+Where the implementation is. `ui/` is a workspace member depending on the
+library; the arrow never points back, which is what keeps readme §10.5's claim
+about §8's figures checkable.
+
+Status is one of **done**, **partial** — usable and honestly incomplete — or
+**not started**. A row is only moved to *done* when something checks it.
+
+### 12.1 Built
+
+| section | what | evidence |
+|---|---|---|
+| — | `ui/` as a workspace member, `eframe` 0.36 | `cargo build --workspace` |
+| 3.1 | The frame: toolbar, side panel, three stacked views | `every_view_paints` |
+| 3.2 | Simple controls — subject, voices, returns, journey, strictness, reroll | as above |
+| 3.3 | Advanced: layout, the middles as a list, episode length, link, close-at-home, seed | as above |
+| 4.1 | The plan strip, drawn — lanes, entries, hatched episodes, key ribbon, cold outlines, tooltips | as above |
+| 5.1 | Staff notation — position from `step`, ledger lines, accidentals as paths | as above |
+| 7.1 | The corpus with no filesystem: all **24** subjects from `embedded::FUGUES` | `every_offered_subject_composes` |
+| 9 | Four voices present and disabled, with the reason on hover | by inspection |
+| 11 | Every number with its yardstick; the reroll framed as exploration | by inspection |
+
+Three tests, all headless, in `ui/src/app.rs`. The interesting one is
+`every_offered_subject_composes`: each of the 24 subjects is composed on the
+shortest layout that is still a fugue, because a picker whose entries have not
+been tried is a picker that wastes the one click a beginner is sure to make. It
+costs 13 seconds in release and two and a half minutes unoptimised.
+
+`tests/references.rs` now sweeps `ui/src` beside `src` and `docs/`, so the
+section numbers this crate's doc comments cite are checked like every other.
+
+### 12.2 Next, in order
+
+| # | section | what | blocked on |
+|---|---|---|---|
+| 1 | 8 | Save and load, with the fingerprint check | nothing — `settings::Settings` is written |
+| 2 | 6.4 | Export MIDI, through `midi::encode_score` | nothing |
+| 3 | 4.2 | The plan strip's span-preserving edits, through `compose::refill` | nothing |
+| 4 | 6.1–6.2 | The scheduler and the built-in synth | a `cpal` dependency |
+| 5 | 4.1, 5.2 | The playhead, shared by both views | 4 above — the sample clock is the position |
+| 6 | 7 | The web shell, and `wasm32` in CI | nothing; the entry point is a stub today |
+| 7 | 4.2 | Span-changing edits: recompose, and fade what is about to move | nothing |
+| 8 | 4.3 | Ghosting the knock-on of a voice drag | 7 above |
+| 9 | 6.3 | System MIDI out, behind a feature | a `midir` dependency |
+| 10 | 3.2 | Importing a subject from a file | 6 above, for the async dialog |
+
+### 12.3 Known gaps in what is built
+
+Stated rather than left to be discovered:
+
+- **The score has no beams and no clef glyphs.** Eighths and shorter carry a
+  plain stem, and each staff is labelled with the note name of its bottom line
+  instead of a clef. The label is arguably better for section 1's beginner and it
+  needs no font; the glyphs want the SMuFL subset 5.1 describes.
+- **Generation blocks the frame** for about 0.6 s, where 7.3 calls for one block
+  per frame. Doing it properly needs a resumable generate in the library —
+  `compose::generate` fills every block in one call — so it is a library change,
+  not an interface one.
+- **The plan strip does not scroll**, and the score's own scroll is not yet
+  locked to it. Both views scale to fit instead, which is right for 27 bars and
+  wrong for 60.
+- **Nothing is persisted between runs.** 8.4's interface state wants `eframe`'s
+  persistence feature, which is not enabled.

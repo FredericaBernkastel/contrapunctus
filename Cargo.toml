@@ -45,5 +45,11 @@ serde_json = { version = "1", optional = true }
 debug = false
 
 # `ricercar/` declares its own workspace; `corpus/` holds submodules.
+#
+# `ui/` is the interface — `docs/ui-spec.md`. It is a member rather than part of
+# this package because it depends on `eframe`, and the point of §10.5's claim is
+# that this package's figures do not. `cargo build` here still builds only the
+# measurements; `cargo build --workspace` builds both.
 [workspace]
+members = ["ui"]
 exclude = ["ricercar", "corpus"]

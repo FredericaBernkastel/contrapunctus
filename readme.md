@@ -2591,6 +2591,15 @@ on `kern::parse` and `refdata::parse`, and `midi::write` and `write_score` on
 `midi::encode` and `encode_score`. A caller with bytes and no filesystem — a
 browser — uses the second of each and never mentions a `Path`.
 
+**And there is a first caller.** `ui/` is a graphical interface over this
+library — `eframe`, a subject picker over the embedded corpus, the derivation
+drawn as a strip of voice lanes, the notes as staves, and every judgement
+[§8](#8-what-is-built-and-what-it-measures) can pass on them beneath. It is a
+separate workspace member and not part of this package, which is what keeps the
+claim above checkable: `cargo build` here still builds only the measurements,
+and the dependency arrow never points back. `docs/ui-spec.md` is its
+specification and section 12 of that document says what is built so far.
+
 #### Composing
 
 ```rust

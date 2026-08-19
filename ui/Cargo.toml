@@ -1,0 +1,22 @@
+# The Contrapunctus Workbench — `docs/ui-spec.md`.
+#
+# Separate from the library's own package on purpose. §10.5 claims that no
+# figure reported in readme §8 passes through a crate, and that claim is only
+# checkable if the package producing those figures does not depend on `eframe`.
+# The dependency arrow points this way and never back.
+[package]
+name = "contrapunctus-ui"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "contrapunctus-ui"
+path = "src/main.rs"
+
+[dependencies]
+# `serde` for settings files, `embedded-corpus` so a browser build has the 24
+# subjects without a network fetch — spec 7.1.
+contrapunctus = { path = "..", features = ["serde", "embedded-corpus"] }
+eframe = { version = "0.36", default-features = false, features = ["default_fonts", "glow"] }
+egui = "0.36"
