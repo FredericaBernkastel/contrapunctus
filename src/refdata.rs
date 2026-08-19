@@ -63,11 +63,21 @@ fn offset(tok: &str, measure: i64) -> Option<i64> {
 /// `measures` supplies the ticks-per-measure of each piece, which the
 /// annotations do not carry — they are in bars, and a bar is only a duration
 /// once the score says what the time signature is.
+/// Read the annotations from a file — a wrapper on [`parse`], which is the one
+/// to call where there is no filesystem.
 pub fn read(
   path: &std::path::Path,
   measures: &dyn Fn(&str) -> Option<i64>,
 ) -> Result<Vec<SubjectSpec>, String> {
   let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+  parse(&text, measures)
+}
+
+/// Parse the annotations from text.
+pub fn parse(
+  text: &str,
+  measures: &dyn Fn(&str) -> Option<i64>,
+) -> Result<Vec<SubjectSpec>, String> {
   let mut out: Vec<SubjectSpec> = vec![];
   let mut cur: Option<SubjectSpec> = None;
   let mut measure = 0i64;

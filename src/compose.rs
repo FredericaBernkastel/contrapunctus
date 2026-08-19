@@ -48,6 +48,8 @@ use crate::{
 };
 
 /// What the generator is given.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Debug)]
 pub struct Design {
   /// The subject, starting at tick 0.
   pub subject: Voice,
@@ -62,6 +64,7 @@ pub struct Design {
 }
 
 /// One block of the derivation.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug, PartialEq)]
 pub enum Kind {
   /// A subject entry in one voice, `shift` diatonic steps from the subject as
@@ -72,6 +75,7 @@ pub enum Kind {
   Episode { voice: usize, shift: i16 },
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug)]
 pub struct Block {
   pub at: i64,
@@ -152,6 +156,7 @@ fn subject_bars(d: &Design) -> i64 {
 /// voices — and this is *what is done with it*. A user interface wants a
 /// control for each of these; a measurement wants the defaults, which are
 /// §8.15's and §8.13's readings of the book and not anybody's taste.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug, PartialEq)]
 pub struct Layout {
   /// One middle group per entry, giving its key as **diatonic steps above the

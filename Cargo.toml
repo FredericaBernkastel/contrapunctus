@@ -26,8 +26,20 @@ path = "src/lib.rs"
 name = "contrapunctus"
 path = "src/main.rs"
 
+[features]
+# Settings files — `Design`, `Layout`, tier and seed, as JSON. Off by default so
+# that the measurement binary still passes through no crate at all, which is
+# what `readme.md` §10.5 claims and what makes §8's figures reproducible from
+# this source alone. The interface turns it on.
+serde = ["dep:serde", "dep:serde_json"]
+# The 24 fugues and the annotations, compiled in — about 295 kB. For a build
+# with no filesystem, which is any build in a browser. Needs the submodules.
+embedded-corpus = []
+
 [dependencies]
 clap = { version = "4.6", features = ["derive"] }
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
 
 [profile.release]
 debug = false

@@ -174,6 +174,43 @@ pub const HARD: &[Rule] = &[
 /// what is in question.
 pub const CONFIRMED: &[Rule] = &[Rule::ParallelPerfect, Rule::DirectPerfectOnDownbeat];
 
+/// A named tier, for anything that has to record *which* rulebook was used —
+/// a settings file, a command line — where a `&'static [Rule]` cannot go.
+///
+/// §8.16 is why this is a choice at all rather than a constant: the tier a
+/// generator should write against is not the tier §8.2 endorses for describing
+/// the repertoire, and a file that did not say which was used could not
+/// reproduce the music it claimed to.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "kebab-case"))]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum Tier {
+  /// The two rules §8.2 found universal — this document's endorsed tier.
+  Confirmed,
+  /// Those two plus the melodic prohibition, which §8.6 onwards uses.
+  ConfMelodic,
+  /// All five written hard. §8.16's generator writes against this.
+  #[default]
+  Full,
+}
+
+impl Tier {
+  pub fn rules(self) -> &'static [Rule] {
+    match self {
+      Tier::Confirmed => CONFIRMED,
+      Tier::ConfMelodic => CONF_MEL,
+      Tier::Full => HARD,
+    }
+  }
+  pub fn label(self) -> &'static str {
+    match self {
+      Tier::Confirmed => "confirmed(2)",
+      Tier::ConfMelodic => "conf+melodic",
+      Tier::Full => "full(5)",
+    }
+  }
+}
+
 /// The confirmed pair plus the melodic prohibition — §8.6 onwards writes
 /// against this, and §8.16 argues that a *generator* should not.
 ///

@@ -2398,9 +2398,9 @@ or swept.
 ### 10.1 Environment and data
 
 ```
-rustc 1.96.1   cargo 1.96.1     # one dependency: clap, for the command line
+rustc 1.96.1   cargo 1.96.1     # clap for the command line; serde optional, off
 git clone --recurse-submodules <this repo>
-cargo test --release            # 64 library tests, 10 in the binary, 5 reference checks
+cargo test --release            # 72 library tests, 10 in the binary, 5 reference checks
 cargo run --release -- list     # every command and the section it produces
 cargo run --release -- --help   # that, plus §10.3's parameters as flags
 cargo run --release -- realise  # writes out/*.mid
@@ -2551,6 +2551,9 @@ benchmarks.
   out if they are downloaded into that directory.
 - **The Shostakovich annotations**, which have no scores here.
 - **The functional-harmony layer**, which compiles but is not exercised by any reported number.
+- **Nothing else.** The optional `embedded-corpus` feature compiles the Bach corpus and the annotations into
+  the library, so a build with no filesystem reproduces the same figures from the same bytes — a test asserts
+  the embedded text is byte-identical to the files.
 
 ### 10.6 Using it as a library
 
@@ -2569,9 +2572,21 @@ src/experiments.rs  the five that resolved §8.2's deadlock
 ```
 
 Everything else in `src/` is library. `cargo test` runs both halves separately —
-**64 tests in the library, 10 in the binary, 5 reference checks** — and
+**72 tests in the library, 10 in the binary, 5 reference checks** — and
 `cargo build --lib` builds the model with no knowledge that a command line
 exists.
+
+**Two optional features, both off.** `serde` derives `Serialize`/`Deserialize` on
+the types a settings file holds and adds `settings`, which writes JSON;
+`embedded-corpus` compiles the 24 fugues and the annotations in, about 295 kB,
+for a build with no filesystem. Off by default so that **nothing a figure in
+§8 passes through touches a crate** — `clap` parses the command line and
+`serde` is not enabled when the measurements run.
+
+**No path is required anywhere.** `kern::read` and `refdata::read` are wrappers
+on `kern::parse` and `refdata::parse`, and `midi::write` and `write_score` on
+`midi::encode` and `encode_score`. A caller with bytes and no filesystem — a
+browser — uses the second of each and never mentions a `Path`.
 
 #### Composing
 
@@ -2620,7 +2635,10 @@ a result that *can* be displayed without being checked is one that will be.
 | what a texture breaks | `corpus::check_voices`, `corpus::check_melody` |
 | a chord path, or a key path | `harmony::analyse_viterbi`, `key::analyse` |
 | Marpurg's answer | `answer::admissible` |
-| MIDI out, tracks named and ordered | `midi::write_score` |
+| MIDI out, tracks named and ordered | `midi::write_score`, or `midi::encode_score` for bytes |
+| a score from text rather than a file | `kern::parse`, `refdata::parse` |
+| the corpus without a filesystem | `embedded::pieces`, `embedded::specs` |
+| settings saved and reproduced | `settings::Settings` |
 
 #### Editing one block without recomposing the piece
 

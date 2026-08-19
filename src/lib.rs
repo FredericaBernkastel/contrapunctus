@@ -77,6 +77,8 @@ pub mod answer;
 pub mod automaton;
 pub mod compose;
 pub mod corpus;
+#[cfg(feature = "embedded-corpus")]
+pub mod embedded;
 pub mod episode;
 pub mod form;
 pub mod harmony;
@@ -87,6 +89,7 @@ pub mod pitch;
 pub mod plan;
 pub mod realise;
 pub mod refdata;
+pub mod settings;
 pub mod shape;
 pub mod species;
 pub mod stretto;

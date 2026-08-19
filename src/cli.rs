@@ -21,7 +21,7 @@
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use std::{path::PathBuf, sync::OnceLock};
 
-use contrapunctus::automaton::{Rule, CONFIRMED, CONF_MEL as CM, HARD};
+use contrapunctus::automaton::{Rule, Tier};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -139,19 +139,22 @@ pub enum TierArg {
 pub use contrapunctus::automaton::CONF_MEL;
 
 impl TierArg {
-  pub fn rules(self) -> &'static [Rule] {
+  /// The library's own tier. `clap::ValueEnum` cannot be derived on a type in a
+  /// crate that does not depend on clap, so this enum exists to be parsed and
+  /// immediately becomes [`automaton::Tier`] — the definition lives there, with
+  /// the rules.
+  pub fn tier(self) -> Tier {
     match self {
-      TierArg::Confirmed => CONFIRMED,
-      TierArg::ConfMelodic => CM,
-      TierArg::Full => HARD,
+      TierArg::Confirmed => Tier::Confirmed,
+      TierArg::ConfMelodic => Tier::ConfMelodic,
+      TierArg::Full => Tier::Full,
     }
   }
+  pub fn rules(self) -> &'static [Rule] {
+    self.tier().rules()
+  }
   pub fn label(self) -> &'static str {
-    match self {
-      TierArg::Confirmed => "confirmed(2)",
-      TierArg::ConfMelodic => "conf+melodic",
-      TierArg::Full => "full(5)",
-    }
+    self.tier().label()
   }
 }
 

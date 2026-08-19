@@ -289,10 +289,11 @@ Each is a two-line split: the path form reads the file and calls the new one.
 **Do this before writing any interface code.** It is small now and becomes an
 excuse later.
 
-The corpus itself ships as bytes: the 24 fugues embedded with `include_str!`
-behind a feature, so a web build has the subject list without a network fetch.
-Roughly 2 MB of `**kern`, which is acceptable; if it is not, embed only the 24
-subjects rather than the whole scores.
+The corpus itself ships as bytes: `embedded::FUGUES` and `embedded::ANNOTATIONS`
+behind the `embedded-corpus` feature, so a web build has the subject list with no
+network fetch. **295 kB**, not the two megabytes first estimated. A test asserts
+the embedded text is byte-identical to the files, which is what makes a browser
+build's figures comparable with §8's rather than merely similar.
 
 ### 7.2 Files in and out
 
@@ -345,38 +346,47 @@ verified** instead.
 
 ### 8.2 Format
 
-A small line-oriented text format, hand-written, with no serialisation
-dependency — the library has exactly one dependency today and §10.6 makes a
-point of it. The data is flat and small; a reader is under a hundred lines, and
-the format stays legible in a diff.
+**JSON, through `serde`**, behind the library's optional `serde` feature. The
+interface enables it; the measurement binary does not, which is what keeps
+readme §10.5's claim that no reported figure passes through a crate.
 
-```
-contrapunctus/1
-engine     0.1.0
-voices     3
-key        0 0 -1 0 0 -1 -1
-tonic      0
-measure    960
-beat       240
-compass    33 45 | 28 40 | 21 33
-subject    wtc-i-02 entry 1
-note       0 120 28 0 1
-note       120 120 27 1 1
-...
-middles    4 5 3
-episode    3
-link       1 1
-close      yes
-tier       full
-seed       24301
-fingerprint  9f3c1a7b5e2d4408
+`Serialize` and `Deserialize` are derived on `Pitch`, `Note`, `Voice`,
+`Design`, `Layout`, `Kind`, `Block` and `automaton::Tier`, each behind
+`cfg_attr` so the core still compiles with no dependency at all.
+
+```json
+{
+  "format": 1,
+  "engine": "0.1.0",
+  "design": {
+    "subject": { "notes": [ { "onset": 120, "dur": 120, "pitch": { "step": 28, "alter": 0 }, "attack": true } ] },
+    "voices": 3,
+    "key": [0, 0, -1, 0, 0, -1, -1],
+    "tonic": 0,
+    "measure": 960,
+    "beat": 240,
+    "compass": [[33, 45], [28, 40], [21, 33]]
+  },
+  "layout": {
+    "middles": [4, 5, 3],
+    "episode_bars": 3,
+    "link": [1, 1],
+    "close_at_home": true
+  },
+  "tier": "full",
+  "seed": 24301,
+  "fingerprint": 11512035283069334625
+}
 ```
 
-- `note` is `onset dur step alter attack`, in the library's own units, so a
-  subject imported from anywhere round-trips exactly.
-- `subject` is provenance only, for display. The notes are the truth.
-- Unknown keys are **ignored with a warning**, so a newer file opens in an older
-  build with the settings it understands rather than not at all.
+The subject is stored as **notes**, in the library's own units, so one imported
+from anywhere round-trips exactly and a file does not depend on the corpus being
+present to open.
+
+`format` is the format's version, bumped when a field's meaning changes rather
+than when one is added: **unknown keys are ignored**, so an older build opens a
+newer file with the settings it understands. A `format` *newer* than the build
+reads is refused rather than half-read. Both are tested.
 
 ### 8.3 The fingerprint
 
@@ -427,13 +437,26 @@ Ordered by whether an interface can start without it.
 
 | # | change | why | size |
 |---|---|---|---|
-| 1 | `kern::parse`, `refdata::parse`, `midi::encode` | no filesystem on the web | two lines each |
-| 2 | Embedded corpus behind a feature | a subject list without a fetch | small |
-| 3 | Settings read/write | §8, and the fingerprint | ~150 lines |
-| 4 | Ghosting for a voice drag | 4.3 above, so the knock-on is visible | interface only |
-| 5 | A CDCL solver | four voices, and five | §9 |
+| 1 | Ghosting for a voice drag | 4.3 above, so the knock-on is visible | interface only |
+| 2 | A CDCL solver | four voices, and five | §9 |
 
-Already done and needing nothing further:
+Everything else on this list is now done:
+
+- **No `&Path` required anywhere.** `kern::parse`, `refdata::parse`,
+  `midi::encode` and `midi::encode_score` take and return bytes; the path forms
+  are wrappers on them.
+- **`embedded-corpus`** compiles the 24 fugues and the annotations in, 295 kB,
+  byte-identical to the files and asserted so.
+- **`settings::Settings`** — JSON through `serde`, a format version, unknown
+  keys ignored, a newer format refused, and a fingerprint that makes *same file,
+  same fugue* a checked fact rather than a promise.
+- **`automaton::Tier`** names a tier where a `&'static [Rule]` cannot go — a
+  settings file, a command line. `cli::TierArg` is a two-line wrapper on it now.
+
+Both features are **off by default**, so the measurement binary still passes
+through no crate and readme §10.5's claim about §8's figures holds.
+
+Already done before this and needing nothing further:
 
 - `compose::Design` / `Layout` / `Outcome` — every control in §3 is a field that
   exists.

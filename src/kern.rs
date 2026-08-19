@@ -20,6 +20,7 @@ use crate::pitch::{parse_kern_pitch, Pitch};
 pub const TICKS_PER_WHOLE: i64 = 960;
 pub const TICKS_PER_QUARTER: i64 = TICKS_PER_WHOLE / 4;
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Copy, Debug)]
 pub struct Note {
   pub onset: i64,
@@ -30,6 +31,7 @@ pub struct Note {
   pub attack: bool,
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug, Default)]
 pub struct Voice {
   pub notes: Vec<Note>,
@@ -103,9 +105,21 @@ struct Spine {
   is_kern: bool,
 }
 
+/// Read a `**kern` score from a file.
+///
+/// A thin wrapper on [`parse`], which is the one to call where there is no
+/// filesystem — in a browser, or from bytes already in hand. Splitting the two
+/// is what lets this library build for `wasm32`.
 pub fn read(path: &std::path::Path) -> Result<Piece, String> {
   let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
-  let id = path.file_stem().unwrap_or_default().to_string_lossy().into_owned();
+  let id = path.file_stem().unwrap_or_default().to_string_lossy();
+  parse(&text, &id)
+}
+
+/// Parse a `**kern` score from text. `id` names the piece and is used for
+/// nothing but reporting.
+pub fn parse(text: &str, id: &str) -> Result<Piece, String> {
+  let id = id.to_string();
 
   let mut spines: Vec<Spine> = vec![];
   let mut voices: Vec<Voice> = vec![];
@@ -256,7 +270,7 @@ pub fn read(path: &std::path::Path) -> Result<Piece, String> {
       // token's duration from the first, and record the rest as unusable.
       let subs: Vec<&str> = tok.split(' ').filter(|s| !s.is_empty()).collect();
       let dur = duration(subs[0])
-        .map_err(|e| format!("{}:{}: {e}", path.display(), lineno + 1))?;
+        .map_err(|e| format!("{id}:{}: {e}", lineno + 1))?;
 
       let is_rest = subs[0].contains('r');
       if !is_rest {

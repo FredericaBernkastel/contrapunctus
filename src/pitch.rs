@@ -16,6 +16,7 @@
 ///
 /// `Hash` and `Ord` are derived because §8.6's search keys its dynamic-
 /// programming states on the tuple of sounding pitches.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, PartialOrd, Ord)]
 pub struct Pitch {
   pub step: i16,

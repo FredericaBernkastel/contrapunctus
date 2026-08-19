@@ -49,9 +49,9 @@
 //!   its pitches, for exactly this reason.
 //!
 //! Written by hand rather than taken from a crate, because the whole encoder is
-//! shorter than the dependency's documentation would be. The one dependency this
-//! repository has is `clap`, and it parses the command line: nothing a reported
-//! figure passes through touches a crate.
+//! shorter than the dependency's documentation would be. **Nothing a reported
+//! figure passes through touches a crate**: `clap` parses the command line, and
+//! `serde` is an optional feature the measurements do not enable.
 
 use crate::kern::{Voice, TICKS_PER_QUARTER};
 
@@ -130,13 +130,25 @@ fn track(v: &Voice, name: &str, channel: u8) -> Vec<u8> {
 /// `beats` per bar of a note worth `1/unit` of a whole — `(4, 4)` for common
 /// time. The meter comes from the score's own time signature; guessing it would
 /// put the bar lines somewhere the music does not have them.
+/// Write a standard MIDI file — a wrapper on [`encode`], which is the one to
+/// call where there is no filesystem.
 pub fn write(
   path: &std::path::Path,
   voices: &[Voice],
   names: &[String],
   qpm: u32,
-  (beats, unit): (u8, u8),
+  sig: (u8, u8),
 ) -> std::io::Result<()> {
+  std::fs::write(path, encode(voices, names, qpm, sig))
+}
+
+/// The bytes of a standard MIDI file.
+pub fn encode(
+  voices: &[Voice],
+  names: &[String],
+  qpm: u32,
+  (beats, unit): (u8, u8),
+) -> Vec<u8> {
   let mut out = vec![];
   let mut head = vec![];
   be16(1, &mut head); // format 1
@@ -163,7 +175,7 @@ pub fn write(
     let ch = if i as u8 >= 9 { i as u8 + 1 } else { i as u8 } & 0x0F;
     chunk(b"MTrk", &track(v, name, ch), &mut out);
   }
-  std::fs::write(path, out)
+  out
 }
 
 /// Write a texture as MIDI **in score order**, top voice first, with each track
@@ -189,6 +201,11 @@ pub fn write_score(
   qpm: u32,
   sig: (u8, u8),
 ) -> std::io::Result<()> {
+  std::fs::write(path, encode_score(voices, roles, qpm, sig))
+}
+
+/// The same as bytes, for a caller with no filesystem.
+pub fn encode_score(voices: &[Voice], roles: &[String], qpm: u32, sig: (u8, u8)) -> Vec<u8> {
   let mean = |v: &Voice| -> f64 {
     if v.notes.is_empty() {
       return f64::MIN;
@@ -215,7 +232,7 @@ pub fn write_score(
     names.push(format!("{} {where_} {span} {}", pos + 1, roles.get(v).map(|s| s.as_str()).unwrap_or("")));
     out.push(voices[v].clone());
   }
-  write(path, &out, &names, qpm, sig)
+  encode(&out, &names, qpm, sig)
 }
 
 #[cfg(test)]
