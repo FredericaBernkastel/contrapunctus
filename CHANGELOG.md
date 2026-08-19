@@ -910,7 +910,7 @@ the subject's own rhythm, which is why the result is stiffer than Bach.
 
 ### The second listening test, and a rule wrong as a description and right as a constraint
 
-[`PLACEHOLDER`](../../commit/PLACEHOLDER)
+[`32b0f18`](../../commit/32b0f18)
 
 The first version was generated on `conf+melodic` and listened to. The report: **"very large dissonance, and at
 times it sounds like a cacophony"** — which *agrees* with its number, 366.2 violations per thousand against Bach's
