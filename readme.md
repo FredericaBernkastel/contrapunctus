@@ -2067,8 +2067,8 @@ close at home. From BWV 847's subject, in three voices:
 
 **Twelve blocks, 27 bars, filled in 0.5 seconds.** Read back through §8.15's own parser it covers the voices,
 alternates, has a middle and ends at home — and fails `exposition runs unbroken`, which is the link, written on
-purpose. Against §8.2's checker: **785 slices, zero violations on the confirmed tier**, and 55 on the full five —
-`70.1` per thousand against Bach's `112.3`
+purpose. Against §8.2's checker: **785 slices, zero violations on the confirmed tier**, and 58 on the full five —
+`73.9` per thousand against Bach's `112.3`
 ([§8.12](#812-the-fourth-and-the-scope-a-dissonance-is-judged-in)).
 
 **That is the fourth version, and the first two corrections came from a listener rather than from a test.** The two
@@ -2084,7 +2084,13 @@ voice chosen by the same rule as every other block rather than to voice 0 by han
 | first — `conf+melodic` | 366.2 | 0 | 3.9s |
 | second — the full tier | 90.8 | 1 | 0.8s |
 | third — continuous voices | 73.8 | 0 | 0.5s |
-| **fourth — a seventh on the dominant, and the library split** | **70.1** | **0** | **0.6s** |
+| **fourth — a seventh on the dominant, and the library split** | **73.9** | **0** | **0.6s** |
+
+The last figure is one draw of many. Over twelve seeds the rate is **74.1 ± 2.3**, running from `70.1` to `77.7`,
+and every one of them is far below Bach's `112.3`. That matters more than the middle of it: **the seed changes
+which notes are written and barely changes how good they are.** A caller re-drawing to hear something different is
+exploring the legal set, not hunting a better score — which is the honest thing to tell anyone given a button that
+does it.
 
 #### The second listening test, and a rule that is wrong as a description and right as a constraint
 
@@ -2605,6 +2611,7 @@ a result that *can* be displayed without being checked is one that will be.
 | you want | you call |
 |---|---|
 | a whole fugue, checked | `compose::fugue` |
+| **one block rewritten, the rest untouched** | `compose::refill` |
 | the derivation only, to draw a plan | `compose::derive` |
 | the notes only | `compose::generate` |
 | a fill against voices you already have | `realise::fill` |
@@ -2614,6 +2621,36 @@ a result that *can* be displayed without being checked is one that will be.
 | a chord path, or a key path | `harmony::analyse_viterbi`, `key::analyse` |
 | Marpurg's answer | `answer::admissible` |
 | MIDI out, tracks named and ordered | `midi::write_score` |
+
+#### Editing one block without recomposing the piece
+
+An interface over this wants to change one thing and see one thing change. It can:
+[`compose::refill`](src/compose.rs) rewrites a single block and leaves every other note where it was, which a test
+asserts over the whole piece rather than at the seam.
+
+It works because the fill is blockwise and the only thing crossing a block boundary is **the pitch each voice ends
+on**. `Problem::terminal` pins those — the mirror of `Problem::prior` — so a refilled block is a drop-in
+replacement and nothing after it is searched again. On a twelve-block fugue that is a twelfth of the work; at five
+voices, where one block costs more than a whole three-voice piece, it is the difference between an editor that
+responds and one that recomputes.
+
+Two limits, both refusals rather than surprises. **Span-preserving edits only** — changing a block's key or its
+voice keeps the piece the same length and refills locally; lengthening an episode or adding a middle moves every
+later bar, and no pin makes that local. And the pinned ending may simply be **unreachable** once the block's
+contents have changed, which is reported so the caller can fall back to [`compose::fugue`].
+
+The seed is keyed on **what a block is** — its kind, voice, key and length — and not on its position, so editing
+one block does not reseed the others. The index-keyed seed it replaced would have redrawn the whole piece under any
+edit that changed the block list.
+
+**What this does not solve is five voices.** Refilling reduces how many blocks are searched; it does not make one
+searchable. A block with four or five free voices is past [§2.7](#27-where-a-solver-takes-over-from-the-dp)'s wall,
+and that is the solver in [§9](#9-roadmap). The two fit together well — a CDCL solver is natively incremental, so
+*re-solve one block against a changed constraint* is the operation it is built for.
+
+> The same architecture gives §8.16 its one parallel fifth at a seam and gives an editor its locality. The
+> automaton's state resets at a block edge, so the search cannot see across it — **the defect and the capability
+> are one fact**, and a single global search would fix the first by destroying the second.
 
 #### Two things a caller should know before trusting it
 

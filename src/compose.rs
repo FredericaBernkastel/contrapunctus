@@ -86,12 +86,56 @@ pub struct Block {
 const TRIAD: usize = 0;
 const DOMINANT_SEVENTH: usize = 4;
 
+/// A block's **identity**, for seeding — what it is, not where it sits.
+///
+/// The seed used to be the block's index, which is fine for one generate and
+/// wrong for editing. Inserting a middle shifts every later index, so every
+/// later block would reseed and the whole piece would change underneath an edit
+/// that should have been local. Keyed on the block's own description instead,
+/// an untouched block keeps its notes when something before it grows.
+///
+/// `nth` distinguishes blocks that are otherwise identical — two episodes for
+/// the same voice in the same key — and counts only among *those*, so it does
+/// not move when an unrelated block is inserted.
+fn ident(b: &Block, nth: usize) -> u64 {
+  let (tag, voice, shift, tonal) = match &b.kind {
+    Kind::Entry { voice, shift, tonal } => (1u64, *voice as u64, *shift as i64 as u64, *tonal as u64),
+    Kind::Episode { voice, shift } => (2u64, *voice as u64, *shift as i64 as u64, 0),
+  };
+  let mut h = 0xcbf2_9ce4_8422_2325u64; // FNV-1a, which is enough to spread a seed
+  for x in [tag, voice, shift, tonal, b.key_of as i64 as u64, b.len as u64, nth as u64] {
+    h ^= x;
+    h = h.wrapping_mul(0x0000_0100_0000_01b3);
+  }
+  h
+}
+
+/// Per-block seeds, stable under insertion elsewhere in the piece.
+pub fn seeds(blocks: &[Block], base: u64) -> Vec<u64> {
+  let mut seen: std::collections::HashMap<u64, usize> = std::collections::HashMap::new();
+  blocks
+    .iter()
+    .map(|b| {
+      let bare = ident(b, 0);
+      let nth = seen.entry(bare).or_insert(0);
+      let s = base ^ ident(b, *nth);
+      *nth += 1;
+      s
+    })
+    .collect()
+}
+
 /// Which voice a block places its line in.
 fn held_of(b: Option<&Block>) -> usize {
   match b.map(|x| &x.kind) {
     Some(Kind::Entry { voice, .. }) | Some(Kind::Episode { voice, .. }) => *voice,
     None => 0,
   }
+}
+
+/// Which voice a block places its line in, by reference.
+fn held_of_ref(b: &Block) -> usize {
+  held_of(Some(b))
 }
 
 /// The subject's length in ticks, rounded up to a whole bar so that entries and
@@ -414,6 +458,7 @@ pub fn generate(
 ) -> Result<(Vec<Block>, Vec<Voice>, Relaxed), String> {
   let blocks = derive(d, l);
   let plan = plan(d, &blocks);
+  let seeds = seeds(&blocks, seed);
   let mut out: Vec<Voice> = vec![Voice { notes: vec![] }; d.voices];
   let mut prior: Vec<Option<Pitch>> = vec![None; d.voices];
   let mut relaxed = Relaxed::default();
@@ -483,8 +528,9 @@ pub fn generate(
         weights: [1.0; 6],
         prescribe: [0.0; 3],
         prior: if attempt == 0 { joined.clone() } else { vec![] },
+        terminal: vec![],
         samples: 0,
-        seed: seed ^ (bi as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15),
+        seed: seeds[bi],
         beta: 0.0,
       }
       .drawing();
@@ -617,8 +663,20 @@ impl Outcome {
 pub fn fugue(d: &Design, l: &Layout, tier: &[Rule], seed: u64) -> Result<Outcome, String> {
   let t0 = std::time::Instant::now();
   let (blocks, voices, relaxed) = generate(d, l, tier, seed)?;
-  let seconds = t0.elapsed().as_secs_f64();
+  Ok(judge(d, blocks, voices, relaxed, t0.elapsed().as_secs_f64()))
+}
 
+/// Every check §8 can make, over a finished piece.
+///
+/// Shared by [`fugue`] and [`refill`] rather than written twice: a result that
+/// two paths judge differently is worse than one nobody judges.
+fn judge(
+  d: &Design,
+  blocks: Vec<Block>,
+  voices: Vec<Voice>,
+  relaxed: Relaxed,
+  seconds: f64,
+) -> Outcome {
   let piece = Piece {
     id: "generated".into(),
     voices: voices.clone(),
@@ -640,7 +698,7 @@ pub fn fugue(d: &Design, l: &Layout, tier: &[Rule], seed: u64) -> Result<Outcome
     crate::corpus::check_melody(v, &mut tally);
   }
 
-  Ok(Outcome {
+  Outcome {
     bars: length(&blocks) / d.measure.max(1),
     blocks,
     voices,
@@ -648,8 +706,117 @@ pub fn fugue(d: &Design, l: &Layout, tier: &[Rule], seed: u64) -> Result<Outcome
     verdict,
     tally,
     seconds,
-  })
+  }
 }
+
+/// Refill **one block**, leaving every other note exactly where it was.
+///
+/// The operation a plan editor needs. §8.16 fills a piece block by block and the
+/// only thing crossing a block boundary is the pitch each voice ends on, so a
+/// block refilled to the *same* ending is a drop-in replacement: every later
+/// block keeps the notes it already had, and none of them is searched again. On
+/// a twelve-block fugue that is a twelfth of the work, and at five voices —
+/// where a single block costs far more than a whole three-voice piece does — it
+/// is the difference between an editor that responds and one that recomputes.
+///
+/// **Span-preserving edits only.** Changing which voice takes a block, or what
+/// key it is in, leaves the piece the same length and this applies. Changing an
+/// episode's length, or adding a middle, moves everything after it in time;
+/// there is no sense in which those later bars are unchanged, and this refuses
+/// rather than pretending. The caller falls back to [`fugue`].
+///
+/// It also refuses when the pinned ending is unreachable — the block's new
+/// contents may not be able to arrive where the old ones did. That is a real
+/// answer and not an error: the edit is possible, it just is not local, and the
+/// caller regenerates from `bi` onwards.
+pub fn refill(
+  d: &Design,
+  l: &Layout,
+  tier: &[Rule],
+  seed: u64,
+  prev: &Outcome,
+  bi: usize,
+) -> Result<Outcome, String> {
+  let blocks = derive(d, l);
+  if blocks.len() != prev.blocks.len() {
+    return Err("the layout changed the number of blocks; refill is span-preserving".into());
+  }
+  if blocks.iter().zip(&prev.blocks).any(|(a, b)| a.at != b.at || a.len != b.len) {
+    return Err("the layout moved a block in time; refill is span-preserving".into());
+  }
+  let b = blocks.get(bi).ok_or("no such block")?;
+
+  // What the neighbours already sound, read off the notes rather than recorded:
+  // the piece is the source of truth for its own seams.
+  let prior: Vec<Option<Pitch>> = (0..d.voices)
+    .map(|v| {
+      prev.voices[v]
+        .notes
+        .iter()
+        .filter(|n| n.onset < b.at)
+        .max_by_key(|n| n.onset)
+        .map(|n| n.pitch)
+    })
+    .collect();
+  let terminal: Vec<Option<Pitch>> = (0..d.voices)
+    .map(|v| crate::kern::sounding(&prev.voices[v], b.at + b.len - 1).map(|(p, _)| p))
+    .collect();
+
+  let held = held_of(Some(b));
+  let line = match &b.kind {
+    Kind::Entry { shift, tonal, .. } => state(d, 0, *shift, *tonal),
+    Kind::Episode { shift, .. } => sequence(d, 0, b.len, *shift),
+  };
+  let next = blocks.get(bi + 1).map(held_of_ref);
+  let quiet = d.measure.min(b.len / 2);
+  let voices: Vec<Voice> = (0..d.voices)
+    .map(|v| {
+      if v == held {
+        line.clone()
+      } else if Some(v) == next && quiet > 0 {
+        Voice { notes: rhythm(d, 0, b.len - quiet, v) }
+      } else {
+        Voice { notes: rhythm(d, 0, b.len, v) }
+      }
+    })
+    .collect();
+
+  let full = plan(d, &blocks);
+  let here: Vec<harmony::Segment> = full
+    .iter()
+    .filter(|s| s.start >= b.at && s.start < b.at + b.len)
+    .map(|s| harmony::Segment { start: s.start - b.at, end: s.end - b.at, ..s.clone() })
+    .collect();
+
+  let pr = Problem {
+    voices,
+    free: (0..d.voices).map(|v| v != held).collect(),
+    compass: d.compass.clone(),
+    key: d.key,
+    measure: d.measure,
+    plan: here,
+    tier,
+    weights: [1.0; 6],
+    prescribe: [0.0; 3],
+    prior,
+    terminal,
+    samples: 0,
+    seed: seeds(&blocks, seed)[bi],
+    beta: 0.0,
+  }
+  .drawing();
+  let sol = realise::fill(&pr).map_err(|e| format!("block {bi}: {e}"))?;
+
+  // splice: the block's own bars replaced, everything else untouched
+  let mut out = prev.voices.clone();
+  for (v, filled) in sol.chosen().iter().enumerate() {
+    out[v].notes.retain(|n| n.onset < b.at || n.onset >= b.at + b.len);
+    out[v].notes.extend(filled.notes.iter().map(|n| Note { onset: n.onset + b.at, ..*n }));
+    out[v].notes.sort_by_key(|n| n.onset);
+  }
+  Ok(judge(d, blocks, out, prev.relaxed.clone(), 0.0))
+}
+
 
 /// Write an outcome as MIDI, tracks top voice first and named by their role.
 pub fn write(o: &Outcome, d: &Design, path: &std::path::Path, qpm: u32) -> std::io::Result<()> {
@@ -812,6 +979,109 @@ mod tests {
         b.at / d.measure + 1
       );
     }
+  }
+
+
+  /// **The point of the terminal pin**: a refilled block changes its own bars
+  /// and nothing else, note for note.
+  ///
+  /// Asserted over the whole piece rather than over the boundary, because a
+  /// splice that tore one bar later would still pass a boundary check and would
+  /// still be wrong on screen.
+  #[test]
+  fn refilling_one_block_leaves_every_other_note_alone() {
+    let d = design();
+    let l = Layout::default();
+    let first = fugue(&d, &l, CONF_MEL, 0x5EED).expect("a fugue");
+    // a middle entry, so there is music on both sides of it
+    let bi = 6;
+    let b = first.blocks[bi].clone();
+    let again = refill(&d, &l, CONF_MEL, 0x5EED, &first, bi).expect("a refill");
+
+    let outside = |o: &Outcome| -> Vec<(usize, i64, i16, i8)> {
+      o.voices
+        .iter()
+        .enumerate()
+        .flat_map(|(v, x)| {
+          x.notes
+            .iter()
+            .filter(|n| n.onset < b.at || n.onset >= b.at + b.len)
+            .map(move |n| (v, n.onset, n.pitch.step, n.pitch.alter))
+        })
+        .collect()
+    };
+    assert_eq!(outside(&first), outside(&again), "the splice disturbed music outside the block");
+    assert!(!outside(&first).is_empty(), "the block must not be the whole piece");
+  }
+
+  /// And the pin is what does it: the refilled block ends on the same pitches
+  /// it did before, which is why nothing after it had to move.
+  #[test]
+  fn a_refilled_block_ends_where_it_ended() {
+    let d = design();
+    let l = Layout::default();
+    let first = fugue(&d, &l, CONF_MEL, 0x5EED).expect("a fugue");
+    let bi = 6;
+    let b = first.blocks[bi].clone();
+    let again = refill(&d, &l, CONF_MEL, 0x5EED, &first, bi).expect("a refill");
+    for v in 0..d.voices {
+      let end = |o: &Outcome| crate::kern::sounding(&o.voices[v], b.at + b.len - 1).map(|(p, _)| p);
+      assert_eq!(end(&first), end(&again), "voice {v} ends the block somewhere else");
+    }
+  }
+
+  /// A span-changing edit is refused rather than half-applied. Lengthening an
+  /// episode moves every later bar, and no pin can make that local.
+  #[test]
+  fn a_span_changing_edit_is_refused() {
+    let d = design();
+    let first = fugue(&d, &Layout::default(), CONF_MEL, 0x5EED).expect("a fugue");
+    let longer = Layout { episode_bars: 5, ..Layout::default() };
+    assert!(refill(&d, &longer, CONF_MEL, 0x5EED, &first, 6).is_err());
+    let more = Layout { middles: vec![4, 5, 3, 1], ..Layout::default() };
+    assert!(refill(&d, &more, CONF_MEL, 0x5EED, &first, 6).is_err());
+  }
+
+  /// The seed is keyed on what a block **is**, so an edit reseeds only the
+  /// blocks it actually described differently.
+  ///
+  /// Changing the last middle's key leaves every earlier block's seed alone —
+  /// which is the property an editor needs, and the one the old index-keyed
+  /// seed did not have: under that scheme any change to the block *list* moved
+  /// every index and redrew the piece.
+  ///
+  /// Note what this does **not** claim. `derive` gives each block the voice
+  /// after its predecessor's, so *inserting* a middle rotates every later
+  /// block into a different voice — those blocks really are different blocks
+  /// and really do reseed. That is a property of the derivation, not of the
+  /// seeding, and it is why [`refill`] accepts span-preserving edits only.
+  #[test]
+  fn changing_a_late_block_does_not_reseed_the_early_ones() {
+    let d = design();
+    let before = seeds(&derive(&d, &Layout::default()), 0x5EED);
+    let mut edited = Layout::default();
+    *edited.middles.last_mut().unwrap() = 1; // the last middle goes elsewhere
+    let after = seeds(&derive(&d, &edited), 0x5EED);
+
+    assert_eq!(before.len(), after.len(), "a key change must not change the block count");
+    let same = before.iter().zip(&after).take_while(|(a, b)| a == b).count();
+    assert!(same >= 8, "only {same} of {} blocks kept their seed", before.len());
+    assert_ne!(before, after, "the edited block must reseed");
+  }
+
+  /// Two blocks that are identical in every respect still get different seeds,
+  /// or the piece would repeat itself exactly.
+  #[test]
+  fn identical_blocks_still_differ() {
+    let d = design();
+    // three middles in the same key, so the blocks are otherwise identical
+    let l = Layout { middles: vec![4, 4, 4], ..Layout::default() };
+    let blocks = derive(&d, &l);
+    let s = seeds(&blocks, 0x5EED);
+    let mut uniq = s.clone();
+    uniq.sort_unstable();
+    uniq.dedup();
+    assert_eq!(s.len(), uniq.len(), "two blocks share a seed: {s:?}");
   }
 
   /// **The whole texture must never fall silent.** A listener heard this before

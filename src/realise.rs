@@ -183,6 +183,25 @@ pub struct Problem<'a> {
   /// owed across the boundary is forgiven. That is a real limit and a smaller
   /// one, since the plan is rebuilt for each block anyway.
   pub prior: Vec<Option<Pitch>>,
+  /// What each voice must sound at the span's **last** slice — [`prior`]'s
+  /// mirror, one entry per voice, `None` for a voice left free to end anywhere.
+  /// Empty pins nothing.
+  ///
+  /// [`prior`]: Problem::prior
+  ///
+  /// This is what makes an edit **local**. A caller filling a piece block by
+  /// block couples one block to the next through nothing but the pitch each
+  /// voice ends on, so a block refilled to the *same* ending is a drop-in
+  /// replacement and every later block keeps the notes it already had. Without
+  /// it, changing one bar of a fugue re-draws everything after it, which is
+  /// correct and useless: a person editing a plan wants the part they did not
+  /// touch to stay put.
+  ///
+  /// It can make a block infeasible — the pinned ending may be unreachable once
+  /// something else about the block has changed — and that is reported as a
+  /// refusal rather than quietly ignored, so a caller can fall back to filling
+  /// the rest of the piece.
+  pub terminal: Vec<Option<Pitch>>,
   /// How many fills to draw **uniformly at random from the legal set**, beside
   /// the cheapest one — readme §9 step 6, and WaveFunctionCollapse's Weak C2
   /// stripped of the part that needs a corpus (§7.1). Zero costs nothing; any
@@ -817,10 +836,30 @@ pub fn fill(pr: &Problem) -> Result<Solution, String> {
 
   // --- traceback -----------------------------------------------------------
   let last = layers.last().unwrap();
-  let total: u128 = last.count.iter().fold(0u128, |a, &b| a.saturating_add(b));
+
+  // The terminal pin, applied once here rather than inside the search. It is a
+  // property of the *final* layer alone, so filtering at the end costs nothing
+  // and pruning during the walk would buy nothing: a node in an earlier layer
+  // cannot know which endings it can still reach without a backward pass the
+  // shortest path does not need.
+  let ends_ok = |n: &Node| -> bool {
+    pr.terminal.is_empty()
+      || freeix.iter().enumerate().all(|(k, &v)| match pr.terminal.get(v).copied().flatten() {
+        Some(p) => n.now[k] == Some(p),
+        None => true,
+      })
+  };
+  let total: u128 = (0..last.nodes.len())
+    .filter(|&i| ends_ok(&last.nodes[i]))
+    .fold(0u128, |a, i| a.saturating_add(last.count[i]));
   let mut j = (0..last.nodes.len())
+    .filter(|&i| ends_ok(&last.nodes[i]))
     .min_by(|&a, &b| last.cost[a].partial_cmp(&last.cost[b]).unwrap())
-    .ok_or("no final state")?;
+    .ok_or(if pr.terminal.is_empty() {
+      "no final state"
+    } else {
+      "no fill reaches the pinned ending"
+    })?;
   let cost = last.cost[j];
   let flags = last.flags[j] as usize;
 
@@ -866,7 +905,12 @@ pub fn fill(pr: &Problem) -> Result<Solution, String> {
   // when that has happened.
   let mut sampled: Vec<Vec<Voice>> = Vec::new();
   if pr.samples > 0 && total > 0 && !last.weight.is_empty() {
-    let mut rng = pr.seed | 1;
+    // `pr.seed | 1` here once, which discarded the low bit and made every even
+    // seed draw the same fills as the odd one above it. SplitMix adds its gamma
+    // before it uses the state, so a zero state was never the hazard the `| 1`
+    // was guarding against — and a generator whose seeds collide in pairs is
+    // one where a "try another" button shows the same music half the time.
+    let mut rng = pr.seed;
     let mut unif = move || {
       rng = rng.wrapping_add(0x9E37_79B9_7F4A_7C15);
       let mut z = rng;
@@ -874,11 +918,19 @@ pub fn fill(pr: &Problem) -> Result<Solution, String> {
       z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
       (((z ^ (z >> 31)) >> 11) as f64) / ((1u64 << 53) as f64)
     };
-    let final_total: f64 = last.weight.iter().sum();
+    // the draws obey the pin too, or `chosen()` and `sampled` would disagree
+    // about where the block ends and the splice would tear
+    let weights: Vec<f64> = last
+      .weight
+      .iter()
+      .enumerate()
+      .map(|(i, &x)| if ends_ok(&last.nodes[i]) { x } else { 0.0 })
+      .collect();
+    let final_total: f64 = weights.iter().sum();
     for _ in 0..pr.samples {
       let mut r = unif() * final_total;
-      let mut j = last.weight.len() - 1;
-      for (i, &c) in last.weight.iter().enumerate() {
+      let mut j = weights.len() - 1;
+      for (i, &c) in weights.iter().enumerate() {
         r -= c;
         if r <= 0.0 {
           j = i;
@@ -1016,6 +1068,7 @@ mod tests {
       weights: [1.0; 6],
       prescribe: [0.0; 3],
       prior: vec![],
+      terminal: vec![],
       samples: 0,
       seed: 0x5EED,
       beta: 0.0,
