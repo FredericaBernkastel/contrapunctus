@@ -22,6 +22,7 @@ mod refdata;
 mod shape;
 mod species;
 mod step5;
+mod step7;
 mod stretto;
 mod kern;
 mod key;
@@ -88,6 +89,8 @@ fn main() {
     Cmd::Episode => step5::episode_test(),
     Cmd::Key => step5::key_test(),
     Cmd::Form => step5::form_test(),
+    Cmd::Fugue => step5::fugue(),
+    Cmd::Fugue => step5::fugue(),
     Cmd::Realise => step5::run(),
     Cmd::Exp => { exp_density(); exp_pareto(); exp_renaissance(); exp_chromatic(); exp_harmony(); }
     Cmd::Harmony => { harmony_run(); harmony_design(); harmony_corpus(); }
@@ -186,7 +189,7 @@ fn verdict() {
   println!("   -> distinguished                           {}", yes(!s_bad && a_bad));
 }
 
-fn yes(b: bool) -> &'static str {
+pub fn yes(b: bool) -> &'static str {
   if b { "PASS" } else { "FAIL" }
 }
 

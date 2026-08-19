@@ -50,6 +50,7 @@ are built and measured — [§8](#8-what-is-built-and-what-it-measures). Realisa
   - [8.13 Are episodes sequences, and how much of a fugue is episode](#813-are-episodes-sequences-and-how-much-of-a-fugue-is-episode)
   - [8.14 Key-finding, and the ground truth that was already here](#814-key-finding-and-the-ground-truth-that-was-already-here)
   - [8.15 Does the form grammar derive the book?](#815-does-the-form-grammar-derive-the-book)
+  - [8.16 A fugue, from a subject](#816-a-fugue-from-a-subject)
 - [9. Roadmap](#9-roadmap)
 - [10. Reproducing the results](#10-reproducing-the-results)
   - [10.1 Environment and data](#101-environment-and-data)
@@ -2041,6 +2042,87 @@ between them run about three bars; and it ends at home, always. Together with
 [§8.13](#813-are-episodes-sequences-and-how-much-of-a-fugue-is-episode)'s finding that episodes are **54% of the
 book by duration**, the object to build is now clear and it is not the one §2.4 describes.
 
+### 8.16 A fugue, from a subject
+
+`src/step7.rs`, `out/fugue.mid`. Everything before this filled voices **against music that already existed**.
+[§8.6](#86-realisation-and-the-first-notes) held one of Bach's entries and reconstructed the others;
+[§8.3](#83-the-clique-test) placed entries into a span Bach had written. This emits the span too, so for the first
+time nothing in the output is Bach's except the subject.
+
+The grammar is [§8.15](#815-does-the-form-grammar-derive-the-book)'s corrected one and its numbers are §8.15's and
+§8.13's rather than §2.4's: an exposition **with a link**, three middle entry groups, episodes of **three bars**, a
+close at home. From BWV 847's subject, in three voices:
+
+| bar | | key |
+|---:|---|---|
+| 1 | entry, voice 0 | home |
+| 3 | entry, voice 1 — the comes, by [§8.11](#811-marpurgs-tonal-answer-one-rule-exact-one-wrong-and-the-treatise-knew-which)'s Rule I | V |
+| 5 | episode — the link §2.4 forbids and 82% of expositions contain | home |
+| 6 | entry, voice 2 | home |
+| 8, 11 | episode, then entry | V |
+| 13, 16 | episode, then entry | VI |
+| 18, 21 | episode, then entry | IV |
+| 23, 26 | episode, then the last entry | home |
+
+**Twelve blocks, 27 bars, filled in 3.9 seconds.** Read back through §8.15's own parser it covers the voices,
+alternates, has a middle and ends at home — and fails `exposition runs unbroken`, which is the link, written on
+purpose. Against §8.2's checker: **628 slices, zero violations on the confirmed tier**, and 230 on the full five,
+which is `366.2` per thousand against Bach's `112.3` ([§8.12](#812-the-fourth-and-the-scope-a-dissonance-is-judged-in)).
+The generator obeys exactly what it was told to obey and breaks the two dissonance rules — which are not in the
+tier, because §8.2 found they fail on Bach too — at **three times Bach's rate**.
+
+#### Three things it had to be built around, and what each cost
+
+**Two free voices.** [§2.7](#27-where-a-solver-takes-over-from-the-dp) predicted the wall at four and §8.6 measured
+it at two, so three voices is the scope and half the book is out of reach. But a fugue is exactly the case where
+*which* voice is free changes: the subject moves. So the fill runs **one block at a time**, the placed voice held
+and the other two free — two, which is the wall exactly.
+
+That created a seam, and the seam had a fault in it. The search's state resets at every block edge, so a parallel
+fifth *across* a join was invisible to it and visible to the checker — the fault
+[§8.6](#86-realisation-and-the-first-notes)'s first test exists to prevent, arriving at the join rather than in the
+middle. `Problem::prior` now carries the previous slice's pitches across for **every** voice, not only the free
+ones: a parallel is a fact about two voices moving together, so a search that knows where its own voices came from
+but not where the held one came from cannot see one. What still resets is the obligation state, so a dissonance
+owed across a boundary is forgiven. **No block contains counterpoint the checker flags**, and that is what the test
+asserts — not that the whole piece contains none, because those are different claims and only the first is one the
+search can make.
+
+**Episodes have nothing held in them.** §8.13 found episodes are 54% of the book, and in one no subject sounds, so
+all three voices would be free. The way out is §2.4's own `Sequence(motive, …)`: a motive from the subject's head is
+*placed* in one voice and sequenced down by step, leaving two free. **This is a commitment §8.13 already priced** —
+only 13.3% of Bach's episodes are strictly sequential, so this writes a kind of episode that is a minority of the
+book's, and it writes every one of them that way.
+
+**Rhythm is data.** [§2.6](#26-what-is-not-a-variable-rhythm) makes rhythm an input, which is what keeps the search
+a shortest path — and a reconstruction gets it from the piece it is reconstructing. A generator has to invent it.
+Every free voice here takes **the subject's own rhythm**, tiled. It is the cheapest defensible choice and a real
+limitation: a fugue whose accompanying voices all move in the subject's rhythm is a stiffer thing than Bach writes,
+and this is where that shows.
+
+#### What the tests found, which is the part worth keeping
+
+Four faults, each in code that had already produced a plausible-looking fugue.
+
+The **parallel fifth at the seam**, above. A voice **entering by a leap of an eleventh**, because an entry's first
+note is placed by the derivation and no care in the fill can reach it — the fix is Bach's, to have the voice **rest
+before it enters**, and there is then nothing to leap from. §8.15's parser reporting `FAIL` on all four checks
+against the generator's own output, because it read each entry's degree at the block's first tick and **BWV 847's
+subject has an upbeat**, so nothing sounded there and every entry was silently dropped. And a test asserting that
+no voice leaps more than an octave across a join, which is true only where the join was **kept** — a block whose
+join the generator dropped enters cold, and a voice with nothing behind it may legally leap a tenth.
+
+That last one is why `Relaxed` reports *which* blocks lost a constraint and not only how many. **One of twelve lost
+the join, and none lost the plan** — and the order matters: the join is this generator's own convenience and the
+plan is §2.3's obligation system, which is *also* what keeps the search tractable. Dropping the plan first turns a
+dead block into an exploded one, which is worse, and that is how it was found.
+
+**What this is not.** It is not a good fugue, and the numbers say where to look: three times Bach's dissonance
+rate, every accompanying voice in the subject's rhythm, every episode a strict sequence, and a harmonic plan built
+by transposing the subject's own analysis rather than by anything that knows what a fugue's middle is for. What it
+is, is the first thing here that produces a whole piece and then submits it to every instrument this document has
+built — the grammar it came from, the rulebook, and a checker that does not know it was the generator.
+
 ---
 
 ## 9. Roadmap
@@ -2116,8 +2198,14 @@ order.
    free voices and [§8.6](#86-realisation-and-the-first-notes) measured at **two**. Do not layer: Schottstaedt
    reports that failing at three voices.
 
-7. **Form**, per [§2.4](#24-form-is-a-grammar) — which Anders & Miranda name as unsupported by any existing
-   system, so expect to build rather than borrow. The packing question lives inside the stretto block.
+7. ~~**Form**, per [§2.4](#24-form-is-a-grammar)~~ — **built, and it produces a fugue**
+   ([§8.16](#816-a-fugue-from-a-subject)). Twelve blocks, 27 bars, three voices, from BWV 847's subject and nothing else of
+   Bach's; it parses under the grammar it came from and has **zero violations on the confirmed tier** over 628
+   slices. Anders & Miranda named form as unsupported by any existing system, and it was built rather than
+   borrowed. What it is not is a good fugue, and §8.16 says where to look: three times Bach's dissonance rate,
+   every accompanying voice in the subject's rhythm, and every episode a strict sequence when
+   [§8.13](#813-are-episodes-sequences-and-how-much-of-a-fugue-is-episode) measured only 13.3% of Bach's that way.
+   The packing question still lives inside the stretto block, and **four voices still need the solver**.
 
    **Started, from the outside in.** The grammar's `Exposition` rule reads `Entry (Countersubject Entry){V−1}`,
    and the second `Entry` is an *answer* rather than a transposition — a distinction this document did not have
@@ -2270,6 +2358,7 @@ the Josquin Research Project for the Renaissance scores.
 | [§8.13](#813-are-episodes-sequences-and-how-much-of-a-fugue-is-episode) episodes and sequences | `cargo run --release -- episode` |
 | [§8.14](#814-key-finding-and-the-ground-truth-that-was-already-here) key-finding | `cargo run --release -- key` |
 | [§8.15](#815-does-the-form-grammar-derive-the-book) the grammar, parsed | `cargo run --release -- form` |
+| [§8.16](#816-a-fugue-from-a-subject) a whole fugue | `cargo run --release -- fugue` |
 | every cross-reference in the repository | `cargo test --release --test references` |
 
 **This table is checked against the program.** `tests/references.rs` runs `list` and fails the build if a row here

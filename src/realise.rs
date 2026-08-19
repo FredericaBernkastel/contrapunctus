@@ -162,6 +162,27 @@ pub struct Problem<'a> {
   /// harmony. Set `weights` to zero when using them, or the comparison is a
   /// seventh criterion rather than a replacement.
   pub prescribe: [f64; 3],
+  /// What sounded **immediately before** this span, one entry per voice in
+  /// `voices`' own order. Empty means the span begins cold.
+  ///
+  /// A generator that fills a piece block by block needs this and §8.6 did not:
+  /// a reconstruction fills one span of somebody else's piece, where the note on
+  /// the other side of the edge is somebody else's problem. §8.16 fills twelve
+  /// blocks in a row.
+  ///
+  /// It covers **every** voice and not only the free ones, which is the
+  /// difference between a join that sounds and a join that is merely continuous.
+  /// A parallel fifth is a fact about two voices moving together, so a search
+  /// that knows where its own free voices came from but not where the held one
+  /// came from cannot see one across the boundary — and will write it. That is
+  /// not hypothetical: a test caught this generator emitting exactly one, which
+  /// is the fault §8.6's first test exists to prevent, arriving at the seam
+  /// rather than in the middle.
+  ///
+  /// What still resets at a block edge is the **obligation** state: a dissonance
+  /// owed across the boundary is forgiven. That is a real limit and a smaller
+  /// one, since the plan is rebuilt for each block anyway.
+  pub prior: Vec<Option<Pitch>>,
   /// How many fills to draw **uniformly at random from the legal set**, beside
   /// the cheapest one — readme §9 step 6, and WaveFunctionCollapse's Weak C2
   /// stripped of the part that needs a corpus (§7.1). Zero costs nothing; any
@@ -542,8 +563,13 @@ pub fn fill(pr: &Problem) -> Result<Solution, String> {
   // --- the search ----------------------------------------------------------
   let mut layers: Vec<Layer> = Vec::with_capacity(times.len() + 1);
   let mut prev = Layer::new();
+  // the prior is by voice; the search's `now` is by free-voice index
+  let mut seed = [None; MAXFREE];
+  for (k, &v) in freeix.iter().enumerate() {
+    seed[k] = pr.prior.get(v).copied().flatten();
+  }
   prev.relax(
-    Node { now: [None; MAXFREE], pair: [State::default(); MAXPAIR], harm: [H_FREE; MAXFREE] },
+    Node { now: seed, pair: [State::default(); MAXPAIR], harm: [H_FREE; MAXFREE] },
     0.0,
     u32::MAX,
     [None; MAXFREE],
@@ -565,7 +591,16 @@ pub fn fill(pr: &Problem) -> Result<Solution, String> {
   for (s, &t) in times.iter().enumerate() {
     let downbeat = pr.measure > 0 && t % pr.measure == 0;
     let chord = plan_at(&pr.plan, t);
-    let broke = |a: usize, b: usize| s == 0 || !sounds[s - 1][a] || !sounds[s - 1][b];
+    // At the first slice there is no previous one *here*, but there may be one
+    // in the block before — which is what `prior` carries. Without it the first
+    // slice has no motion, and a rule about motion cannot fire on it.
+    let broke = |a: usize, b: usize| {
+      if s == 0 {
+        pr.prior.get(a).copied().flatten().is_none() || pr.prior.get(b).copied().flatten().is_none()
+      } else {
+        !sounds[s - 1][a] || !sounds[s - 1][b]
+      }
+    };
     let mut cur = Layer::new();
     edge_buf.clear();
 
@@ -615,7 +650,13 @@ pub fn fill(pr: &Problem) -> Result<Solution, String> {
             };
             let br = broke(a, b);
             let was_free = if br { None } else { st.now[k] };
-            let was_fix = if br { None } else { pitch_at[s - 1][fv] };
+            let was_fix = if br {
+              None
+            } else if s == 0 {
+              pr.prior.get(fv).copied().flatten()
+            } else {
+              pitch_at[s - 1][fv]
+            };
             let me = (pp, mode == Mode::Strike, Move::of(was_free, pp));
             let it = (pf, sf, Move::of(was_fix, pf));
             o.cost += prescribe_pair(&pr.prescribe, me.2, it.2);
@@ -969,6 +1010,7 @@ mod tests {
       tier,
       weights: [1.0; 6],
       prescribe: [0.0; 3],
+      prior: vec![],
       samples: 0,
       seed: 0x5EED,
       beta: 0.0,

@@ -29,6 +29,7 @@
 //! the leak is worth.
 
 use crate::{
+  yes,
   automaton::{self, Move, Rule, CONFIRMED, HARD, SOFT},
   corpus, harmony, kern,
   kern::{Note, Piece, Voice, TICKS_PER_QUARTER},
@@ -39,6 +40,7 @@ use crate::{
   episode,
   form,
   key,
+  step7,
   plan, refdata, shape, species, stretto,
 };
 
@@ -462,6 +464,7 @@ fn one(
     tier,
     weights: [w; 6],
     prescribe: [0.0; 3],
+    prior: vec![],
     samples,
     // Deterministic and per span, so a rerun draws the same fills: this is a
     // measurement, not a demo, and §10 says nothing here is unseeded.
@@ -776,6 +779,7 @@ pub fn scalarisations() {
       tier: CONFIRMED,
       weights: *weights,
       prescribe: [0.0; 3],
+      prior: vec![],
       samples: 0,
       seed: 0,
       beta: 0.0,
@@ -1216,6 +1220,7 @@ pub fn shape_test() {
         tier: cli::params().tier.rules(),
         weights: [1.0; 6],
         prescribe: [0.0; 3],
+        prior: vec![],
         samples: cli::params().rerank,
         seed: cli::params().seed ^ (s.start as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15),
         beta: 0.0,
@@ -1468,6 +1473,7 @@ pub fn plan_test() {
           tier: cli::params().tier.rules(),
           weights: [1.0; 6],
           prescribe: [0.0; 3],
+          prior: vec![],
           samples: 0,
           seed: cli::params().seed ^ (s.start as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15),
           beta: 0.0,
@@ -1751,6 +1757,7 @@ pub fn soft_test() {
           tier: cli::params().tier.rules(),
           weights: *w,
           prescribe: *pw,
+          prior: vec![],
           samples: *draws,
           seed: cli::params().seed ^ (s.start as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15),
           beta: 0.0,
@@ -1959,6 +1966,7 @@ pub fn objective_check() {
         tier: cli::params().tier.rules(),
         weights: *w,
         prescribe: [0.0; 3],
+        prior: vec![],
         samples: *draws,
         seed: cli::params().seed ^ (s.start as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15),
         beta: 0.0,
@@ -2865,5 +2873,136 @@ pub fn form_test() {
   }
   if !any {
     println!("     (nowhere)");
+  }
+}
+
+// ------------------------------------------------- step 7: a whole fugue ---
+
+/// **A fugue, from a subject.**
+///
+/// Everything before this filled voices against music that already existed.
+/// §8.6 held one of Bach's entries and reconstructed the others; §8.3 placed
+/// entries into a span Bach had written. This emits the span too, so for the
+/// first time nothing in the output is Bach's except the subject.
+///
+/// The grammar is §8.15's corrected one rather than §2.4's, and its numbers come
+/// from §8.15 and §8.13 rather than from the productions: three middle groups,
+/// episodes of three bars, a close at home, and an expositional link — the thing
+/// §2.4 forbids and 82% of real expositions contain.
+///
+/// Three voices, because §8.6 measured the exact search's wall at two free ones.
+/// Half the book is out of reach until a solver replaces the DP, and this says
+/// so rather than beaming.
+pub fn fugue() {
+  println!("\n== step 7: a fugue, from a subject ==");
+  println!("  The first output here in which nothing but the subject is Bach's. §8.6 reconstructed");
+  println!("  voices against music that already existed; this emits the music too.\n");
+  println!("  Grammar: §8.15's corrected one — exposition with a link, three middle groups, episodes");
+  println!("  of three bars, a close at home. Three voices, because §8.6 measured the exact search's");
+  println!("  wall at two free ones and this project does not report a beam as a search.\n");
+
+  let dir = kern_dir();
+  // BWV 847, the C minor fugue: three voices, and §8.3's own subject
+  let Ok(p) = kern::read(&dir.join("wtc1f02.krn")) else {
+    return println!("  (corpus missing)");
+  };
+  let specs = refdata::read(
+    std::path::Path::new("corpus/algomus-data/fugues/fugues.ref"),
+    &|id| if id == "wtc-i-02" { Some(p.measure) } else { None },
+  )
+  .unwrap_or_default();
+  let Some(spec) = specs.iter().find(|s| s.id == "wtc-i-02") else {
+    return println!("  (ground truth missing)");
+  };
+  let Some((pc, _)) = p.tonic else { return println!("  (no key interpretation)") };
+  let Some(tonic) = answer::tonic_letter(pc, &p.key) else { return println!("  (no tonic)") };
+
+  // the subject as Bach states it, rebased to tick zero
+  let (letter, at) = spec.entries[0];
+  let v0 = voice_of(&p, letter);
+  let subject = clip(&p.voices[v0], at, at + spec.len);
+  if subject.notes.is_empty() {
+    return println!("  (subject not found)");
+  }
+
+  let d = step7::Design {
+    subject: subject.clone(),
+    voices: 3,
+    key: p.key,
+    tonic,
+    measure: p.measure,
+    beat: p.beat,
+    // soprano, alto, bass: two octaves each, laid out so the voices do not sit
+    // on top of one another. A form grammar would supply this; §10.3 says so.
+    compass: vec![(33, 45), (28, 40), (21, 33)],
+  };
+
+  println!("   subject: {} notes over {:.1} bars, from BWV 847",
+    subject.notes.iter().filter(|n| n.attack).count(),
+    spec.len as f64 / p.measure as f64);
+
+  let t0 = std::time::Instant::now();
+  match step7::generate(&d, CONF_MEL, cli::params().seed) {
+    Err(e) => println!("\n   REFUSED: {e}"),
+    Ok((blocks, voices, relaxed)) => {
+      let len = step7::length(&blocks);
+      println!("   derived {} blocks over {} bars, filled in {:.1}s",
+        blocks.len(), len / p.measure, t0.elapsed().as_secs_f64());
+      println!(
+        "   {} of {} blocks needed a constraint dropped: {} lost the join, {} the plan too\n",
+        relaxed.blocks, blocks.len(), relaxed.without_prior, relaxed.without_plan
+      );
+
+      println!("   bar   block");
+      for b in &blocks {
+        let what = match &b.kind {
+          step7::Kind::Entry { voice, tonal, .. } => {
+            format!("entry in voice {voice}{}", if *tonal { ", the comes" } else { "" })
+          }
+          step7::Kind::Episode { voice, .. } => format!("episode, motive in voice {voice}"),
+        };
+        let names = ["home", "II", "III", "IV", "V", "VI", "VII"];
+        println!("   {:>3}   {what:<34} key {}", b.at / p.measure + 1, names[b.key_of.rem_euclid(7) as usize]);
+      }
+
+      // does the generated fugue parse under the grammar the book was held to?
+      let made = Piece { voices: voices.clone(), ..p.clone() };
+      let gp = step7::as_plan(&d, &blocks, &made);
+      let v = form::parse(&gp);
+      println!("\n   and under §8.15's parser, applied to what was just generated:");
+      println!("     exposition covers the voices        {}", yes(v.exposition_covers_the_voices));
+      println!("     exposition alternates               {}", yes(v.exposition_alternates));
+      println!("     there is a middle                   {}", yes(v.has_a_middle));
+      println!("     the last cadence is at home         {}", yes(v.ends_at_home));
+      println!(
+        "     exposition runs unbroken            {}   (expected FAIL: §8.15 found 82% of Bach's",
+        yes(v.exposition_is_unbroken)
+      );
+      println!("                                                carry a link, and this writes one)");
+
+      // and against the rulebook, by the same checker §8.2 uses
+      let mut t = corpus::Tally::default();
+      for a in 0..voices.len() {
+        for b in a + 1..voices.len() {
+          t.merge(&corpus::check_voices(&voices[a], &voices[b], p.measure));
+        }
+      }
+      for v in voices.iter() {
+        corpus::check_melody(v, &mut t);
+      }
+      let hard: usize = HARD.iter().map(|r| t.by_rule.get(r.name()).copied().unwrap_or(0)).sum();
+      let conf: usize = CONFIRMED.iter().map(|r| t.by_rule.get(r.name()).copied().unwrap_or(0)).sum();
+      println!("\n   against the rulebook, by §8.2's own checker: {} slices, {conf} violations on the", t.slices);
+      println!("   confirmed tier and {hard} on the full five. Bach's own rate on the full tier is");
+      println!("   112.3 per thousand slices (§8.12), so {:.1} here is the number to compare.",
+        1000.0 * hard as f64 / t.slices.max(1) as f64);
+
+      let out = out_dir();
+      let roles: Vec<String> = (0..voices.len())
+        .map(|i| format!("- {}", ["top", "middle", "bass"][i.min(2)]))
+        .collect();
+      let _ = write_score(&out.join("fugue.mid"), &voices, &roles, 76, meter(&p));
+      println!("\n   wrote {}", out.join("fugue.mid").display());
+    }
   }
 }
