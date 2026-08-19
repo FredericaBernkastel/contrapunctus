@@ -908,6 +908,26 @@ fill runs one block at a time with the placed voice held. Episodes have nothing 
 is placed and sequenced, a commitment §8.13 already priced at 13.3%. And rhythm is data, so every free voice takes
 the subject's own rhythm, which is why the result is stiffer than Bach.
 
+### The second listening test, and a rule wrong as a description and right as a constraint
+
+[`PLACEHOLDER`](../../commit/PLACEHOLDER)
+
+The first version was generated on `conf+melodic` and listened to. The report: **"very large dissonance, and at
+times it sounds like a cacophony"** — which *agrees* with its number, 366.2 violations per thousand against Bach's
+112.3. Worth recording beside §8.6's listening test, which **disagreed** with its number. An instrument checked
+against the ear twice, matching once and missing once, is worth more than one never checked at all.
+
+Generated on the **full five-rule tier** instead: **90.8 per thousand, below Bach's own 112.3** — a factor of
+four, and five times faster, since a tighter tier prunes the search.
+
+> **A rule can be wrong as a description and right as a constraint.** §8.2 stratified the two dissonance rules out
+> of the hard tier and was right to: they fire at 21.4 and 90.9 per thousand *on Bach*. But a generator that omits
+> them writes cacophony and one that enforces them writes less dissonance than Bach. §8.2 asked which rules
+> describe the repertoire; a generator asks what it may write, and the answers differ.
+
+This is the first place the endorsed tier and the generating tier come apart, which is why `--gen-tier` is separate
+from `--tier`. §8.6–§8.15 describe and use `conf+melodic`; §8.16 generates and uses `full(5)`.
+
 ### Four faults, each found by a test, each in code that had already produced a plausible fugue
 
 **A parallel fifth across a block seam.** The search's state resets at every edge, so a parallel that straddles one

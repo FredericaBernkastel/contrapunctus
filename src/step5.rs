@@ -2942,7 +2942,7 @@ pub fn fugue() {
     spec.len as f64 / p.measure as f64);
 
   let t0 = std::time::Instant::now();
-  match step7::generate(&d, CONF_MEL, cli::params().seed) {
+  match step7::generate(&d, cli::params().gen_tier.rules(), cli::params().seed) {
     Err(e) => println!("\n   REFUSED: {e}"),
     Ok((blocks, voices, relaxed)) => {
       let len = step7::length(&blocks);

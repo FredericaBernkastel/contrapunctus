@@ -99,6 +99,18 @@ pub struct Params {
   #[arg(long, global = true, value_enum, default_value_t = TierArg::ConfMelodic)]
   pub tier: TierArg,
 
+  /// The tier §8.16's **generator** writes against, which is not the same
+  /// question and does not have the same answer.
+  ///
+  /// §8.2 stratified the two dissonance rules out of the hard tier because they
+  /// fire at 21.4 and 90.9 per thousand slices **on Bach** — they misdescribe
+  /// him. A generator without them writes dissonance at 366 per thousand and a
+  /// listener calls it cacophony; with them it writes 91, which is *below*
+  /// Bach's own 112. So they are wrong as a description and right as a
+  /// constraint, and §8.16 says so at length.
+  #[arg(long, global = true, value_enum, default_value_t = TierArg::Full)]
+  pub gen_tier: TierArg,
+
   /// Where MIDI is written. Not tracked by git.
   #[arg(long, global = true, default_value = "out", value_name = "DIR")]
   pub out: PathBuf,
@@ -513,6 +525,7 @@ mod tests {
     assert_eq!(p.ren_works, 200);
     assert_eq!(p.seed, 0x5EED);
     assert_eq!(p.tier, TierArg::ConfMelodic);
+    assert_eq!(p.gen_tier, TierArg::Full, "the generator writes against the full tier — §8.16");
     assert_eq!(p.tier.rules(), CONF_MEL);
   }
 

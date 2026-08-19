@@ -2064,12 +2064,59 @@ close at home. From BWV 847's subject, in three voices:
 | 18, 21 | episode, then entry | IV |
 | 23, 26 | episode, then the last entry | home |
 
-**Twelve blocks, 27 bars, filled in 3.9 seconds.** Read back through §8.15's own parser it covers the voices,
+**Twelve blocks, 27 bars, filled in 0.8 seconds.** Read back through §8.15's own parser it covers the voices,
 alternates, has a middle and ends at home — and fails `exposition runs unbroken`, which is the link, written on
-purpose. Against §8.2's checker: **628 slices, zero violations on the confirmed tier**, and 230 on the full five,
-which is `366.2` per thousand against Bach's `112.3` ([§8.12](#812-the-fourth-and-the-scope-a-dissonance-is-judged-in)).
-The generator obeys exactly what it was told to obey and breaks the two dissonance rules — which are not in the
-tier, because §8.2 found they fail on Bach too — at **three times Bach's rate**.
+purpose. Against §8.2's checker: **628 slices**, one confirmed-tier violation at a block seam, and 57 on the full
+five — `90.8` per thousand against Bach's `112.3`
+([§8.12](#812-the-fourth-and-the-scope-a-dissonance-is-judged-in)).
+
+That figure is the second version. The first was generated on `conf+melodic` and scored `366.2`, and the subsection
+below is about why, because the answer turned out to be worth more than the fugue.
+
+#### The second listening test, and a rule that is wrong as a description and right as a constraint
+
+The first version of this was generated on `conf+melodic`, the tier
+[§8.6](#86-realisation-and-the-first-notes) onwards uses, and it was listened to. The report: **"very large
+dissonance, and at times it sounds like a cacophony."**
+
+That is worth recording for a reason beyond the fault it names.
+[§8.6](#86-realisation-and-the-first-notes) records a listening test that **disagreed** with the numbers — the
+reconstruction scored 7.8% against Bach and a listener called it *"on par, nothing is better or worse than Bach
+himself"*. This one **agrees** with them, and the number it agrees with is `366.2` violations per thousand slices
+against Bach's `112.3`. An instrument that matches the ear once and misses it once is more useful than one that has
+never been checked, and the difference between the two cases is which rules were being counted.
+
+**The fix is one word and it inverts §8.2.** Generated on the **full five-rule tier** instead:
+
+| tier the generator writes against | dissonance rules fire, per thousand | time |
+|---|---:|---:|
+| `conf+melodic` — §8.6's tier | **366.2** | 3.9s |
+| `full(5)` | **90.8** | 0.8s |
+| *Bach himself* ([§8.12](#812-the-fourth-and-the-scope-a-dissonance-is-judged-in)) | *112.3* | |
+
+**A factor of four, and it lands below Bach's own rate.** It is also five times faster, because a tighter tier
+prunes the search — which is [§8.6](#86-realisation-and-the-first-notes)'s `full(5)` rows arriving again in a place
+where they matter.
+
+Now, [§8.2](#82-the-rulebook-stratified-by-two-corpora) **stratified those two rules out of the hard tier**, and
+was right to: they fire at 21.4 and 90.9 per thousand on Bach, so as a description of what Bach does they are
+badly wrong. But a generator that omits them writes cacophony, and one that enforces them writes less dissonance
+than Bach.
+
+> **A rule can be wrong as a description and right as a constraint.** §8.2 asked which rules describe the
+> repertoire and answered correctly. A generator is asking a different question — what may I write — and the
+> answer is not the same. The two dissonance rules capture something real about how dissonance has to be
+> *handled*; they are merely too crude to catch the exceptions Bach takes.
+
+This is the first place in this document where the endorsed tier and the generating tier come apart, and it is why
+`--gen-tier` exists separately from `--tier`. Everything §8.6 to §8.15 measures is a description and uses
+`conf+melodic`; §8.16 generates and uses `full(5)`.
+
+**It costs one thing, and the cost is the seam rather than the tier.** On the full tier the piece carries **one**
+confirmed-tier violation where `conf+melodic` carried none — a single parallel at a block join, which is the
+limitation the section above describes and not a consequence of the stricter rules. Tightening the tier makes each
+block harder to fill, so more of them run close to the edge of what is legal, and the one place the search cannot
+see is where that shows.
 
 #### Three things it had to be built around, and what each cost
 
@@ -2117,9 +2164,12 @@ the join, and none lost the plan** — and the order matters: the join is this g
 plan is §2.3's obligation system, which is *also* what keeps the search tractable. Dropping the plan first turns a
 dead block into an exploded one, which is worse, and that is how it was found.
 
-**What this is not.** It is not a good fugue, and the numbers say where to look: three times Bach's dissonance
-rate, every accompanying voice in the subject's rhythm, every episode a strict sequence, and a harmonic plan built
-by transposing the subject's own analysis rather than by anything that knows what a fugue's middle is for. What it
+**What this is not.** It is not a good fugue. The dissonance rate is now below Bach's and the listening report
+that produced that fix was about dissonance, so the next faults to hear are the ones the numbers cannot see: every
+accompanying voice moves in the subject's rhythm, every episode is a strict sequence where
+[§8.13](#813-are-episodes-sequences-and-how-much-of-a-fugue-is-episode) measured 13.3% of Bach's that way, and the
+harmonic plan is the subject's own analysis transposed rather than anything that knows what a fugue's middle is
+for. What it
 is, is the first thing here that produces a whole piece and then submits it to every instrument this document has
 built — the grammar it came from, the rulebook, and a checker that does not know it was the generator.
 
