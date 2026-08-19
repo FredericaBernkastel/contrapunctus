@@ -2414,12 +2414,7 @@ vary; it is [`src/cli.rs`](src/cli.rs) now. The defaults are exactly the publish
 that module, and **no figure in §8 was produced with a non-default flag**.
 
 **The cross-references are enforced, not proofread.** `tests/references.rs` fails the build if a `§` reference
-anywhere in this document, in [`CHANGELOG.md`](CHANGELOG.md) or in `src/**.rs` names a section that does not exist;
-if a link's visible text and its anchor disagree about which section that is; if the numbering has a gap; or if the
-Contents and the headings have drifted apart. It exists because they had: the first run over an already-tidied
-repository found **53 stale references**, most of them doc comments still naming the `9`–`17` numbering that the
-restructure folded into §8, and four links in this file reading `§8` while pointing at §9. Anchors had been checked
-all along, which is exactly why the rot was invisible — the links resolved, and only the words were wrong.
+anywhere in this document, in [`CHANGELOG.md`](CHANGELOG.md) or in `src/**.rs` names a section that does not exist.
 
 | submodule | pinned | licence | used by |
 |---|---|---|---|
@@ -2464,13 +2459,10 @@ the Josquin Research Project for the Renaissance scores.
 
 **This table is checked against the program.** `tests/references.rs` runs `list` and fails the build if a row here
 names a command the binary does not have, if a command's section disagrees with the one it prints, or if a
-command that produces a reported figure is missing from the table. It exists because the previous command line
-answered an unknown argument by silently running something else, so a mistyped command came back as a measurement
-of something.
+command that produces a reported figure is missing from the table.
 
 `realise` runs the three §8.6 commands together. The short names this table used to carry — `exp1`–`exp5`,
-`h1`–`h3`, `r1`–`r3`, `gen`, `cad`, `hren2`, `obj` — all still work as aliases, because they are cited in
-[`CHANGELOG.md`](CHANGELOG.md) and a citation that cannot be run is not a citation.
+`h1`–`h3`, `r1`–`r3`, `gen`, `cad`, `hren2`, `obj` — all still work as aliases.
 
 `rank`, `probe`, `pareto`, `revisit`, `ncts`, `harmony-design`, `harmony-corpus`, `cadence`, `hren`, `seg`,
 `modal-control`, `func` and `binding-harmony` reproduce the **superseded** measurements recorded in

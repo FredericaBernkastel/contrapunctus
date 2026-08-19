@@ -689,8 +689,8 @@ Stated rather than left to be discovered:
   plain stem, and each staff is labelled with the note name of its bottom line
   instead of a clef. The label is arguably better for section 1's beginner and it
   needs no font; the glyphs want the SMuFL subset 5.1 describes.
-- **The synth reads as chiptune.** That is a fair description of what was built — 
-- three odd partials with
+- **The synth reads as chiptune.** That is a fair description of what was 
+  built — three odd partials with
   a hard envelope, no filter, no decay, is close to what an FM chip does, and
   nothing here rounds it off. It is not a defect against the stated goal, which
   is hearing the counterpoint clearly rather than hearing it sound good, and the
