@@ -35,12 +35,18 @@ use std::collections::BTreeMap;
 /// matters more than it sounds: `docs/ui-spec.md` cites §8.16, §2.7, §10.6 and
 /// a dozen more, and a specification that names sections which have moved is
 /// worse than one that names none.
+///
+/// `.html` is swept beside `.md` because `docs/ui-sketch.html` is prose too, and
+/// was reviewed by eye for exactly as long as that worked: a settled decision
+/// changed under it — settings became JSON through `serde` — and the sketch went
+/// on describing a hand-written format until somebody read it. A picture of a
+/// specification is a document that can go stale, so it is checked like one.
 fn docs() -> Vec<String> {
   let mut out = vec!["readme.md".to_string(), "CHANGELOG.md".to_string()];
   if let Ok(rd) = std::fs::read_dir("docs") {
     let mut found: Vec<String> = rd
       .filter_map(|e| e.ok().map(|e| e.path()))
-      .filter(|p| p.extension().is_some_and(|x| x == "md"))
+      .filter(|p| p.extension().is_some_and(|x| x == "md" || x == "html"))
       .map(|p| p.to_string_lossy().replace('\\', "/"))
       .collect();
     found.sort();

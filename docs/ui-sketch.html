@@ -583,7 +583,7 @@ li b{color:var(--ink)}
 
 <section>
   <div class="eyebrow">Engineering</div>
-  <h2>Three things worth deciding before any of this is built</h2>
+  <h2>Three things that decide how this gets built</h2>
 
   <div class="stack">
     <h3>Notation is unusually easy here, and that is not a coincidence</h3>
@@ -595,16 +595,18 @@ li b{color:var(--ink)}
   </div>
 
   <div class="stack">
-    <h3>Playback needs a decision, and I would not use MIDI out</h3>
+    <h3>Playback is both sinks, and the synth is the default</h3>
     <ul>
       <li><b>A small built-in synth</b> — <code>cpal</code> or <code>rodio</code>, a sine or triangle with a short
       envelope. Perhaps 120 lines. No external dependency on the user's machine, the playhead is sample-accurate,
-      and three voices of counterpoint need nothing richer.</li>
-      <li><b>System MIDI out</b> — better sound, but needs a synth installed and configured, and on Windows that
-      is a support burden for a tool whose point is quick iteration.</li>
+      and three voices of counterpoint need nothing richer. It is the default because it is the one that always
+      works, including in a browser.</li>
+      <li><b>System MIDI out</b> — better sound, at the cost of needing a synth installed and configured. Beside
+      the first rather than instead of it: the library already writes MIDI, so this is a sink, not a format.</li>
     </ul>
-    <p>The first, unless you want the fugues to sound good rather than to be heard clearly. Those are different
-    goals and only the second is this tool's.</p>
+    <p>One scheduler, two sinks, and the sample clock is the playhead. The distinction that decides which a
+    listener wants is between hearing the fugue <em>clearly</em> and hearing it <em>well</em> — and a tool for
+    iteration owes the first, which is why the synth is what a fresh install plays through.</p>
   </div>
 
   <div class="stack">
@@ -612,6 +614,10 @@ li b{color:var(--ink)}
     <p>A generate is <b>0.6 seconds</b> for 27 bars. That is fast enough to recompose on release of a slider but
     not on drag, so: recompose on release, and keep the previous <code>Outcome</code> to draw while the next one
     runs on a worker thread. egui repaints at 60fps against whichever is current; nothing needs to block.</p>
+    <p>An edit to the plan strip need not pay even that. <code>compose::refill</code> regenerates <b>one block</b>
+    against pinned pitches at both seams, so a span-preserving edit lands in under 100&nbsp;ms and the rest of the
+    fugue is not merely unchanged but <em>untouched</em> — which is what keeps this usable at five and six voices,
+    where a whole-piece recompose would not be.</p>
     <p>Because <code>seed</code> is the only source of randomness and everything else is deterministic,
     <b>&ldquo;Try a different one&rdquo; is a genuinely cheap button</b> and worth making the most prominent
     control after Compose — it is how a non-expert explores, and the one interaction that rewards having no
@@ -641,11 +647,13 @@ li b{color:var(--ink)}
         <td>With the reason on hover. Enables when the solver lands, and nothing else in the interface
         changes — which is the test of whether the boundary is in the right place.</td></tr>
       <tr><td>Platform</td><td><b>Desktop and web</b></td>
-        <td>Three library functions lose their <code>&amp;Path</code>; generation runs a block per frame instead
-        of a thread; dialogs go through the async API that exists on both.</td></tr>
+        <td>Four library functions lose their <code>&amp;Path</code>; the corpus compiles in behind a feature
+        (295&nbsp;kB); generation runs a block per frame instead of a thread; dialogs go through the async API
+        that exists on both.</td></tr>
       <tr><td>Settings</td><td><b>Saved, plan included</b></td>
-        <td>A small hand-written text format — the library has one dependency and keeps it. A fingerprint over
-        the notes makes &ldquo;same file, same fugue&rdquo; checkable instead of promised.</td></tr>
+        <td><b>JSON, through <code>serde</code></b>, behind an optional feature — so the measurement binary still
+        passes through no crate and §10.5&rsquo;s claim survives. A fingerprint over the notes makes
+        &ldquo;same file, same fugue&rdquo; checkable instead of promised.</td></tr>
     </tbody>
     <caption>The full specification is <code>docs/ui-spec.md</code>; this page is its picture.</caption>
   </table>
