@@ -36,3 +36,8 @@ pollster = "0.4"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen-futures = "0.4"
+# The entry point: a canvas to draw on, and something to hand the future to.
+wasm-bindgen = "0.2"
+web-sys = { version = "0.3", features = ["Document", "Window", "Element", "HtmlCanvasElement"] }
+# `cpal` reaches WebAudio through wasm-bindgen rather than through a system API.
+cpal = { version = "0.18", features = ["wasm-bindgen"] }

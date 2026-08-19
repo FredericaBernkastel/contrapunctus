@@ -11,7 +11,7 @@
 //! What is not here yet is beaming and real clef glyphs; the roadmap says so.
 
 use contrapunctus::kern::{Voice, TICKS_PER_WHOLE};
-use egui::{Align2, FontId, Pos2, Sense, Stroke, Ui, Vec2};
+use egui::{Align2, FontId, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 
 use crate::theme;
 
@@ -32,6 +32,7 @@ pub fn show(
   measure: i64,
   width: f32,
   playhead: Option<i64>,
+  follow: bool,
 ) -> Option<i64> {
   let want = Vec2::new(width.max(ui.available_width()), height(voices.len()));
   let (resp, p) = ui.allocate_painter(want, Sense::click());
@@ -138,6 +139,13 @@ pub fn show(
       [Pos2::new(x, area.top() + 2.0), Pos2::new(x, area.bottom() - 2.0)],
       Stroke::new(1.5, ui.visuals().strong_text_color()),
     );
+    // While the sound is moving, keep the playhead on the page. The strip beside
+    // this shows the whole piece at once and never scrolls, which is why the two
+    // views are not locked together: an overview that scrolled would stop being
+    // an overview, and following is what a detail view is for.
+    if follow {
+      ui.scroll_to_rect(Rect::from_min_max(Pos2::new(x - 120.0, area.top()), Pos2::new(x + 120.0, area.bottom())), None);
+    }
   }
 
   // Clicking the page listens from there. The same conversion the notes were

@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+  <title>Contrapunctus Workbench</title>
+  <meta name="description"
+    content="A fugue generator built from counterpoint transcribed by hand, with no model fitted to any corpus." />
+
+  <!-- Trunk builds the crate and injects the loader here:  trunk serve --release  -->
+  <link data-trunk rel="rust" data-wasm-opt="2" />
+
+  <style>
+    /* Both themes, because the page is whatever the reader's machine says it is
+       and a canvas with no ground behind it flashes white on a dark screen. */
+    :root {
+      color-scheme: light dark;
+      --paper: #F6F7F9;
+      --ink: #15181D;
+      --ink2: #5C6472;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --paper: #0F1216;
+        --ink: #E7EAF0;
+        --ink2: #98A2B3;
+      }
+    }
+
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      overflow: hidden;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+
+    /* egui wants the whole viewport and manages its own scrolling. */
+    canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    #loading {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      text-align: center;
+      padding: 24px;
+    }
+
+    #loading h1 {
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      font-weight: 600;
+      font-size: 26px;
+      letter-spacing: -0.01em;
+    }
+
+    #loading p {
+      margin: 0;
+      max-width: 46ch;
+      color: var(--ink2);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    noscript {
+      color: var(--ink2);
+    }
+  </style>
+</head>
+
+<body>
+  <!-- `main.rs` looks this up by id and refuses clearly if it is not a canvas. -->
+  <canvas id="workbench"></canvas>
+
+  <!-- Removed by the entry point once the application is running, and replaced
+       with the reason if it is not. A page that simply stayed blank would be the
+       one failure mode this project's habit is against. -->
+  <div id="loading">
+    <h1>Contrapunctus Workbench</h1>
+    <p>Loading. The corpus and the rulebook are compiled in, so nothing is fetched after this.</p>
+    <noscript>This needs JavaScript and WebAssembly.</noscript>
+  </div>
+</body>
+
+</html>

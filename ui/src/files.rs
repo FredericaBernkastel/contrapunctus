@@ -95,6 +95,59 @@ pub fn load_settings(into: Slot<Result<Loaded, Note>>) {
   });
 }
 
+/// What an imported file turned out to hold.
+pub struct Imported {
+  pub name: String,
+  pub piece: contrapunctus::kern::Piece,
+  /// Which voice of it was taken, and how many there were.
+  pub took: usize,
+  pub of: usize,
+}
+
+/// Import a subject from a `**kern` file — spec 3.2.
+///
+/// **`**kern` and not MIDI, and that is not a preference.** Humdrum spells its
+/// pitches; MIDI does not, and §8.6 measured 13 notes in 20 coming back
+/// respelled through a round trip. A subject imported as semitones would arrive
+/// with its augmented fourths turned into diminished fifths, and every rule in
+/// this program that distinguishes them would then be answering a question about
+/// a different piece of music.
+///
+/// **The file is the subject.** There is no annotation in a bare `**kern` file
+/// saying where a subject ends, so nothing here guesses: what the file holds is
+/// what is taken, and if it holds a whole fugue the caller is told the length so
+/// they can see that is what happened.
+pub fn import_subject(into: Slot<Result<Imported, Note>>) {
+  spawn(async move {
+    let Some(handle) = rfd::AsyncFileDialog::new()
+      .add_filter("Humdrum **kern", &["krn", "kern"])
+      .pick_file()
+      .await
+    else {
+      return into.put(Err(Note::Cancelled));
+    };
+    let name = handle.file_name();
+    let bytes = handle.read().await;
+    let text = match String::from_utf8(bytes) {
+      Ok(t) => t,
+      Err(_) => return into.put(Err(Note::Failed("that file is not text".into()))),
+    };
+    match contrapunctus::kern::parse(&text, &name) {
+      Err(e) => into.put(Err(Note::Failed(format!("{name} did not parse: {e}")))),
+      Ok(piece) if piece.voices.iter().all(|v| v.notes.is_empty()) => {
+        into.put(Err(Note::Failed(format!("{name} holds no notes"))))
+      }
+      Ok(piece) => {
+        // The first voice that has anything in it. Which voice is not a guess
+        // when there is only one, and the interface says so when there is not.
+        let took = piece.voices.iter().position(|v| !v.notes.is_empty()).unwrap_or(0);
+        let of = piece.voices.len();
+        into.put(Ok(Imported { name, piece, took, of }))
+      }
+    }
+  });
+}
+
 /// Export the music as a MIDI file — spec 6.4.
 ///
 /// Through `compose::encode`, which orders the tracks by mean sounding pitch and

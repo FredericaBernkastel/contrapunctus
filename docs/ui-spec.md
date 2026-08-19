@@ -373,7 +373,37 @@ This needs no threads, so it works identically on both targets. Reach for a
 worker only if a five-voice block ever exceeds a frame by enough to matter, and
 then reach for it on both platforms at once.
 
-### 7.4 Nothing else OS-specific
+### 7.4 Built, and how
+
+`ui/index.html` holds a canvas the entry point looks up by id; `main.rs` has one
+`#[cfg(target_arch = "wasm32")]` function beside the desktop one, and that is the
+whole of the difference. Everything else — the interface, the search, the corpus,
+the synth — is one build.
+
+```
+rustup target add wasm32-unknown-unknown
+cargo build -p contrapunctus-ui --target wasm32-unknown-unknown --release   # verified
+cargo install trunk && trunk serve --release ui/index.html                  # not run here
+```
+
+The first two have been run and the third has not: `trunk` is not installed on
+the machine this was written on, so **the wasm binary is known to build and link
+and the served page is not known to work**. Saying which is which costs a line
+and is the difference between a claim and a guess.
+
+**The `cargo build` is the test and it is worth running before the browser one.**
+It compiles the entire interface for a target with no filesystem, no threads and
+no environment, so anything reaching for those fails there and nowhere else. It
+also fails *usefully*: while the entry point was a stub it passed with 74
+dead-code warnings, which is what a vacuous check looks like. With a real entry
+it passes with none, and that is the difference between compiling the modules and
+reaching them.
+
+Size, measured rather than guessed: **7.3 MB of wasm, 2.4 MB gzipped**, before
+`wasm-opt`. The corpus is 295 kB of that and the rest is the interface, the
+search and their dependencies.
+
+### 7.5 Nothing else OS-specific
 
 No paths in application state — a loaded subject is bytes plus a display name.
 No environment variables. No shelling out. No `std::time::Instant` in the audio
@@ -550,7 +580,13 @@ as a bug in the interface; the report shows it, and §8.16 explains it.
 **Three listening tests have corrected this project so far** — one disagreed with
 the numbers, one agreed with them, and one found something no number was looking
 at (three voices resting in unison, four tenths of a second, every six seconds).
-The interface's real job is to make the fourth easier to get.
+The interface's real job is to make the next one easier to get.
+
+A fourth has now happened, on the synth rather than on the music, and it
+corrected nothing: the timbre was described as chiptune and passed. Record those
+too. A report that confirms is weak evidence and it is still evidence, and a log
+that only keeps the reports which found something will read, in hindsight, as
+though listening always finds something.
 
 ---
 
@@ -584,8 +620,11 @@ Status is one of **done**, **partial** — usable and honestly incomplete — or
 | 6.2 | The built-in synth, and the sound card behind it | `a_note_begins_and_ends_at_silence`, `a_full_texture_does_not_clip` |
 | 4.1, 5.2 | The playhead in both views, and a click to listen from there | the position is the callback's own sample count |
 | 6.2 | Silencing a voice while listening, which is how anyone learns to follow one | `a_muted_voice_goes_quiet_and_the_rest_do_not` |
+| 7 | The browser entry, and the whole interface building for `wasm32` | `cargo build --target wasm32-unknown-unknown` links, with no warnings |
+| 3.2 | Importing a subject from a `**kern` file | `an_imported_subject_replaces_the_design` |
+| 5.2 | The score following the playhead while it plays | by inspection |
 
-Sixteen tests, all headless. The interesting one is
+Seventeen tests, all headless. The interesting one is
 `every_offered_subject_composes`: each of the 24 subjects is composed on the
 shortest layout that is still a fugue, because a picker whose entries have not
 been tried is a picker that wastes the one click a beginner is sure to make. It
@@ -607,15 +646,14 @@ silence is, in samples.
 
 | # | section | what | blocked on |
 |---|---|---|---|
-| 1 | 7 | The web shell, and `wasm32` in CI | nothing; the entry point is a stub today |
-| 2 | 3.2 | Importing a subject from a file | nothing — the dialog is written |
-| 3 | 4.2 | Span-changing edits: fade what is about to move, rather than only recomposing | nothing |
-| 4 | 4.3 | Ghosting the knock-on of a voice drag | 3 above |
-| 5 | 5.2 | The score scrolling with the strip, and following the playhead | nothing |
-| 6 | 4.2 | The per-block reroll | a per-block seed in the library, 10 above |
-| 7 | 6.3 | System MIDI out, behind a feature | a `midir` dependency |
-| 8 | 3.3 | The compass as draggable ranges on a staff | nothing |
-| 9 | 5.1 | Beams, and clef glyphs from an embedded SMuFL subset | a font subset |
+| 1 | 7 | Actually serving the page, and `wasm32` in CI | `trunk`, which is not installed here |
+| 2 | 4.2 | Span-changing edits: fade what is about to move, rather than only recomposing | nothing |
+| 3 | 4.3 | Ghosting the knock-on of a voice drag | 2 above |
+| 4 | 4.2 | The per-block reroll | a per-block seed in the library, 10 above |
+| 5 | 6.3 | System MIDI out, behind a feature | a `midir` dependency |
+| 6 | 3.3 | The compass as draggable ranges on a staff | nothing |
+| 7 | 5.1 | Beams, and clef glyphs from an embedded SMuFL subset | a font subset |
+| 8 | 3.2 | Choosing *which* voice an imported multi-voice file supplies | nothing; the first is taken and said so |
 
 ### 12.3 Known gaps in what is built
 
@@ -625,26 +663,36 @@ Stated rather than left to be discovered:
   plain stem, and each staff is labelled with the note name of its bottom line
   instead of a clef. The label is arguably better for section 1's beginner and it
   needs no font; the glyphs want the SMuFL subset 5.1 describes.
-- **Sound has been built but not yet heard.** Every property a test can state
-  about it holds — no clicks, no clipping, the right duration, no swallowed
-  texture — and none of those is the same as somebody listening. Three listening
-  tests have corrected this project and each found something no number was
-  looking at; this is the first release where the fourth is a button rather than
-  an export.
+- **The synth reads as chiptune.** The fourth listening report, and the first
+  that did not correct anything: *"synth is okay so far, sounds like sega genesis
+  bgm."* That is a fair description of what was built — three odd partials with
+  a hard envelope, no filter, no decay, is close to what an FM chip does, and
+  nothing here rounds it off. It is not a defect against the stated goal, which
+  is hearing the counterpoint clearly rather than hearing it sound good, and the
+  report says it works. Worth writing down because the next person to touch the
+  synth should know the timbre was heard, described, and left alone deliberately
+  — and because a report that confirms is evidence too, of a different and
+  weaker kind than the three that corrected.
 - **No metronome, and one tempo for the whole piece.** Neither has been asked
   for by anything yet.
 - **Generation blocks the frame** for about 0.6 s, where 7.3 calls for one block
   per frame. Doing it properly needs a resumable generate in the library —
   `compose::generate` fills every block in one call — so it is a library change,
   not an interface one.
-- **The plan strip does not scroll**, and the score's own scroll is not yet
-  locked to it. Both views scale to fit instead, which is right for 27 bars and
-  wrong for 60.
+- **The plan strip does not scroll, and the two views are deliberately not
+  locked.** 5.2 asked for a locked scroll; building it made the reason against
+  clear. The strip's whole job is to show the shape of the piece at once, and an
+  overview that scrolls has stopped being an overview. So the strip scales to fit
+  and the score scrolls and follows the playhead. At sixty bars the strip will
+  get cramped and that is a different problem from this one.
 - **Nothing is persisted between runs.** 8.4's interface state wants `eframe`'s
   persistence feature, which is not enabled. The *music* is persisted, through 8.
 - **Only one plan-strip gesture is wired** — the key of a return. The rest of
-  4.2's table is items 4 to 7 above, and the two classes of edit are kept apart
+  4.2's table is items 2 to 4 above, and the two classes of edit are kept apart
   in the code rather than in a comment.
+- **An imported file with several voices gives up its first**, and the status
+  line says which and how many there were. Choosing is item 8; guessing quietly
+  would have been worse than either.
 - **A key change that is not local recomposes**, which is right, but the blocks
   about to change are not faded while it happens. It is fast enough at three
   voices that nothing is seen; at five it would be.

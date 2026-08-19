@@ -36,10 +36,37 @@ fn main() -> eframe::Result {
   )
 }
 
+/// The browser entry — spec 7, and the same application.
+///
+/// Nothing above this line is conditional. The whole interface, the search, the
+/// corpus and the synth are one build; what differs is that a window is asked
+/// for on one target and a canvas is found on the other. That is the test of
+/// whether spec 7's rules were followed, and it is a test that fails loudly:
+/// anything reaching for a path, a thread or an environment variable would not
+/// compile here at all.
 #[cfg(target_arch = "wasm32")]
 fn main() {
-  // The web shell is not written yet — the roadmap has it. This exists so that
-  // `cargo check --target wasm32-unknown-unknown` compiles the whole interface
-  // and reports anything in it that assumes a desktop, which is the only way
-  // that assumption stays out.
+  use eframe::wasm_bindgen::JsCast as _;
+
+  wasm_bindgen_futures::spawn_local(async {
+    let document = web_sys::window().expect("a window").document().expect("a document");
+    let canvas = document
+      .get_element_by_id("workbench")
+      .expect("index.html has a canvas with id `workbench`")
+      .dyn_into::<web_sys::HtmlCanvasElement>()
+      .expect("`workbench` is a canvas");
+
+    let started = eframe::WebRunner::new()
+      .start(canvas, eframe::WebOptions::default(), Box::new(|_cc| Ok(Box::<app::App>::default())))
+      .await;
+
+    // Whatever happens, say so on the page rather than in a console nobody has
+    // open — the same rule the interface applies to a missing sound card.
+    if let Some(el) = document.get_element_by_id("loading") {
+      match started {
+        Ok(()) => el.remove(),
+        Err(e) => el.set_inner_html(&format!("<p>The workbench did not start: {e:?}</p>")),
+      }
+    }
+  });
 }

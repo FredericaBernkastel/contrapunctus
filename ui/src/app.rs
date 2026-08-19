@@ -21,7 +21,7 @@ use egui::{RichText, Ui};
 
 use crate::catalog::{self, Catalog, Journey};
 use crate::audio::Player;
-use crate::files::{self, Loaded, Note};
+use crate::files::{self, Imported, Loaded, Note};
 use crate::schedule;
 use crate::task::Slot;
 use crate::{report, score, strip, theme};
@@ -57,6 +57,7 @@ pub struct App {
 
   saving: Slot<Note>,
   loading: Slot<Result<Loaded, Note>>,
+  importing: Slot<Result<Imported, Note>>,
 
   /// Built on the first press of Play, never before. A test constructs this
   /// application headlessly and a build machine has no sound card; more to the
@@ -99,6 +100,7 @@ impl Default for App {
       fidelity: None,
       saving: Slot::default(),
       loading: Slot::default(),
+      importing: Slot::default(),
       player: None,
       no_sound: None,
       mute: 0,
@@ -273,6 +275,50 @@ impl App {
         Err(Note::Saved(_)) => {}
       }
     }
+    if let Some(r) = self.importing.take() {
+      match r {
+        Ok(im) => {
+          let voice = im.piece.voices[im.took].clone();
+          let notes = voice.notes.iter().filter(|n| n.attack).count();
+          let ticks = voice.notes.iter().map(|n| n.onset + n.dur).max().unwrap_or(0);
+          let bars = ticks as f64 / im.piece.measure.max(1) as f64;
+
+          self.design = Design {
+            subject: voice,
+            voices: self.design.voices,
+            key: im.piece.key,
+            // The tonic as a letter of this file's own signature. Without a key
+            // interpretation there is nothing to answer *to*, so C is taken and
+            // the message says as much rather than the interface pretending.
+            tonic: im
+              .piece
+              .tonic
+              .and_then(|(pc, _)| contrapunctus::answer::tonic_letter(pc, &im.piece.key))
+              .unwrap_or(0),
+            measure: im.piece.measure,
+            beat: im.piece.beat,
+            compass: catalog::compass(self.design.voices),
+          };
+          self.chosen = None;
+
+          let mut said = format!("{}: {notes} notes over {bars:.1} bars", im.name);
+          if im.of > 1 {
+            said.push_str(&format!(" — the file has {} voices and the first was taken", im.of));
+          }
+          if bars > 8.0 {
+            said.push_str(" — that is long for a subject; the whole file is the subject here");
+          }
+          if im.piece.tonic.is_none() {
+            said.push_str(" — no key interpretation in the file, so the tonic was taken as C");
+          }
+          self.status = Some(said);
+          self.compose();
+        }
+        Err(Note::Cancelled) => self.status = Some("nothing imported".into()),
+        Err(Note::Failed(e)) => self.status = Some(format!("could not import: {e}")),
+        Err(Note::Saved(_)) => {}
+      }
+    }
   }
 }
 
@@ -444,7 +490,8 @@ impl App {
       ui.label(RichText::new("SCORE").monospace().weak().small());
       egui::ScrollArea::both().max_height(score::height(out.voices.len()) + 12.0).show(ui, |ui| {
         let want = (out.bars as f32 * 46.0).max(ui.available_width());
-        if let Some(t) = score::show(ui, &out.voices, &self.design.key, measure, want, head) {
+        let following = self.player.as_ref().is_some_and(|p| p.is_playing());
+        if let Some(t) = score::show(ui, &out.voices, &self.design.key, measure, want, head, following) {
           seek = Some(t);
         }
       });
@@ -525,8 +572,15 @@ impl App {
       .weak()
       .small(),
     );
-    ui.add_enabled(false, egui::Button::new("Import…"))
-      .on_disabled_hover_text("Importing a subject from a file is on the roadmap.");
+    if ui
+      .button("Import…")
+      .on_hover_text(
+        "A Humdrum **kern file, whose contents are taken as the subject.          Not MIDI: MIDI does not spell its pitches, and a subject that arrived          respelled would be a different subject.",
+      )
+      .clicked()
+    {
+      files::import_subject(self.importing.clone());
+    }
 
     ui.add_space(12.0);
     group(ui, "THE SHAPE");
@@ -881,6 +935,36 @@ mod tests {
         "degree {deg}: layout took the edit = {took}, music unchanged = {same} — one of those is a lie"
       );
     }
+  }
+
+  /// An imported subject becomes the design, and the design still composes.
+  ///
+  /// The dialog is the only part not exercised: what arrives from it is a name
+  /// and some bytes, and this puts those straight into the slot the dialog would
+  /// have filled. What is being checked is the half that can be wrong — that the
+  /// key, the metre and the tonic come from the imported file rather than from
+  /// whatever was selected before it.
+  #[test]
+  fn an_imported_subject_replaces_the_design() {
+    let text = contrapunctus::embedded::FUGUES[10].1; // No. 11 in F major, a different key
+    let piece = contrapunctus::kern::parse(text, "imported").expect("it parses");
+    let took = piece.voices.iter().position(|v| !v.notes.is_empty()).unwrap_or(0);
+    let of = piece.voices.len();
+
+    let mut app = App::default();
+    app.compose();
+    let before = app.design.key;
+    assert!(app.chosen.is_some(), "the default design comes from the catalogue");
+
+    app.importing.put(Ok(Imported { name: "wtc1f11.krn".into(), piece, took, of }));
+    app.collect();
+
+    assert!(app.chosen.is_none(), "an imported subject is not a catalogue entry");
+    assert_ne!(app.design.key, before, "the key did not come from the imported file");
+    assert!(!app.design.subject.notes.is_empty(), "the subject is empty");
+    assert!(app.status.as_deref().unwrap_or("").contains("voices"), "{:?}", app.status);
+    // and it says the file is long, because a whole fugue is not a subject
+    assert!(app.status.as_deref().unwrap_or("").contains("long for a subject"), "{:?}", app.status);
   }
 
   /// The presets are the ones spec 3.2 names, and `Journey::of` recognises each
