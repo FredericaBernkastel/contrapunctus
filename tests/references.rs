@@ -28,7 +28,26 @@
 
 use std::collections::BTreeMap;
 
-const DOCS: [&str; 2] = ["readme.md", "CHANGELOG.md"];
+/// Every prose file whose `§` references are checked.
+///
+/// `docs/` is swept rather than listed, so a document added there is covered
+/// the day it is written instead of the day somebody remembers this file. That
+/// matters more than it sounds: `docs/ui-spec.md` cites §8.16, §2.7, §10.6 and
+/// a dozen more, and a specification that names sections which have moved is
+/// worse than one that names none.
+fn docs() -> Vec<String> {
+  let mut out = vec!["readme.md".to_string(), "CHANGELOG.md".to_string()];
+  if let Ok(rd) = std::fs::read_dir("docs") {
+    let mut found: Vec<String> = rd
+      .filter_map(|e| e.ok().map(|e| e.path()))
+      .filter(|p| p.extension().is_some_and(|x| x == "md"))
+      .map(|p| p.to_string_lossy().replace('\\', "/"))
+      .collect();
+    found.sort();
+    out.extend(found);
+  }
+  out
+}
 
 fn read(p: &str) -> String {
   std::fs::read_to_string(p).unwrap_or_default().replace("\r\n", "\n")
@@ -329,7 +348,7 @@ fn every_bare_reference_names_a_section_that_exists() {
   let ric = read("ricercar/readme.md");
   let rnums: Vec<String> = headings(&ric).iter().filter_map(|h| h.num.clone()).collect();
 
-  let mut files: Vec<String> = DOCS.iter().map(|s| s.to_string()).collect();
+  let mut files: Vec<String> = docs();
   let mut src: Vec<String> = std::fs::read_dir("src")
     .expect("src/")
     .filter_map(|e| e.ok().map(|e| e.path()))

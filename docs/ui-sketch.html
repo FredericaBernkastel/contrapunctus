@@ -1,0 +1,654 @@
+<title>Contrapunctus Workbench</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,600;1,400&display=swap">
+
+<style>
+:root{
+  --paper:#F6F7F9; --panel:#FFFFFF; --sunk:#EEF0F4;
+  --ink:#15181D; --ink2:#5C6472; --ink3:#8A93A2;
+  --rule:#D6DBE3; --rule2:#E7EAF0;
+  --v1:#33417E; --v2:#2E6F6B; --v3:#8A6D1F;
+  --v1-soft:#E1E5F4; --v2-soft:#DCECEA; --v3-soft:#F1E9D2;
+  --ok:#2F7A4F; --bad:#B4342A;
+  --shadow:0 1px 2px rgba(21,24,29,.06), 0 8px 24px rgba(21,24,29,.06);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#0F1216; --panel:#161A21; --sunk:#1D222B;
+    --ink:#E7EAF0; --ink2:#98A2B3; --ink3:#6B7484;
+    --rule:#2B313C; --rule2:#222833;
+    --v1:#8090DE; --v2:#5FB8B1; --v3:#CBA84B;
+    --v1-soft:#242B45; --v2-soft:#17352F; --v3-soft:#332B14;
+    --ok:#5FBE86; --bad:#E0776B;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0F1216; --panel:#161A21; --sunk:#1D222B;
+  --ink:#E7EAF0; --ink2:#98A2B3; --ink3:#6B7484;
+  --rule:#2B313C; --rule2:#222833;
+  --v1:#8090DE; --v2:#5FB8B1; --v3:#CBA84B;
+  --v1-soft:#242B45; --v2-soft:#17352F; --v3-soft:#332B14;
+  --ok:#5FBE86; --bad:#E0776B;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--paper); color:var(--ink);
+  font-family:"IBM Plex Sans",system-ui,-apple-system,Segoe UI,sans-serif;
+  font-size:16px; line-height:1.6; -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1180px; margin:0 auto; padding:56px 28px 96px}
+h1,h2,h3{font-family:"IBM Plex Serif",Georgia,serif; text-wrap:balance; margin:0}
+h1{font-size:clamp(30px,4.4vw,46px); font-weight:600; letter-spacing:-.015em; line-height:1.12}
+h2{font-size:clamp(21px,2.6vw,27px); font-weight:600; letter-spacing:-.01em}
+h3{font-size:17px; font-weight:600}
+p{margin:0; max-width:66ch}
+.lede{font-size:18px; color:var(--ink2); max-width:64ch}
+.eyebrow{
+  font-family:"IBM Plex Mono",ui-monospace,monospace; font-size:11px; font-weight:500;
+  letter-spacing:.14em; text-transform:uppercase; color:var(--ink3);
+}
+code,.mono{font-family:"IBM Plex Mono",ui-monospace,monospace; font-variant-numeric:tabular-nums}
+code{font-size:.88em; background:var(--sunk); padding:.12em .4em; border-radius:3px}
+a{color:var(--v1)}
+
+header{display:flex; flex-direction:column; gap:14px; padding-bottom:34px; border-bottom:1px solid var(--rule)}
+section{display:flex; flex-direction:column; gap:18px; padding:44px 0; border-bottom:1px solid var(--rule)}
+section:last-of-type{border-bottom:0}
+.stack{display:flex; flex-direction:column; gap:12px}
+
+/* ---------- the mock application window ---------- */
+.appframe{
+  background:var(--panel); border:1px solid var(--rule); border-radius:8px;
+  box-shadow:var(--shadow); overflow:hidden;
+}
+.scroller{overflow-x:auto}
+.app{min-width:1020px; font-size:13px; line-height:1.45}
+
+.titlebar{
+  display:flex; align-items:center; gap:14px; padding:9px 14px;
+  background:var(--sunk); border-bottom:1px solid var(--rule);
+}
+.appname{font-family:"IBM Plex Serif",serif; font-weight:600; font-size:14px; letter-spacing:.01em}
+.seg{display:flex; border:1px solid var(--rule); border-radius:5px; overflow:hidden; background:var(--panel)}
+.seg span{padding:3px 11px; font-size:12px; color:var(--ink2)}
+.seg span.on{background:var(--v1); color:#fff; font-weight:600}
+.spacer{flex:1}
+.tbtn{
+  display:inline-flex; align-items:center; gap:6px; padding:3px 10px; font-size:12px;
+  border:1px solid var(--rule); border-radius:5px; background:var(--panel); color:var(--ink2);
+}
+.tbtn.primary{background:var(--v1); border-color:var(--v1); color:#fff; font-weight:600}
+
+.body{display:grid; grid-template-columns:284px 1fr; min-height:520px}
+.left{border-right:1px solid var(--rule); padding:14px; display:flex; flex-direction:column; gap:16px; background:var(--panel)}
+.right{display:flex; flex-direction:column}
+
+.group{display:flex; flex-direction:column; gap:9px}
+.grouphead{
+  font-family:"IBM Plex Mono",monospace; font-size:10px; letter-spacing:.13em;
+  text-transform:uppercase; color:var(--ink3); border-bottom:1px solid var(--rule2); padding-bottom:5px;
+}
+.ctl{display:flex; flex-direction:column; gap:4px}
+.ctl > label{font-size:12.5px; font-weight:500}
+.sub{font-family:"IBM Plex Mono",monospace; font-size:10.5px; color:var(--ink3)}
+.row{display:flex; align-items:center; gap:7px}
+
+.choice{display:flex; gap:0; border:1px solid var(--rule); border-radius:5px; overflow:hidden}
+.choice div{flex:1; text-align:center; padding:4px 6px; font-size:11.5px; color:var(--ink2); border-right:1px solid var(--rule)}
+.choice div:last-child{border-right:0}
+.choice div.on{background:var(--v1); color:#fff; font-weight:600}
+.choice div.off{color:var(--ink3); background:var(--sunk); text-decoration:line-through}
+
+.slider{height:4px; background:var(--rule); border-radius:2px; position:relative; margin:8px 2px}
+.slider i{position:absolute; height:4px; left:0; background:var(--v1); border-radius:2px}
+.slider b{position:absolute; width:13px; height:13px; border-radius:50%; background:var(--panel); border:2px solid var(--v1); top:-5px; margin-left:-6px}
+
+.bigbtn{
+  padding:9px; text-align:center; border-radius:6px; background:var(--v1); color:#fff;
+  font-weight:600; font-size:13.5px;
+}
+.ghostbtn{padding:7px; text-align:center; border-radius:6px; border:1px solid var(--rule); color:var(--ink2); font-size:12.5px}
+
+.chip{
+  display:inline-flex; align-items:center; gap:5px; padding:2px 8px; border-radius:11px;
+  font-family:"IBM Plex Mono",monospace; font-size:11px; border:1px solid var(--rule); color:var(--ink2);
+}
+.field{border:1px solid var(--rule); border-radius:5px; padding:4px 8px; font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--ink); background:var(--panel)}
+
+/* panes on the right */
+.pane{padding:12px 14px; border-bottom:1px solid var(--rule)}
+.pane:last-child{border-bottom:0}
+.panehead{display:flex; align-items:baseline; gap:10px; margin-bottom:9px}
+.panehead h4{margin:0; font-family:"IBM Plex Mono",monospace; font-size:10px; letter-spacing:.13em; text-transform:uppercase; color:var(--ink3); font-weight:500}
+.panenote{font-size:11px; color:var(--ink3)}
+
+.legend{display:flex; gap:14px; flex-wrap:wrap; font-size:11px; color:var(--ink2)}
+.sw{display:inline-block; width:10px; height:10px; border-radius:2px; vertical-align:-1px; margin-right:5px}
+
+.report{display:flex; flex-direction:column; gap:7px}
+.line{display:flex; align-items:center; gap:9px; font-size:12.5px}
+.dot{width:8px; height:8px; border-radius:50%; flex:none}
+.num{font-family:"IBM Plex Mono",monospace; font-variant-numeric:tabular-nums; color:var(--ink2)}
+
+table{border-collapse:collapse; width:100%; font-size:14px}
+th,td{text-align:left; padding:9px 12px; border-bottom:1px solid var(--rule2); vertical-align:top}
+th{font-family:"IBM Plex Mono",monospace; font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink3); font-weight:500}
+td.mono{white-space:nowrap}
+caption{caption-side:bottom; text-align:left; padding-top:10px; font-size:13px; color:var(--ink3)}
+
+.callouts{display:grid; grid-template-columns:repeat(auto-fit,minmax(248px,1fr)); gap:14px; margin-top:4px}
+.callout{display:flex; gap:10px; font-size:13.5px; color:var(--ink2)}
+.pin{
+  flex:none; width:20px; height:20px; border-radius:50%; background:var(--v1); color:#fff;
+  font-family:"IBM Plex Mono",monospace; font-size:11px; font-weight:600;
+  display:grid; place-items:center; margin-top:1px;
+}
+.callout b{color:var(--ink); font-weight:600}
+
+.notecard{border-left:2px solid var(--v1); padding:2px 0 2px 16px; color:var(--ink2); font-size:14.5px}
+.notecard b{color:var(--ink)}
+ul{margin:0; padding-left:20px; color:var(--ink2); max-width:66ch}
+li{margin:5px 0}
+li b{color:var(--ink)}
+@media (prefers-reduced-motion:no-preference){ .tbtn,.bigbtn{transition:none} }
+</style>
+
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">Design sketch · egui 0.36 · desktop</div>
+  <h1>Contrapunctus Workbench</h1>
+  <p class="lede">A sketch for the interface over <code>contrapunctus</code>'s library half. The design problem is
+  not the controls — the library already has them — it is that a fugue has a shape most people can hear and
+  cannot name, and the interface has to make that shape visible before it asks anyone to change it.</p>
+</header>
+
+<section>
+  <div class="eyebrow">The problem</div>
+  <h2>Two users, one screen</h2>
+  <p>Someone with no theory knows what a tune is, that it comes back, and that it moves around. They do not
+  know <em>dux</em>, <em>comes</em>, <em>episode</em>, <em>compass</em> or what a tier is. An expert wants every
+  one of those and the seed as well.</p>
+  <p>Two separate applications would be the easy answer and the wrong one. The sketch instead uses
+  <b>one layout, two densities</b>: every control keeps its position between modes, and Advanced reveals rather
+  than rearranges. A plain-language label sits above the parameter's real name in mono, so a beginner reads
+  <em>How far it travels</em> and an expert reads <code>middles = [4, 5, 3]</code> on the line underneath. Nobody
+  is lied to and nobody has to learn a second layout.</p>
+  <div class="notecard"><b>The centrepiece is the plan strip</b>, not the score. Three lanes, one per voice, with
+  the theme drawn solid where it sounds. It teaches what a fugue is by being looked at — you watch the tune move
+  from voice to voice — and it is the one view where a non-expert can make a judgement worth making.</div>
+</section>
+
+<section>
+  <div class="eyebrow">Screen 1</div>
+  <h2>Simple</h2>
+  <p>Five controls and a button. Every default is the book's own, as <code>Layout::default()</code> supplies it.</p>
+
+  <div class="appframe scroller">
+  <div class="app">
+
+    <div class="titlebar">
+      <span class="appname">Contrapunctus</span>
+      <span class="seg"><span class="on">Simple</span><span>Advanced</span></span>
+      <span class="spacer"></span>
+      <span class="tbtn">▶ Play</span>
+      <span class="tbtn">■</span>
+      <span class="tbtn">Export MIDI</span>
+    </div>
+
+    <div class="body">
+      <div class="left">
+
+        <div class="group">
+          <div class="grouphead">The tune</div>
+          <svg viewBox="0 0 250 58" width="100%" height="58" aria-label="The subject on a staff">
+            <g stroke="var(--rule)" stroke-width="1">
+              <line x1="6" y1="14" x2="244" y2="14"/><line x1="6" y1="21" x2="244" y2="21"/>
+              <line x1="6" y1="28" x2="244" y2="28"/><line x1="6" y1="35" x2="244" y2="35"/>
+              <line x1="6" y1="42" x2="244" y2="42"/>
+            </g>
+            <text x="10" y="39" font-family="serif" font-size="30" fill="var(--ink)">𝄞</text>
+            <g fill="var(--ink)">
+              <ellipse cx="46" cy="35" rx="4" ry="3"/><ellipse cx="66" cy="38.5" rx="4" ry="3"/>
+              <ellipse cx="86" cy="35" rx="4" ry="3"/><ellipse cx="106" cy="28" rx="4" ry="3"/>
+              <ellipse cx="126" cy="31.5" rx="4" ry="3"/><ellipse cx="146" cy="35" rx="4" ry="3"/>
+              <ellipse cx="166" cy="24.5" rx="4" ry="3"/><ellipse cx="186" cy="28" rx="4" ry="3"/>
+              <ellipse cx="206" cy="21" rx="4" ry="3"/>
+            </g>
+            <g stroke="var(--ink)" stroke-width="1.1">
+              <line x1="50" y1="34" x2="50" y2="18"/><line x1="70" y1="37.5" x2="70" y2="18"/>
+              <line x1="90" y1="34" x2="90" y2="18"/><line x1="110" y1="27" x2="110" y2="12"/>
+              <line x1="130" y1="30.5" x2="130" y2="12"/><line x1="150" y1="34" x2="150" y2="12"/>
+              <line x1="170" y1="23.5" x2="170" y2="8"/><line x1="190" y1="27" x2="190" y2="8"/>
+              <line x1="210" y1="20" x2="210" y2="8"/>
+              <line x1="50" y1="18" x2="90" y2="18" stroke-width="3"/>
+              <line x1="110" y1="12" x2="150" y2="12" stroke-width="3"/>
+              <line x1="170" y1="8" x2="210" y2="8" stroke-width="3"/>
+            </g>
+          </svg>
+          <div class="row">
+            <span class="ghostbtn" style="flex:1">Choose…</span>
+            <span class="ghostbtn" style="flex:1">Draw my own</span>
+          </div>
+          <div class="sub">BWV 847 · C minor · 19 notes · 2 bars</div>
+        </div>
+
+        <div class="group">
+          <div class="grouphead">The shape</div>
+
+          <div class="ctl">
+            <label>How many voices</label>
+            <div class="choice"><div>2</div><div class="on">3</div><div class="off">4</div></div>
+            <div class="sub">4 needs a solver — see below</div>
+          </div>
+
+          <div class="ctl">
+            <label>Times the tune comes back</label>
+            <div class="slider"><i style="width:42%"></i><b style="left:42%"></b></div>
+            <div class="sub">middles.len() = 3 · Bach's median</div>
+          </div>
+
+          <div class="ctl">
+            <label>How far it travels</label>
+            <div class="choice"><div>Stays home</div><div class="on">Wanders</div><div>Roams</div></div>
+            <div class="sub">middles = [4, 5, 3]</div>
+          </div>
+
+          <div class="ctl">
+            <label>How strictly it follows the rules</label>
+            <div class="choice"><div>Loose</div><div>Normal</div><div class="on">Strict</div></div>
+            <div class="sub">tier = HARD · recommended</div>
+          </div>
+        </div>
+
+        <div class="spacer"></div>
+        <div class="group">
+          <div class="bigbtn">Compose</div>
+          <div class="ghostbtn">Try a different one ⟳</div>
+        </div>
+      </div>
+
+      <div class="right">
+
+        <div class="pane">
+          <div class="panehead">
+            <h4>Plan</h4>
+            <span class="panenote">where the tune is, and where it is not — 27 bars</span>
+          </div>
+          <svg viewBox="0 0 830 132" width="100%" height="132" aria-label="Plan: three voice lanes over 27 bars">
+            <g font-family="IBM Plex Mono, monospace" font-size="8" fill="var(--ink3)">
+              <text x="0" y="8">1</text><text x="150" y="8">6</text><text x="300" y="8">11</text>
+              <text x="450" y="8">16</text><text x="600" y="8">21</text><text x="750" y="8">26</text>
+            </g>
+            <g stroke="var(--rule2)" stroke-width="1">
+              <line x1="0" y1="12" x2="810" y2="12"/>
+              <line x1="150" y1="12" x2="150" y2="106"/><line x1="300" y1="12" x2="300" y2="106"/>
+              <line x1="450" y1="12" x2="450" y2="106"/><line x1="600" y1="12" x2="600" y2="106"/>
+              <line x1="750" y1="12" x2="750" y2="106"/>
+            </g>
+
+            <g font-family="IBM Plex Sans, sans-serif" font-size="9" fill="var(--ink3)">
+              <text x="0" y="28">soprano</text><text x="0" y="60">alto</text><text x="0" y="92">bass</text>
+            </g>
+
+            <!-- soprano -->
+            <g>
+              <rect x="0" y="32" width="60" height="16" rx="2" fill="var(--v1)"/>
+              <rect x="210" y="32" width="90" height="16" rx="2" fill="var(--v1-soft)" stroke="var(--v1)" stroke-dasharray="3 2"/>
+              <rect x="450" y="32" width="60" height="16" rx="2" fill="var(--v1)"/>
+              <rect x="660" y="32" width="90" height="16" rx="2" fill="var(--v1-soft)" stroke="var(--v1)" stroke-dasharray="3 2"/>
+              <text x="4" y="44" font-family="IBM Plex Sans" font-size="9" fill="#fff">theme</text>
+              <text x="454" y="44" font-family="IBM Plex Sans" font-size="9" fill="#fff">theme</text>
+            </g>
+            <!-- alto -->
+            <g>
+              <rect x="60" y="64" width="60" height="16" rx="2" fill="var(--v2)"/>
+              <rect x="300" y="64" width="60" height="16" rx="2" fill="var(--v2)"/>
+              <rect x="510" y="64" width="90" height="16" rx="2" fill="var(--v2-soft)" stroke="var(--v2)" stroke-dasharray="3 2"/>
+              <rect x="750" y="64" width="60" height="16" rx="2" fill="var(--v2)"/>
+              <text x="64" y="76" font-family="IBM Plex Sans" font-size="9" fill="#fff">answer</text>
+              <text x="304" y="76" font-family="IBM Plex Sans" font-size="9" fill="#fff">theme</text>
+              <text x="754" y="76" font-family="IBM Plex Sans" font-size="9" fill="#fff">theme</text>
+            </g>
+            <!-- bass -->
+            <g>
+              <rect x="120" y="96" width="30" height="16" rx="2" fill="var(--v3-soft)" stroke="var(--v3)" stroke-dasharray="3 2"/>
+              <rect x="150" y="96" width="60" height="16" rx="2" fill="var(--v3)"/>
+              <rect x="360" y="96" width="90" height="16" rx="2" fill="var(--v3-soft)" stroke="var(--v3)" stroke-dasharray="3 2"/>
+              <rect x="600" y="96" width="60" height="16" rx="2" fill="var(--v3)"/>
+              <text x="154" y="108" font-family="IBM Plex Sans" font-size="9" fill="#fff">theme</text>
+            </g>
+
+            <!-- key ribbon -->
+            <g font-family="IBM Plex Mono, monospace" font-size="8">
+              <rect x="0"   y="118" width="60"  height="12" fill="var(--sunk)"/><text x="4"   y="127" fill="var(--ink2)">home</text>
+              <rect x="60"  y="118" width="60"  height="12" fill="var(--v1-soft)"/><text x="64"  y="127" fill="var(--ink2)">V</text>
+              <rect x="120" y="118" width="90"  height="12" fill="var(--sunk)"/><text x="124" y="127" fill="var(--ink2)">home</text>
+              <rect x="210" y="118" width="150" height="12" fill="var(--v1-soft)"/><text x="214" y="127" fill="var(--ink2)">V</text>
+              <rect x="360" y="118" width="150" height="12" fill="var(--v2-soft)"/><text x="364" y="127" fill="var(--ink2)">VI</text>
+              <rect x="510" y="118" width="150" height="12" fill="var(--v3-soft)"/><text x="514" y="127" fill="var(--ink2)">IV</text>
+              <rect x="660" y="118" width="150" height="12" fill="var(--sunk)"/><text x="664" y="127" fill="var(--ink2)">home</text>
+            </g>
+            <line x1="322" y1="12" x2="322" y2="132" stroke="var(--bad)" stroke-width="1.5"/>
+          </svg>
+          <div class="legend" style="margin-top:8px">
+            <span><span class="sw" style="background:var(--v1)"></span>the tune, sounding</span>
+            <span><span class="sw" style="background:var(--v1-soft);border:1px dashed var(--v1)"></span>episode — the tune is away</span>
+            <span><span class="sw" style="background:var(--bad)"></span>playhead</span>
+          </div>
+        </div>
+
+        <div class="pane">
+          <div class="panehead"><h4>Score</h4><span class="panenote">bars 10–13 · scrolls with the playhead</span></div>
+          <svg viewBox="0 0 830 150" width="100%" height="150" aria-label="Three staves of generated counterpoint">
+            <g id="staves">
+              <g stroke="var(--rule)" stroke-width="1">
+                <line x1="26" y1="10" x2="820" y2="10"/><line x1="26" y1="16" x2="820" y2="16"/><line x1="26" y1="22" x2="820" y2="22"/><line x1="26" y1="28" x2="820" y2="28"/><line x1="26" y1="34" x2="820" y2="34"/>
+                <line x1="26" y1="60" x2="820" y2="60"/><line x1="26" y1="66" x2="820" y2="66"/><line x1="26" y1="72" x2="820" y2="72"/><line x1="26" y1="78" x2="820" y2="78"/><line x1="26" y1="84" x2="820" y2="84"/>
+                <line x1="26" y1="110" x2="820" y2="110"/><line x1="26" y1="116" x2="820" y2="116"/><line x1="26" y1="122" x2="820" y2="122"/><line x1="26" y1="128" x2="820" y2="128"/><line x1="26" y1="134" x2="820" y2="134"/>
+              </g>
+              <g stroke="var(--rule)" stroke-width="1">
+                <line x1="26" y1="10" x2="26" y2="134"/>
+                <line x1="225" y1="10" x2="225" y2="34"/><line x1="225" y1="60" x2="225" y2="84"/><line x1="225" y1="110" x2="225" y2="134"/>
+                <line x1="424" y1="10" x2="424" y2="34"/><line x1="424" y1="60" x2="424" y2="84"/><line x1="424" y1="110" x2="424" y2="134"/>
+                <line x1="623" y1="10" x2="623" y2="34"/><line x1="623" y1="60" x2="623" y2="84"/><line x1="623" y1="110" x2="623" y2="134"/>
+                <line x1="820" y1="10" x2="820" y2="134"/>
+              </g>
+              <text x="30" y="32" font-family="serif" font-size="26" fill="var(--ink2)">𝄞</text>
+              <text x="30" y="82" font-family="serif" font-size="26" fill="var(--ink2)">𝄞</text>
+              <text x="30" y="130" font-family="serif" font-size="22" fill="var(--ink2)">𝄢</text>
+            </g>
+            <!-- soprano notes -->
+            <g fill="var(--v1)">
+              <ellipse cx="70" cy="22" rx="4.2" ry="3.1"/><ellipse cx="100" cy="19" rx="4.2" ry="3.1"/>
+              <ellipse cx="130" cy="25" rx="4.2" ry="3.1"/><ellipse cx="160" cy="22" rx="4.2" ry="3.1"/>
+              <ellipse cx="190" cy="16" rx="4.2" ry="3.1"/><ellipse cx="255" cy="19" rx="4.2" ry="3.1"/>
+              <ellipse cx="285" cy="25" rx="4.2" ry="3.1"/><ellipse cx="315" cy="22" rx="4.2" ry="3.1"/>
+              <ellipse cx="345" cy="28" rx="4.2" ry="3.1"/><ellipse cx="375" cy="22" rx="4.2" ry="3.1"/>
+              <ellipse cx="455" cy="19" rx="4.2" ry="3.1"/><ellipse cx="485" cy="16" rx="4.2" ry="3.1"/>
+              <ellipse cx="515" cy="22" rx="4.2" ry="3.1"/><ellipse cx="545" cy="25" rx="4.2" ry="3.1"/>
+              <ellipse cx="655" cy="19" rx="4.2" ry="3.1"/><ellipse cx="685" cy="22" rx="4.2" ry="3.1"/>
+              <ellipse cx="715" cy="16" rx="4.2" ry="3.1"/><ellipse cx="745" cy="19" rx="4.2" ry="3.1"/>
+            </g>
+            <!-- alto notes, highlighted: the theme is here -->
+            <rect x="240" y="52" width="180" height="40" fill="var(--v2-soft)" rx="3"/>
+            <g fill="var(--v2)">
+              <ellipse cx="70" cy="72" rx="4.2" ry="3.1"/><ellipse cx="115" cy="69" rx="4.2" ry="3.1"/>
+              <ellipse cx="160" cy="75" rx="4.2" ry="3.1"/><ellipse cx="205" cy="72" rx="4.2" ry="3.1"/>
+              <ellipse cx="255" cy="72" rx="4.2" ry="3.1"/><ellipse cx="270" cy="78" rx="4.2" ry="3.1"/>
+              <ellipse cx="285" cy="72" rx="4.2" ry="3.1"/><ellipse cx="300" cy="66" rx="4.2" ry="3.1"/>
+              <ellipse cx="315" cy="69" rx="4.2" ry="3.1"/><ellipse cx="330" cy="72" rx="4.2" ry="3.1"/>
+              <ellipse cx="345" cy="63" rx="4.2" ry="3.1"/><ellipse cx="360" cy="66" rx="4.2" ry="3.1"/>
+              <ellipse cx="375" cy="60" rx="4.2" ry="3.1"/><ellipse cx="390" cy="66" rx="4.2" ry="3.1"/>
+              <ellipse cx="455" cy="72" rx="4.2" ry="3.1"/><ellipse cx="500" cy="69" rx="4.2" ry="3.1"/>
+              <ellipse cx="545" cy="75" rx="4.2" ry="3.1"/><ellipse cx="590" cy="72" rx="4.2" ry="3.1"/>
+              <ellipse cx="655" cy="69" rx="4.2" ry="3.1"/><ellipse cx="700" cy="72" rx="4.2" ry="3.1"/>
+              <ellipse cx="745" cy="66" rx="4.2" ry="3.1"/><ellipse cx="790" cy="72" rx="4.2" ry="3.1"/>
+            </g>
+            <text x="244" y="49" font-family="IBM Plex Sans" font-size="9" fill="var(--v2)">the theme, 5th entry</text>
+            <!-- bass notes -->
+            <g fill="var(--v3)">
+              <ellipse cx="70" cy="128" rx="4.2" ry="3.1"/><ellipse cx="130" cy="122" rx="4.2" ry="3.1"/>
+              <ellipse cx="190" cy="125" rx="4.2" ry="3.1"/><ellipse cx="255" cy="119" rx="4.2" ry="3.1"/>
+              <ellipse cx="315" cy="125" rx="4.2" ry="3.1"/><ellipse cx="375" cy="122" rx="4.2" ry="3.1"/>
+              <ellipse cx="455" cy="128" rx="4.2" ry="3.1"/><ellipse cx="515" cy="122" rx="4.2" ry="3.1"/>
+              <ellipse cx="575" cy="119" rx="4.2" ry="3.1"/><ellipse cx="655" cy="125" rx="4.2" ry="3.1"/>
+              <ellipse cx="715" cy="122" rx="4.2" ry="3.1"/><ellipse cx="775" cy="128" rx="4.2" ry="3.1"/>
+            </g>
+            <line x1="322" y1="4" x2="322" y2="142" stroke="var(--bad)" stroke-width="1.5"/>
+          </svg>
+        </div>
+
+        <div class="pane">
+          <div class="panehead"><h4>How it turned out</h4></div>
+          <div class="report">
+            <div class="line"><span class="dot" style="background:var(--ok)"></span>
+              It is shaped like a fugue — the theme enters in all three voices, then travels and comes home.</div>
+            <div class="line"><span class="dot" style="background:var(--ok)"></span>
+              It keeps the rules of counterpoint. <span class="num">70 rough moments per thousand — Bach averages 112.</span></div>
+            <div class="line"><span class="dot" style="background:var(--ok)"></span>
+              Every stretch was written without giving anything up. <span class="num">11 of 12</span></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+  </div>
+
+  <div class="callouts">
+    <div class="callout"><span class="pin">1</span><div><b>Plain label, real name underneath.</b> The mono line
+    is the actual parameter, so an expert never has to guess what a slider did and a beginner never has to read it.</div></div>
+    <div class="callout"><span class="pin">2</span><div><b>4 voices is struck through, not hidden.</b> §2.7's wall
+    is a fact about the search, and an interface that silently omitted the option would be lying about why.</div></div>
+    <div class="callout"><span class="pin">3</span><div><b>The key ribbon runs under the lanes.</b> Colour keyed to
+    the same hues as the voices, so &ldquo;it has gone somewhere else&rdquo; is visible without knowing what V or VI mean.</div></div>
+    <div class="callout"><span class="pin">4</span><div><b>The report is three sentences.</b> One number, and it
+    is given a yardstick — a rate is meaningless to a non-expert until Bach's own is beside it.</div></div>
+  </div>
+</section>
+
+<section>
+  <div class="eyebrow">Screen 2</div>
+  <h2>Advanced</h2>
+  <p>Same frame, same positions, more of them. Nothing moves when the toggle flips — panels open in place, so the
+  two modes are one interface at two densities rather than two interfaces.</p>
+
+  <div class="appframe scroller">
+  <div class="app">
+    <div class="titlebar">
+      <span class="appname">Contrapunctus</span>
+      <span class="seg"><span>Simple</span><span class="on">Advanced</span></span>
+      <span class="spacer"></span>
+      <span class="tbtn">▶ Play</span><span class="tbtn">■</span>
+      <span class="tbtn">Export MIDI</span><span class="tbtn">Copy Rust</span>
+    </div>
+
+    <div class="body">
+      <div class="left">
+        <div class="group">
+          <div class="grouphead">Design</div>
+          <div class="ctl"><label>Subject</label>
+            <div class="field">wtc1f02 · entry 1 · 0‥1920t</div>
+            <div class="sub">kern::clip(&amp;p.voices[1], 0, 2*measure)</div></div>
+          <div class="ctl"><label>Voices / key / metre</label>
+            <div class="row"><span class="field" style="flex:1">3</span><span class="field" style="flex:1">C minor</span><span class="field" style="flex:1">4/4</span></div>
+            <div class="sub">tonic = 0 · measure 960t · beat 240t</div></div>
+          <div class="ctl"><label>Compass, per voice</label>
+            <div class="row"><span class="chip"><span class="sw" style="background:var(--v1)"></span>33‥45</span>
+              <span class="chip"><span class="sw" style="background:var(--v2)"></span>28‥40</span>
+              <span class="chip"><span class="sw" style="background:var(--v3)"></span>21‥33</span></div>
+            <div class="sub">diatonic steps · drag on a staff to set</div></div>
+        </div>
+
+        <div class="group">
+          <div class="grouphead">Layout</div>
+          <div class="ctl"><label>Middle entries and their keys</label>
+            <div class="row" style="flex-wrap:wrap">
+              <span class="chip">V</span><span class="chip">VI</span><span class="chip">IV</span><span class="chip">+</span></div>
+            <div class="sub">middles = [4, 5, 3]</div></div>
+          <div class="ctl"><label>Episode length</label>
+            <div class="row"><span class="field">3</span><span class="sub">bars · Bach's median</span></div>
+            <div class="sub">episode_bars = 3</div></div>
+          <div class="ctl"><label>Link inside the exposition</label>
+            <div class="row"><span class="field">after entry 2</span><span class="field">1 bar</span></div>
+            <div class="sub">link = Some((1, 1)) · 82% of Bach's have one</div></div>
+          <div class="ctl"><label>Close at home</label>
+            <div class="choice"><div class="on">Yes</div><div>No</div></div>
+            <div class="sub">close_at_home · 22 of 22 in the book</div></div>
+        </div>
+
+        <div class="group">
+          <div class="grouphead">Search</div>
+          <div class="ctl"><label>Rules the search must obey</label>
+            <div class="choice"><div>confirmed(2)</div><div>conf+melodic</div><div class="on">full(5)</div></div>
+            <div class="sub">gen_tier · §8.16: not the endorsed tier</div></div>
+          <div class="ctl"><label>Seed</label>
+            <div class="row"><span class="field" style="flex:1">0x5EED</span><span class="ghostbtn">⟳</span></div></div>
+          <div class="ctl"><label>Analyser λ</label>
+            <div class="row"><span class="field">1.0</span><span class="sub">chord change penalty</span></div></div>
+        </div>
+
+        <div class="spacer"></div>
+        <div class="group"><div class="bigbtn">Compose</div></div>
+      </div>
+
+      <div class="right">
+        <div class="pane">
+          <div class="panehead"><h4>Plan</h4><span class="panenote">click a block to pin it · drag an edge to resize</span></div>
+          <svg viewBox="0 0 830 88" width="100%" height="88" aria-label="Plan strip, advanced">
+            <g font-family="IBM Plex Mono, monospace" font-size="8" fill="var(--ink3)">
+              <text x="0" y="8">1</text><text x="150" y="8">6</text><text x="300" y="8">11</text>
+              <text x="450" y="8">16</text><text x="600" y="8">21</text><text x="750" y="8">26</text></g>
+            <g>
+              <rect x="0" y="14" width="60" height="14" rx="2" fill="var(--v1)"/>
+              <rect x="210" y="14" width="90" height="14" rx="2" fill="var(--v1-soft)" stroke="var(--v1)" stroke-dasharray="3 2"/>
+              <rect x="450" y="14" width="60" height="14" rx="2" fill="var(--v1)"/>
+              <rect x="660" y="14" width="90" height="14" rx="2" fill="var(--v1-soft)" stroke="var(--v1)" stroke-dasharray="3 2"/>
+              <rect x="60" y="32" width="60" height="14" rx="2" fill="var(--v2)"/>
+              <rect x="300" y="32" width="60" height="14" rx="2" fill="var(--v2)"/>
+              <rect x="510" y="32" width="90" height="14" rx="2" fill="var(--v2-soft)" stroke="var(--v2)" stroke-dasharray="3 2"/>
+              <rect x="750" y="32" width="60" height="14" rx="2" fill="var(--v2)"/>
+              <rect x="120" y="50" width="30" height="14" rx="2" fill="var(--v3-soft)" stroke="var(--v3)" stroke-dasharray="3 2"/>
+              <rect x="150" y="50" width="60" height="14" rx="2" fill="var(--v3)"/>
+              <rect x="360" y="50" width="90" height="14" rx="2" fill="var(--v3-soft)" stroke="var(--v3)" stroke-dasharray="3 2"/>
+              <rect x="600" y="50" width="60" height="14" rx="2" fill="var(--v3)"/>
+            </g>
+            <rect x="300" y="30" width="60" height="18" fill="none" stroke="var(--bad)" stroke-width="1.5" rx="3"/>
+            <text x="364" y="43" font-family="IBM Plex Mono" font-size="9" fill="var(--bad)">block 5 · join dropped</text>
+            <g font-family="IBM Plex Mono, monospace" font-size="8">
+              <rect x="0" y="70" width="60" height="12" fill="var(--sunk)"/><text x="4" y="79" fill="var(--ink2)">home</text>
+              <rect x="60" y="70" width="60" height="12" fill="var(--v1-soft)"/><text x="64" y="79" fill="var(--ink2)">V</text>
+              <rect x="120" y="70" width="90" height="12" fill="var(--sunk)"/><text x="124" y="79" fill="var(--ink2)">home</text>
+              <rect x="210" y="70" width="150" height="12" fill="var(--v1-soft)"/><text x="214" y="79" fill="var(--ink2)">V</text>
+              <rect x="360" y="70" width="150" height="12" fill="var(--v2-soft)"/><text x="364" y="79" fill="var(--ink2)">VI</text>
+              <rect x="510" y="70" width="150" height="12" fill="var(--v3-soft)"/><text x="514" y="79" fill="var(--ink2)">IV</text>
+              <rect x="660" y="70" width="150" height="12" fill="var(--sunk)"/><text x="664" y="79" fill="var(--ink2)">home</text></g>
+          </svg>
+        </div>
+
+        <div class="pane">
+          <div class="panehead"><h4>Outcome</h4><span class="panenote">compose::Outcome · 0.6s</span></div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:18px">
+            <div class="report">
+              <div class="line"><span class="dot" style="background:var(--ok)"></span>exposition covers the voices</div>
+              <div class="line"><span class="dot" style="background:var(--ok)"></span>exposition alternates</div>
+              <div class="line"><span class="dot" style="background:var(--bad)"></span>exposition runs unbroken
+                <span class="num">— by design, the link</span></div>
+              <div class="line"><span class="dot" style="background:var(--ok)"></span>there is a middle</div>
+              <div class="line"><span class="dot" style="background:var(--ok)"></span>the last cadence is at home</div>
+            </div>
+            <div class="report">
+              <div class="line"><span class="num" style="width:52px">785</span> slices</div>
+              <div class="line"><span class="num" style="width:52px">0</span> confirmed tier</div>
+              <div class="line"><span class="num" style="width:52px">55</span> full five &nbsp;<span class="num">= 70.1 / 1000</span></div>
+              <div class="line"><span class="num" style="width:52px">1/12</span> blocks lost the join</div>
+              <div class="line"><span class="num" style="width:52px">0/12</span> lost the plan</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  </div>
+</section>
+
+<section>
+  <div class="eyebrow">Mapping</div>
+  <h2>Every control is a field that already exists</h2>
+  <table>
+    <thead><tr><th>Control</th><th>Simple label</th><th>Library</th></tr></thead>
+    <tbody>
+      <tr><td>Subject picker</td><td>The tune</td><td class="mono">Design::subject · kern::read + clip</td></tr>
+      <tr><td>Voice count</td><td>How many voices</td><td class="mono">Design::voices</td></tr>
+      <tr><td>Return count</td><td>Times the tune comes back</td><td class="mono">Layout::middles.len()</td></tr>
+      <tr><td>Journey preset</td><td>How far it travels</td><td class="mono">Layout::middles</td></tr>
+      <tr><td>Episode length</td><td>— <span class="sub">advanced</span></td><td class="mono">Layout::episode_bars</td></tr>
+      <tr><td>Link</td><td>— <span class="sub">advanced</span></td><td class="mono">Layout::link</td></tr>
+      <tr><td>Ending</td><td>— <span class="sub">advanced</span></td><td class="mono">Layout::close_at_home</td></tr>
+      <tr><td>Strictness</td><td>How strictly it follows the rules</td><td class="mono">tier: HARD | CONF_MEL | CONFIRMED</td></tr>
+      <tr><td>Try another</td><td>Try a different one</td><td class="mono">seed</td></tr>
+      <tr><td>Plan strip</td><td>—</td><td class="mono">Outcome::blocks</td></tr>
+      <tr><td>Score</td><td>—</td><td class="mono">Outcome::voices</td></tr>
+      <tr><td>Report</td><td>How it turned out</td><td class="mono">Outcome::verdict, ::tally, ::relaxed</td></tr>
+    </tbody>
+    <caption>Nothing in the sketch needs a library change. <code>compose::fugue</code> already returns every value the
+    right-hand panes draw, which is what makes a repaint-per-frame immediate-mode loop cheap.</caption>
+  </table>
+</section>
+
+<section>
+  <div class="eyebrow">Engineering</div>
+  <h2>Three things worth deciding before any of this is built</h2>
+
+  <div class="stack">
+    <h3>Notation is unusually easy here, and that is not a coincidence</h3>
+    <p>Drawing a staff normally means fighting a pitch representation designed for playback. This one was designed
+    for paper: <code>Pitch { step, alter }</code> is a diatonic step and an accidental, so <b>staff position is
+    <code>step</code> and nothing else</b> — no lookup, no key-signature reasoning, no enharmonic guessing. The
+    argument §2.1 makes for the lattice turns out to be the argument for it being drawable. Noteheads, stems,
+    accidentals and ledger lines off <code>step</code>; beams from the tick grid, which is already exact.</p>
+  </div>
+
+  <div class="stack">
+    <h3>Playback needs a decision, and I would not use MIDI out</h3>
+    <ul>
+      <li><b>A small built-in synth</b> — <code>cpal</code> or <code>rodio</code>, a sine or triangle with a short
+      envelope. Perhaps 120 lines. No external dependency on the user's machine, the playhead is sample-accurate,
+      and three voices of counterpoint need nothing richer.</li>
+      <li><b>System MIDI out</b> — better sound, but needs a synth installed and configured, and on Windows that
+      is a support burden for a tool whose point is quick iteration.</li>
+    </ul>
+    <p>The first, unless you want the fugues to sound good rather than to be heard clearly. Those are different
+    goals and only the second is this tool's.</p>
+  </div>
+
+  <div class="stack">
+    <h3>Iteration speed is already there</h3>
+    <p>A generate is <b>0.6 seconds</b> for 27 bars. That is fast enough to recompose on release of a slider but
+    not on drag, so: recompose on release, and keep the previous <code>Outcome</code> to draw while the next one
+    runs on a worker thread. egui repaints at 60fps against whichever is current; nothing needs to block.</p>
+    <p>Because <code>seed</code> is the only source of randomness and everything else is deterministic,
+    <b>&ldquo;Try a different one&rdquo; is a genuinely cheap button</b> and worth making the most prominent
+    control after Compose — it is how a non-expert explores, and the one interaction that rewards having no
+    theory at all.</p>
+  </div>
+</section>
+
+<section>
+  <div class="eyebrow">Settled</div>
+  <h2>Decisions, and what each one costs</h2>
+  <table>
+    <thead><tr><th>Question</th><th>Decision</th><th>What it means to build</th></tr></thead>
+    <tbody>
+      <tr><td>Score</td><td><b>Staff notation</b></td>
+        <td>Cheap here — <code>Pitch::step</code> <em>is</em> the staff position. Clefs and accidentals
+        want an embedded glyph subset; everything else is <code>Painter</code> primitives.</td></tr>
+      <tr><td>Subject</td><td><b>Chosen or imported</b></td>
+        <td>A list of the 24, plus a file import. No note editor — the largest piece of work in the whole
+        interface, and not fugue-specific.</td></tr>
+      <tr><td>Plan strip</td><td><b>Editable, as far as it can be</b></td>
+        <td>Every gesture maps to a <code>Layout</code> field. Span-preserving edits refill one block in under
+        100&nbsp;ms; span-changing ones recompose and say so.</td></tr>
+      <tr><td>Sound</td><td><b>Both</b></td>
+        <td>A built-in synth as the default and system MIDI out beside it. One scheduler, two sinks; the sample
+        clock is the playhead.</td></tr>
+      <tr><td>Four voices</td><td><b>Shown, disabled</b></td>
+        <td>With the reason on hover. Enables when the solver lands, and nothing else in the interface
+        changes — which is the test of whether the boundary is in the right place.</td></tr>
+      <tr><td>Platform</td><td><b>Desktop and web</b></td>
+        <td>Three library functions lose their <code>&amp;Path</code>; generation runs a block per frame instead
+        of a thread; dialogs go through the async API that exists on both.</td></tr>
+      <tr><td>Settings</td><td><b>Saved, plan included</b></td>
+        <td>A small hand-written text format — the library has one dependency and keeps it. A fingerprint over
+        the notes makes &ldquo;same file, same fugue&rdquo; checkable instead of promised.</td></tr>
+    </tbody>
+    <caption>The full specification is <code>docs/ui-spec.md</code>; this page is its picture.</caption>
+  </table>
+</section>
+
+</div>
