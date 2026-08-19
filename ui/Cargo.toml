@@ -24,6 +24,10 @@ egui = "0.36"
 # native dialog on the desktop, a file input and a download in a browser — so
 # spec 7.2 says always to use it and never the blocking form.
 rfd = { version = "0.17", default-features = false, features = ["xdg-portal"] }
+# The sound card. Spec 6.2 wants the built-in synth as the default because it
+# is the one that always works, and `cpal` targets WebAudio on wasm32 as well
+# as the desktop APIs, so it is one dependency and not two.
+cpal = "0.18"
 
 # A future has to be driven by something, and that something is the one part of
 # this crate that cannot be written once: a browser has no threads.

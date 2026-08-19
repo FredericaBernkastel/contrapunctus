@@ -11,7 +11,7 @@
 //! What is not here yet is beaming and real clef glyphs; the roadmap says so.
 
 use contrapunctus::kern::{Voice, TICKS_PER_WHOLE};
-use egui::{Align2, FontId, Pos2, Response, Sense, Stroke, Ui, Vec2};
+use egui::{Align2, FontId, Pos2, Sense, Stroke, Ui, Vec2};
 
 use crate::theme;
 
@@ -23,10 +23,18 @@ pub fn height(voices: usize) -> f32 {
   voices as f32 * (STAFF + BETWEEN) + 12.0
 }
 
-/// Draw every voice, one staff each, sharing a horizontal scale.
-pub fn show(ui: &mut Ui, voices: &[Voice], key: &[i8; 7], measure: i64, width: f32) -> Response {
+/// Draw every voice, one staff each. Returns a tick to seek to, if the reader
+/// clicked the page — spec 5.2, and the score is an output in every other way.
+pub fn show(
+  ui: &mut Ui,
+  voices: &[Voice],
+  key: &[i8; 7],
+  measure: i64,
+  width: f32,
+  playhead: Option<i64>,
+) -> Option<i64> {
   let want = Vec2::new(width.max(ui.available_width()), height(voices.len()));
-  let (resp, p) = ui.allocate_painter(want, Sense::hover());
+  let (resp, p) = ui.allocate_painter(want, Sense::click());
   let area = resp.rect;
   let dark = ui.visuals().dark_mode;
   let line = ui.visuals().weak_text_color().gamma_multiply(0.55);
@@ -124,7 +132,23 @@ pub fn show(ui: &mut Ui, voices: &[Voice], key: &[i8; 7], measure: i64, width: f
     }
   }
 
-  resp
+  if let Some(t) = playhead {
+    let x = x_of(t.clamp(0, total));
+    p.line_segment(
+      [Pos2::new(x, area.top() + 2.0), Pos2::new(x, area.bottom() - 2.0)],
+      Stroke::new(1.5, ui.visuals().strong_text_color()),
+    );
+  }
+
+  // Clicking the page listens from there. The same conversion the notes were
+  // placed by, so the click lands where it looks like it lands.
+  if resp.clicked() {
+    if let Some(pos) = resp.interact_pointer_pos() {
+      let f = ((pos.x - x0) / (x1 - x0).max(1.0)).clamp(0.0, 1.0);
+      return Some((f as f64 * total as f64) as i64);
+    }
+  }
+  None
 }
 
 /// Draw a sharp, flat or natural from line segments. Three glyphs, no font, and

@@ -20,7 +20,9 @@ use contrapunctus::{
 use egui::{RichText, Ui};
 
 use crate::catalog::{self, Catalog, Journey};
+use crate::audio::Player;
 use crate::files::{self, Loaded, Note};
+use crate::schedule;
 use crate::task::Slot;
 use crate::{report, score, strip, theme};
 
@@ -55,6 +57,22 @@ pub struct App {
 
   saving: Slot<Note>,
   loading: Slot<Result<Loaded, Note>>,
+
+  /// Built on the first press of Play, never before. A test constructs this
+  /// application headlessly and a build machine has no sound card; more to the
+  /// point, a browser may only open an audio context in response to a gesture,
+  /// and pressing Play is one.
+  player: Option<Player>,
+  /// Why there is no sound, if there is none. Spec 6.3's rule, applied to the
+  /// synth as well: absence is stated, never silent.
+  no_sound: Option<String>,
+  /// A bit per voice, set to silence it while listening. Interface state, not
+  /// music: it changes what is audible and nothing about what is written.
+  mute: u32,
+  /// The very score the player holds. Kept so that every tick-to-sample
+  /// conversion goes through the tempo the sound was actually built at, rather
+  /// than through whatever the tempo control says at the moment of asking.
+  sound: Option<std::sync::Arc<schedule::Score>>,
 }
 
 impl Default for App {
@@ -81,6 +99,10 @@ impl Default for App {
       fidelity: None,
       saving: Slot::default(),
       loading: Slot::default(),
+      player: None,
+      no_sound: None,
+      mute: 0,
+      sound: None,
     }
   }
 }
@@ -96,6 +118,7 @@ impl App {
     }
     self.stale = false;
     self.fidelity = None;
+    self.reload_sound();
   }
 
   /// Apply an edit from the plan strip.
@@ -163,6 +186,56 @@ impl App {
     self.fidelity = None;
   }
 
+  /// Open the sound card, once, when something first needs it.
+  ///
+  /// Failure is a message and not a panic: a machine with no output device is an
+  /// ordinary machine, and everything else in this program still works on it.
+  fn wake(&mut self) -> bool {
+    if self.player.is_some() {
+      return true;
+    }
+    match Player::open() {
+      Ok(p) => {
+        p.set_mute(self.mute);
+        self.player = Some(p);
+        self.no_sound = None;
+        self.reload_sound();
+        true
+      }
+      Err(e) => {
+        self.no_sound = Some(e);
+        false
+      }
+    }
+  }
+
+  /// Hand the player the music now on screen, at the tempo now set.
+  ///
+  /// Called after every recompose and every edit, so what is heard is what is
+  /// shown. The position is not reset — an edit during playback continues from
+  /// where the ear already is, which is the whole reason to edit while listening.
+  fn reload_sound(&mut self) {
+    let (Some(p), Some(out)) = (self.player.as_ref(), self.out.as_ref()) else { return };
+    let score = std::sync::Arc::new(schedule::schedule(&out.voices, self.qpm, p.rate()));
+    p.load(score.clone());
+    self.sound = Some(score);
+  }
+
+  /// Where the ear is, in ticks. `None` when nothing has ever played.
+  fn playhead(&self) -> Option<i64> {
+    let p = self.player.as_ref()?;
+    Some(self.sound.as_ref()?.tick_of(p.position()))
+  }
+
+  fn seek(&mut self, tick: i64) {
+    if !self.wake() {
+      return;
+    }
+    if let (Some(p), Some(sc)) = (self.player.as_ref(), self.sound.as_ref()) {
+      p.seek(sc.sample_of(tick.max(0)));
+    }
+  }
+
   /// Take whatever the file tasks have finished, once per frame.
   fn collect(&mut self) {
     if let Some(n) = self.saving.take() {
@@ -193,6 +266,7 @@ impl App {
           self.out = Some(l.outcome);
           self.refused = None;
           self.stale = false;
+          self.reload_sound();
         }
         Err(Note::Cancelled) => self.status = Some("nothing opened".into()),
         Err(Note::Failed(e)) => self.status = Some(format!("could not open: {e}")),
@@ -224,6 +298,8 @@ impl App {
     let mut save = false;
     let mut open = false;
     let mut export = false;
+    let mut transport = false;
+    let qpm_was = self.qpm;
     egui::Panel::top("bar").show(ui, |ui| {
       ui.horizontal(|ui| {
         ui.heading("Contrapunctus");
@@ -240,11 +316,45 @@ impl App {
             .add_enabled(self.out.is_some(), egui::Button::new("Export MIDI"))
             .on_hover_text("Tracks top voice first, each named with how many entries it carries.")
             .clicked();
-          ui.add_enabled(false, egui::Button::new("▶"))
-            .on_disabled_hover_text("Sound is not wired up yet — it is next on the roadmap.");
+          let playing = self.player.as_ref().is_some_and(|p| p.is_playing());
+          transport |= ui
+            .add_enabled(self.out.is_some(), egui::Button::new(if playing { "■" } else { "▶" }))
+            .on_hover_text(if playing { "Stop" } else { "Play, through the built-in synth" })
+            .clicked();
+          ui.add(egui::DragValue::new(&mut self.qpm).range(30..=200).suffix(" bpm"))
+            .on_hover_text("Quarter notes per minute. §8.16's own figures are quoted at 76.");
         });
       });
     });
+
+    if transport {
+      let playing = self.player.as_ref().is_some_and(|p| p.is_playing());
+      if playing {
+        if let Some(p) = self.player.as_ref() {
+          p.set_playing(false);
+        }
+      } else if self.wake() {
+        // Starting from the end starts again from the beginning, which is what
+        // pressing play after a piece has finished plainly means.
+        if let Some(p) = self.player.as_ref() {
+          let done = self.sound.as_ref().map(|s| s.samples).unwrap_or(0);
+          if done > 0 && p.position() >= done {
+            p.seek(0);
+          }
+          p.set_playing(true);
+        }
+      }
+    }
+    if self.qpm != qpm_was {
+      // The tempo is part of the conversion, so the notes and the playhead both
+      // move with it. Seeking to the tick we were on keeps the ear in the music
+      // rather than at whatever sample that tick used to be.
+      let was = self.playhead();
+      self.reload_sound();
+      if let Some(t) = was {
+        self.seek(t);
+      }
+    }
 
     if open {
       files::load_settings(self.loading.clone());
@@ -261,6 +371,7 @@ impl App {
     });
 
     let mut edit = None;
+    let mut seek = None;
     egui::CentralPanel::default_margins().show(ui, |ui| {
       let dark = ui.visuals().dark_mode;
 
@@ -302,15 +413,40 @@ impl App {
       let origins = compose::origins(&self.design, &self.layout);
 
       ui.add_space(4.0);
-      ui.label(RichText::new("PLAN").monospace().weak().small());
-      let (_, asked) = strip::show(ui, out, self.design.voices, measure, &origins);
-      edit = asked;
+      ui.horizontal(|ui| {
+        ui.label(RichText::new("PLAN").monospace().weak().small());
+        ui.add_space(12.0);
+        ui.label(RichText::new("hear").monospace().weak().small());
+        // Silencing a voice is how anyone learns to follow one, which is the
+        // whole point of a synth whose job is clarity rather than beauty.
+        for v in 0..self.design.voices {
+          let on = self.mute & (1 << v) == 0;
+          let c = theme::voice(v, dark);
+          let tag = RichText::new(format!("{}", v + 1)).color(if on { c } else { ui.visuals().weak_text_color() });
+          if ui
+            .selectable_label(on, tag)
+            .on_hover_text(if on { "Silence this voice" } else { "Hear this voice again" })
+            .clicked()
+          {
+            self.mute ^= 1 << v;
+            if let Some(p) = self.player.as_ref() {
+              p.set_mute(self.mute);
+            }
+          }
+        }
+      });
+      let head = self.playhead();
+      let (_, asked) = strip::show(ui, out, self.design.voices, measure, &origins, head);
+      edit = asked.edit;
+      seek = asked.seek;
 
       ui.add_space(10.0);
       ui.label(RichText::new("SCORE").monospace().weak().small());
       egui::ScrollArea::both().max_height(score::height(out.voices.len()) + 12.0).show(ui, |ui| {
         let want = (out.bars as f32 * 46.0).max(ui.available_width());
-        score::show(ui, &out.voices, &self.design.key, measure, want);
+        if let Some(t) = score::show(ui, &out.voices, &self.design.key, measure, want, head) {
+          seek = Some(t);
+        }
       });
 
       ui.add_space(10.0);
@@ -319,6 +455,15 @@ impl App {
       ui.add_space(2.0);
       report::show(ui, out, self.tier, self.advanced);
 
+      if let Some(why) = &self.no_sound {
+        ui.add_space(6.0);
+        ui.colored_label(theme::warn(dark), format!("No sound: {why}"));
+        ui.label(
+          RichText::new("Everything else works; the score and the report do not need a sound card.")
+            .weak()
+            .small(),
+        );
+      }
       if let Some(line) = &self.status {
         ui.add_space(6.0);
         ui.label(RichText::new(line).weak().small());
@@ -329,6 +474,17 @@ impl App {
     // outcome it is drawing, and an edit replaces that outcome.
     if let Some(e) = edit {
       self.apply(e);
+      self.reload_sound();
+    }
+    if let Some(t) = seek {
+      self.seek(t);
+    }
+
+    // Repaint while the sound is moving, because the playhead is read off the
+    // audio callback and an immediate-mode frame that is not drawn does not read
+    // anything. Nothing polls when nothing is playing.
+    if self.player.as_ref().is_some_and(|p| p.is_playing()) {
+      ui.ctx().request_repaint();
     }
   }
 }

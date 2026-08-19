@@ -9,11 +9,14 @@
 //! platform-specific file in this crate is this one, and it is the window.
 
 mod app;
+mod audio;
 mod catalog;
 mod files;
 mod report;
+mod schedule;
 mod score;
 mod strip;
+mod synth;
 mod task;
 mod theme;
 

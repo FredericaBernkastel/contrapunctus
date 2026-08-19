@@ -37,16 +37,27 @@ pub enum Edit {
   Key(usize, i16),
 }
 
-/// Draw the strip, and report any edit the user asked for.
+/// Everything one frame of the strip asks the application to do.
+///
+/// A seek is not an [`Edit`], and keeping them apart is not fussiness: an edit
+/// changes the music and a seek changes only where you are listening from.
+#[derive(Default)]
+pub struct Asked {
+  pub edit: Option<Edit>,
+  pub seek: Option<i64>,
+}
+
+/// Draw the strip, and report what the user asked for.
 pub fn show(
   ui: &mut Ui,
   out: &Outcome,
   voices: usize,
   measure: i64,
   origins: &[Origin],
-) -> (Response, Option<Edit>) {
+  playhead: Option<i64>,
+) -> (Response, Asked) {
   let want = Vec2::new(ui.available_width(), height(voices));
-  let (resp, p) = ui.allocate_painter(want, Sense::hover());
+  let (resp, p) = ui.allocate_painter(want, Sense::click());
   let area = resp.rect;
   let dark = ui.visuals().dark_mode;
   let faint = ui.visuals().weak_text_color();
@@ -145,6 +156,7 @@ pub fn show(
   // senses hover: two things competing for the same click is a bug that only
   // shows up under the pointer.
   let mut edit = None;
+  let mut menus: Vec<Rect> = vec![];
   for (i, r) in rects {
     let block = &out.blocks[i];
     let of = origins.get(i).copied();
@@ -177,6 +189,7 @@ pub fn show(
     });
 
     if let Some(k) = middle {
+      menus.push(r);
       egui::Popup::menu(&hit).show(|ui| {
         ui.label(egui::RichText::new("send this return to").weak().small());
         for deg in 0..7i16 {
@@ -189,7 +202,32 @@ pub fn show(
     }
   }
 
-  (resp, edit)
+  // The playhead, over everything, because it is the one mark that says *now*
+  // and it has to be findable against a block of any colour.
+  if let Some(t) = playhead {
+    let x = x_of(t.clamp(0, total));
+    p.line_segment(
+      [Pos2::new(x, area.top() + RULER - 4.0), Pos2::new(x, area.bottom() - 2.0)],
+      Stroke::new(1.5, ui.visuals().strong_text_color()),
+    );
+  }
+
+  // A click anywhere that is not a block with a menu moves the playhead there.
+  // egui's layering should already give the blocks their own clicks, since they
+  // register after this response does — but "should" is doing work in that
+  // sentence, and one gesture doing two things is the kind of bug that only
+  // appears under a pointer nobody is watching. So it is excluded explicitly.
+  let mut seek = None;
+  if resp.clicked() {
+    if let Some(pos) = resp.interact_pointer_pos() {
+      if !menus.iter().any(|r| r.contains(pos)) {
+        let f = ((pos.x - area.left()) / area.width().max(1.0)).clamp(0.0, 1.0);
+        seek = Some((f as f64 * total as f64) as i64);
+      }
+    }
+  }
+
+  (resp, Asked { edit, seek })
 }
 
 fn describe(b: &Block) -> String {

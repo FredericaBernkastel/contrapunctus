@@ -260,6 +260,16 @@ Nothing about this is platform-specific and nothing about it needs a timer — t
 audio callback's own sample clock is the position, which is also what makes the
 playhead exact rather than approximately synchronised.
 
+**There is no timer anywhere in this program.** The playhead is not synchronised
+with the sound; it is *read off* it, through an atomic the callback writes and
+the frame reads. Nothing else can be as accurate, and nothing else keeps being
+accurate when a frame is late.
+
+Ties are merged here rather than left to the synth. A `Note` with
+`attack == false` is the same sound continuing, and re-striking it would turn
+every suspension into a repeated note — the one articulation §2.2's rules exist
+to tell apart.
+
 ### 6.2 Built-in synth — the default
 
 `cpal` for the device, a hand-written voice per part. Three voices of
@@ -271,6 +281,34 @@ partials, with a short attack and release so entries do not click.
 - No external dependency on what the user has installed.
 - The point of this tool is hearing the counterpoint **clearly**, not hearing it
   sound good. Those are different goals and only the first is ours.
+
+**Built, and the shape of it is the interesting part.** Three files, split by
+what can be tested:
+
+| file | what | tested |
+|---|---|---|
+| `schedule.rs` | a fugue to samples, and back | yes — ties, tempo, both directions |
+| `synth.rs` | samples to sound | yes — clicks, clipping, seeking |
+| `audio.rs` | the sound card | no, and it cannot be |
+
+No build machine here has speakers, so the third file can never be exercised.
+That is an argument for making it as small as possible rather than for giving
+up: everything that can be *wrong* — a tie re-struck as two notes, a tempo out
+by a factor of four, three voices clipping, an entry that clicks — lives in the
+two that render into a buffer and can be asserted about.
+
+Three constants and their reasons. **4 ms attack, 14 ms release**, which is a
+tenth of the shortest note the generator writes at 76 — long enough that no
+entry clicks, short enough that it reads as articulation rather than a swell,
+and articulation is what makes a repeated note and a tied one different to the
+ear. **Peak 0.72** across the texture, asserted rather than assumed, because a
+headroom constant is exactly the thing that gets invalidated by adding a partial
+and never revisited.
+
+One design note worth keeping: **`Score` owns its own tick-to-sample
+conversion**. Free functions would take the tempo as an argument, and a caller
+that passed a tempo the score was not built at would get a playhead that drifted
+— slowly, plausibly, and only after the tempo had been changed once.
 
 ### 6.3 System MIDI out — optional
 
@@ -542,8 +580,12 @@ Status is one of **done**, **partial** — usable and honestly incomplete — or
 | 6.4 | Export MIDI, through `compose::encode` | by inspection |
 | 4.2 | The plan strip's key edit — click a middle, choose where it goes | `a_local_key_change_leaves_every_other_note_alone` |
 | 7.2 | One code path for files: `rfd`'s async API, on both targets | `ui/src/files.rs` mentions no `Path` |
+| 6.1 | The scheduler — ticks to samples, ties merged, both directions | `the_clock_runs_both_ways`, `the_piece_lasts_what_the_tempo_says` |
+| 6.2 | The built-in synth, and the sound card behind it | `a_note_begins_and_ends_at_silence`, `a_full_texture_does_not_clip` |
+| 4.1, 5.2 | The playhead in both views, and a click to listen from there | the position is the callback's own sample count |
+| 6.2 | Silencing a voice while listening, which is how anyone learns to follow one | `a_muted_voice_goes_quiet_and_the_rest_do_not` |
 
-Five tests, all headless, in `ui/src/app.rs`. The interesting one is
+Sixteen tests, all headless. The interesting one is
 `every_offered_subject_composes`: each of the 24 subjects is composed on the
 shortest layout that is still a fugue, because a picker whose entries have not
 been tried is a picker that wastes the one click a beginner is sure to make. It
@@ -552,19 +594,28 @@ costs 13 seconds in release and two and a half minutes unoptimised.
 `tests/references.rs` now sweeps `ui/src` beside `src` and `docs/`, so the
 section numbers this crate's doc comments cite are checked like every other.
 
+One of the fifteen is worth naming on its own. `no_gap_swallows_every_voice_at_once`
+asserts that the whole texture never falls silent inside the piece — which is the
+**third listening test made mechanical**. A listener heard "0.4s long silence
+breaks repeating every 3-6s" in a fugue whose every number looked right, because
+every instrument in this repository measures a relation between notes that
+*sound*, and a fault consisting of nothing sounding is invisible to all of them.
+A scheduler is the first thing here that can see it, because it knows where the
+silence is, in samples.
+
 ### 12.2 Next, in order
 
 | # | section | what | blocked on |
 |---|---|---|---|
-| 1 | 6.1–6.2 | The scheduler and the built-in synth | a `cpal` dependency |
-| 2 | 4.1, 5.2 | The playhead, shared by both views | 1 above — the sample clock is the position |
-| 3 | 7 | The web shell, and `wasm32` in CI | nothing; the entry point is a stub today |
-| 4 | 4.2 | Span-changing edits: fade what is about to move, rather than only recomposing | nothing |
-| 5 | 4.3 | Ghosting the knock-on of a voice drag | 4 above |
-| 6 | 3.2 | Importing a subject from a file | nothing — the dialog is written |
-| 7 | 4.2 | The per-block reroll | a per-block seed in the library, 10 above |
-| 8 | 6.3 | System MIDI out, behind a feature | a `midir` dependency |
-| 9 | 3.3 | The compass as draggable ranges on a staff | nothing |
+| 1 | 7 | The web shell, and `wasm32` in CI | nothing; the entry point is a stub today |
+| 2 | 3.2 | Importing a subject from a file | nothing — the dialog is written |
+| 3 | 4.2 | Span-changing edits: fade what is about to move, rather than only recomposing | nothing |
+| 4 | 4.3 | Ghosting the knock-on of a voice drag | 3 above |
+| 5 | 5.2 | The score scrolling with the strip, and following the playhead | nothing |
+| 6 | 4.2 | The per-block reroll | a per-block seed in the library, 10 above |
+| 7 | 6.3 | System MIDI out, behind a feature | a `midir` dependency |
+| 8 | 3.3 | The compass as draggable ranges on a staff | nothing |
+| 9 | 5.1 | Beams, and clef glyphs from an embedded SMuFL subset | a font subset |
 
 ### 12.3 Known gaps in what is built
 
@@ -574,6 +625,14 @@ Stated rather than left to be discovered:
   plain stem, and each staff is labelled with the note name of its bottom line
   instead of a clef. The label is arguably better for section 1's beginner and it
   needs no font; the glyphs want the SMuFL subset 5.1 describes.
+- **Sound has been built but not yet heard.** Every property a test can state
+  about it holds — no clicks, no clipping, the right duration, no swallowed
+  texture — and none of those is the same as somebody listening. Three listening
+  tests have corrected this project and each found something no number was
+  looking at; this is the first release where the fourth is a button rather than
+  an export.
+- **No metronome, and one tempo for the whole piece.** Neither has been asked
+  for by anything yet.
 - **Generation blocks the frame** for about 0.6 s, where 7.3 calls for one block
   per frame. Doing it properly needs a resumable generate in the library —
   `compose::generate` fills every block in one call — so it is a library change,
