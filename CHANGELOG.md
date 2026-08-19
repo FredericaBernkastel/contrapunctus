@@ -930,7 +930,7 @@ from `--tier`. §8.6–§8.15 describe and use `conf+melodic`; §8.16 generates 
 
 ### The third listening test — four tenths of a second of nothing
 
-[`PLACEHOLDER`](../../commit/PLACEHOLDER)
+[`7cdaf5d`](../../commit/7cdaf5d)
 
 Dissonance "reduced meaningfully", and then: **"0.4s long silence breaks repeating every 3-6s."** A diagnosis
 rather than a complaint. At 76 to the minute four tenths of a second is an **eighth note**, and BWV 847's subject
