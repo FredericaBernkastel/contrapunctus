@@ -81,6 +81,11 @@ pub struct Block {
   pub key_of: i16,
 }
 
+/// Indices into [`harmony::QUALITIES`], named so the plan below reads as music
+/// rather than as subscripts.
+const TRIAD: usize = 0;
+const DOMINANT_SEVENTH: usize = 4;
+
 /// Which voice a block places its line in.
 fn held_of(b: Option<&Block>) -> usize {
   match b.map(|x| &x.kind) {
@@ -330,8 +335,15 @@ pub fn plan(d: &Design, blocks: &[Block]) -> Vec<harmony::Segment> {
           harmony::Chord { root: (c.root as i16 + shift).rem_euclid(12) as u8, quality: c.quality }
         }
         None => {
+          // The dominant of the local key takes a seventh, which is what makes a
+          // descending-fifths sequence pull rather than merely step. Both arms of
+          // this returned a plain triad until clippy pointed out they were the
+          // same expression — an intention that had been written down and not
+          // finished, in the one part of this plan §8.16 already calls the
+          // weakest.
           let deg = (b.key_of + 4 - (step % 4) as i16 * 3).rem_euclid(7);
-          harmony::Chord { root: root(deg), quality: if deg == 4 { 0 } else { 0 } }
+          let dominant = (deg - b.key_of).rem_euclid(7) == 4;
+          harmony::Chord { root: root(deg), quality: if dominant { DOMINANT_SEVENTH } else { TRIAD } }
         }
       };
       out.push(harmony::Segment { start: t, end: t + d.beat, chord: Some(c), fit: 1.0 });
