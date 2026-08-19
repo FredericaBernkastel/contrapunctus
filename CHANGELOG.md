@@ -888,6 +888,57 @@ more than half of what step 7 must generate has no subject in it at all — whic
 
 ---
 
+## Step 7 — a fugue, from a subject
+
+[`0d94280`](../../commit/0d94280)
+
+Readme §8.16, `src/step7.rs`, `out/fugue.mid`. Everything before this filled voices **against music that already
+existed**. §8.6 held one of Bach's entries and reconstructed the others; §8.3 placed entries into a span Bach had
+written. This emits the span too, so for the first time nothing in the output is Bach's except the subject.
+
+**Twelve blocks, 27 bars, three voices, from BWV 847's subject, filled in 3.9 seconds.** Read back through §8.15's
+own parser it covers the voices, alternates, has a middle and ends at home, and fails `runs unbroken` — the
+expositional link, written on purpose, which §2.4 forbids and 82% of real expositions contain. Against §8.2's
+checker: **628 slices, zero violations on the confirmed tier**, and 366.2 per thousand on the full five against
+Bach's 112.3, since the two dissonance rules are not in the tier and §8.2 is why.
+
+**Three constraints shaped it, and each cost something the section states.** Two free voices, so three voices is
+the scope and half the book is out of reach — but a fugue is exactly where *which* voice is free changes, so the
+fill runs one block at a time with the placed voice held. Episodes have nothing held in them at all, so the motive
+is placed and sequenced, a commitment §8.13 already priced at 13.3%. And rhythm is data, so every free voice takes
+the subject's own rhythm, which is why the result is stiffer than Bach.
+
+### Four faults, each found by a test, each in code that had already produced a plausible fugue
+
+**A parallel fifth across a block seam.** The search's state resets at every edge, so a parallel that straddles one
+was invisible to it and visible to the checker — the fault §8.6's first test exists to prevent, arriving at the
+join rather than in the middle. `Problem::prior` now carries the previous slice's pitches for **every** voice and
+not only the free ones, because a parallel is a fact about two voices moving together, and a search that knows
+where its own voices came from but not where the held one came from cannot see one.
+
+**A voice entering by a leap of an eleventh.** An entry's first note is placed by the derivation, so no care in the
+fill can reach it. The fix is Bach's: rest the voice before it enters, and there is nothing to leap from.
+
+**§8.15's parser failing all four checks on the generator's own output**, because it read each entry's degree at
+the block's first tick — and BWV 847's subject has an upbeat, so nothing sounded there and every entry was silently
+dropped.
+
+**And a join test that is true only where the join was kept.** A block that lost its join enters cold, and a voice
+with nothing behind it may legally leap a tenth. That is why `Relaxed` reports *which* blocks lost a constraint and
+not only how many.
+
+> **One of twelve lost the join and none lost the plan**, and the order is the finding: the join is this
+> generator's own convenience, the plan is §2.3's obligation system *and* what keeps the search tractable.
+> Dropping the plan first turns a dead block into an exploded one, which is worse — which is how the order was
+> found.
+
+The test that says all this is not "the piece contains no violations" but **"no block contains counterpoint the
+checker flags"**. Those are different claims and only the first is one the search can make; a test that conflated
+them would either fail on a cost the generator already reports, or pass by not looking.
+
+
+---
+
 ## Recurring pattern
 
 Three constraints in this project have turned out too permissive to bind — the two-rule hard tier, the
@@ -932,6 +983,13 @@ Step 6e adds two more, both about reading a table rather than building one.
 > **A statistic that says how well the data fit the model says nothing about whether the model is right.** The
 > analyser's `fit` sits at 95% on spans whose chords are 15% correct, because two voices are easy to explain with
 > many chords. Every repair that gates on such a number fails for the same reason, so the family closes together.
+
+Step 7's generator adds one:
+
+> **Relax the constraint you invented before the one the theory gave you.** Filling block by block needed a
+> fallback when a block would not fill, and dropping the harmonic plan first turned dead blocks into exploded ones
+> — the plan is not only §2.3's obligation system, it is what keeps the search tractable. The join was this
+> generator's own convenience, and it is the one that should go first.
 
 Step 7 adds one about checks rather than about music:
 
