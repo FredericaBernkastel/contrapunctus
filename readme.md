@@ -2075,16 +2075,19 @@ purpose. Against §8.2's checker: **785 slices, zero violations on the confirmed
 subsections below are about how, because in both cases the answer was worth more than the fugue. The fourth
 correction came from **clippy**, which had never been run: the episode plan read
 `quality: if deg == 4 { 0 } else { 0 }`, an intention written down and not finished, and giving the local dominant
-its seventh took `73.8` to `70.1`. Splitting the repository into a library and a binary
-([§10.6](#106-using-it-as-a-library)) moved it once more, by one bar of link — the exposition's link now goes to a
-voice chosen by the same rule as every other block rather than to voice 0 by hand.
+its seventh took `73.8` to `68.7`. Two later changes moved it again, both of them structural rather than musical.
+Splitting the repository into a library and a binary ([§10.6](#106-using-it-as-a-library)) cost one bar of link and
+took it to `70.1` — the exposition's link now goes to a voice chosen by the same rule as every other block rather
+than to voice 0 by hand. And correcting the sampler's seed took it to `73.9`: it had been `pr.seed | 1`, so every
+even seed drew the fills of the odd one above it, and this figure is now a different draw rather than a worse one —
+which is what the spread below is for.
 
 | | dissonance /1000 | confirmed-tier violations | fill |
 |---|---:|---:|---:|
 | first — `conf+melodic` | 366.2 | 0 | 3.9s |
 | second — the full tier | 90.8 | 1 | 0.8s |
 | third — continuous voices | 73.8 | 0 | 0.5s |
-| **fourth — a seventh on the dominant, and the library split** | **73.9** | **0** | **0.6s** |
+| **fourth — a seventh on the dominant, then the library split and the block pin** | **73.9** | **0** | **0.6s** |
 
 The last figure is one draw of many. Over twelve seeds the rate is **74.1 ± 2.3**, running from `70.1` to `77.7`,
 and every one of them is far below Bach's `112.3`. That matters more than the middle of it: **the seed changes

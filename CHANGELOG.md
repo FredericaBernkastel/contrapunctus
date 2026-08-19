@@ -983,6 +983,192 @@ them would either fail on a cost the generator already reports, or pass by not l
 
 ---
 
+## Clippy, run for the first time
+
+[`fe8f72d`](../../commit/fe8f72d) [`4cd6088`](../../commit/4cd6088)
+
+Thirty warnings in a codebase seven steps old, because it had never been run. Twenty-eight were style and are
+listed at their sites; **two were substantive, and one of them had been changing the music.**
+
+`quality: if deg == 4 { 0 } else { 0 }` — the episode plan's chord for a beat with no plan of its own. Both arms
+return a plain triad, so the condition is a comment with a syntax. It is an intention written down and not
+finished, in the one part of §8.16's plan that section already calls the weakest, and it had cost the sequence its
+pull. The dominant of the local key takes a seventh now: **73.8 to 68.7** per thousand, and the blocks needing
+their join dropped went from two to one.
+
+> **A conditional whose arms agree is a statement of intent that compiles.** No test can catch it, because the code
+> does exactly what it says and what it says is nothing; and review does not catch it either, because it reads as
+> the thing it was meant to be. Comparing two arms for equality is trivial for a linter and unnatural for a reader.
+
+The second was `Cmd::Fugue` dispatched twice, from a `sed` that ran once when a rejected tool call was retried —
+harmless, and a reminder that the tools editing this repository leave debris the compiler is content with.
+
+The refusals are recorded at their sites rather than silenced. `next?;` as a statement whose value is discarded is
+an early return disguised as an expression. `local_choices`' nine arguments are the exact inputs the search's own
+predicate takes, and grouping them would put a second description of a slice's context beside the one `realise.rs`
+already holds — which is how a baseline drifts from the thing it baselines. And the indexed loop in the search runs
+for a rest or a hold, which clippy's iterator form would skip entirely.
+
+**Dead code was split by whether it is dead on purpose.** Kept and marked: the functional-harmony layer, which
+§10.5 already says compiles and is not exercised, `species::permitted`, which §8.7 is the section explaining, and
+the interval and name helpers. Deleted: `step7::skeleton`, superseded by the block-by-block generate,
+`answer::admissible_legs` and `degrees_exact`, which nothing ever called, and `form::Plan::end`, a field set and
+never read.
+
+---
+
+## A library, and a binary that is its first caller
+
+[`60e2bba`](../../commit/60e2bba)
+
+`src/lib.rs` and seventeen modules; `main.rs`, `cli.rs`, `step5.rs` and `experiments.rs` are the measurements. The
+line falls where it does by one test — **a caller who wants to compose a fugue needs the first and none of the
+second** — and `cargo build --lib` builds the model with no knowledge that a command line exists. `step7` is
+`compose`, since `contrapunctus::step7::Design` is a poor name for a public API and `compose::Design` is not.
+Readme [§10.6](readme.md#106-using-it-as-a-library) documents it.
+
+**The boundary found three misplacements, which is the argument for drawing one.** `CONF_MEL` was defined in the
+command line when it is plainly a tier. `clip`, `compass` and `meter` were private helpers in a driver file and are
+`kern`'s. `write_score` is `midi`'s. Not one of the three was wrong while nothing outside could see it.
+
+`Layout` separates from `Design`: the middles and their keys, the episode length, whether the exposition takes a
+link and where, and whether it closes at home. The split is not tidiness — **an interface wants a control for each
+field of the first and rarely touches the second**. `Layout::default()` is §8.15's and §8.13's readings of the
+book, which is what every published figure uses.
+
+`compose::fugue` returns one `Outcome` carrying the notes **and** every judgement this repository can pass on them:
+the derivation, whether it parses under §8.15's own grammar, the rule firings by §8.2's checker, which blocks lost
+a constraint, and the wall clock.
+
+> **A result that can be displayed without being checked is one that will be.** Five return values make the check
+> optional. One struct that carries the verdict makes displaying an unjudged fugue take deliberate effort, which is
+> the only kind of discipline that survives a user interface being in a hurry.
+
+§8.16's driver goes through that API, which is also the test of it: anything the API could not reach would have
+shown up as a reference to a private helper.
+
+**And the figure moved, 68.7 to 70.1.** The exposition's link had been handed to voice 0 by hand; it now picks its
+voice by the same rule as every other block. A restructure intended to preserve behaviour did not, and the moved
+figure is how that was noticed rather than something anyone had to go looking for.
+
+---
+
+## Editing one block without recomposing the piece
+
+[`1f49868`](../../commit/1f49868)
+
+Two changes an editor needs, both cheap now and expensive to retrofit — readme §10.6, and the reason is voices. At
+three a whole-piece recompose costs half a second; at five or six it does not, and an interface whose every edit
+pays that price is a different tool.
+
+`Problem::terminal` is `prior`'s mirror: what each voice must sound at the span's **last** slice. It is a filter on
+the final layer rather than a pruning during the walk, because the pin is a property of that layer alone and
+pruning would need a backward pass the shortest path does not have. The draws obey it too — otherwise `chosen()`
+and the sampler would disagree about where a block ends, and the splice would tear.
+
+That is what makes `compose::refill` possible: rewrite one block and leave every other note where it was. **The
+test asserts it over the whole piece rather than at the seam**, because a splice that tore one bar later would pass
+a boundary check and still be wrong on screen. Span-preserving edits only, and an unreachable pin is a refusal, so
+a caller falls back to `fugue` rather than being handed something half-applied.
+
+The per-block seed was the block's **index**, which is right for one generate and wrong for editing: inserting a
+middle shifts every later index, so an edit that should be local redraws the piece. It is keyed on the block's own
+description now — kind, voice, shift, key, length. What that does *not* fix is recorded beside it: `derive` gives
+each block the voice after its predecessor's, so an insertion rotates every later block into a different voice.
+Those are genuinely different blocks, and it is why `refill` is span-preserving rather than general.
+
+**And a guard that cost a bit.** `realise` seeded its sampler with `pr.seed | 1`, so every even seed drew the same
+fills as the odd one above it — half the seed space, silently. SplitMix adds its gamma before using the state, so
+the zero state the guard was written against was never reachable in the first place.
+
+> **A defensive guard against an impossible state is not free.** This one halved the seed space, and no single run
+> could see it: it was found by sweeping seeds for §8.16 and getting three identical pairs.
+
+The sweep that found it earns a line of its own, because an interface is about to offer the button it describes:
+
+> **The seed changes which notes are written and barely changes how good they are.** Over twelve seeds the rate is
+> `74.1 ± 2.3` per thousand, from `70.1` to `77.7`, every one far below Bach's `112.3`. Re-drawing explores the
+> legal set; it does not hunt a better score, and anyone handed the button should be told which of the two they are
+> doing.
+
+The published figure settles at **73.9** here, its fourth and current value.
+
+---
+
+## The interface, specified — and a format proposed, overruled, and better for it
+
+[`b41b82c`](../../commit/b41b82c) [`e367a02`](../../commit/e367a02) [`44597bf`](../../commit/44597bf)
+
+`docs/ui-spec.md` is the engineering and `docs/ui-sketch.html` is its picture: eleven sections covering the
+two-user problem, the layout, the plan strip and every gesture it supports, the score, sound, the web target,
+saving and loading, four voices, and what the library still needed. The decisions are recorded there rather than
+here. Three of them needed working out rather than writing down.
+
+**The plan strip's edits split in two, and the interface must not blur them.** A key or voice change is
+span-preserving, so `refill` rewrites one block and nothing else moves. An episode length or an added middle moves
+every later bar, `refill` refuses, and the blocks after the edit are drawn faded — because they really are about to
+change, and fading them is the truth rather than a courtesy.
+
+**Voices are not independently settable**, since `derive` gives each block the voice after its predecessor's — the
+rule that stopped a voice leaping an eleventh into its own next figure. A drag therefore rotates the blocks after
+it. The spec's answer is to ghost the knock-on rather than fake independence, and to record lifting the rule as a
+§9 decision rather than an interface one.
+
+**The web target cost the library its paths.** `kern::parse`, `refdata::parse`, `midi::encode` and
+`midi::encode_score` take and return bytes; the four path forms are wrappers on them. `embedded-corpus` compiles
+the 24 fugues and the annotations in — **295 kB, not the 2 MB the spec estimated before anyone measured** — with a
+test asserting the embedded text is byte-identical to the files, since a browser build reading 23 fugues would
+report different figures and say nothing.
+
+### A claim withdrawn
+
+The spec proposed **a small hand-written text format** for settings, on the ground that the library has one
+dependency and §10.6 makes a point of it. That was overruled: settings are **JSON through `serde`**. The reasoning
+had been sound and the conclusion was still wrong, because it treated the dependency count as the thing to protect
+when what §10.5 actually claims is narrower and stronger — that no reported figure passes through a crate. Both
+features are off by default, so the measurement binary still pulls in nothing, and the claim holds in the form that
+was always the real one. Hand-writing a parser to protect it would have bought nothing and cost a format nobody
+can read in a diff.
+
+> **Check what a constraint is actually protecting before paying to satisfy it.** "One dependency" was a proxy for
+> "the figures depend on no crate", and the proxy was the expensive half. This is the same failure as a rule that
+> earns nothing where it agrees with the default — §8.11's reading, arriving in a build file.
+
+Unknown keys are ignored, so an older build opens a newer file with the settings it understands; a newer *format*
+is refused rather than half-read. And a fingerprint over the notes makes **"the same file gives the same fugue"**
+a checked fact rather than a promise:
+
+> **A settings format that assumes its engine stable promises what this repository's record denies.** §8.16's rate
+> has now moved four times as the code beneath it changed, and every one of those changes was correct. `Fidelity`
+> answers `Exact`, `Differs` with both engine versions, or `Unchecked`.
+
+Two notes of spelling, both §2.1 arriving somewhere new. The fingerprint covers step and alteration separately, so
+**two pieces that sound identical and are spelled differently hash differently** — a program that thought in
+semitones could not tell them apart, and would report a match where there is none. And `automaton::Tier` exists to
+name a tier where a `&'static [Rule]` cannot go; `cli::TierArg` survives only because `ValueEnum` cannot be derived
+in a crate that does not depend on clap, and is two lines.
+
+### The one document nothing checked
+
+The sketch went on describing the hand-written format for two commits after `serde` replaced it, said *three*
+library functions had lost their `&Path` where it was four, and argued against MIDI out in a section above a table
+recording the decision as both. It was found by being read, which is exactly how it had been maintained.
+
+`tests/references.rs` swept `docs/` for `.md` and nothing else, so the sketch was the only prose in the repository
+outside the checker. It sweeps `.html` beside `.md` now, verified to fail on a deliberately broken copy — a
+reference planted in the sketch to a section that does not exist is reported against its line — since a check that
+has never failed is indistinguishable from one that cannot.
+
+That verification could not be written down as an example, which is its own small joke: spelling the broken
+reference out in this paragraph made **this file** fail the check, at `CHANGELOG.md:1159`. The checker does not
+read code spans as quotation, and it is right not to — a stale reference is no less stale for having backticks
+round it.
+
+> **A picture of a specification is a document, and goes stale like one.** The sketch was exempt from the checker
+> for the same reason it was persuasive: it did not look like prose.
+
+---
+
 ## Recurring pattern
 
 Three constraints in this project have turned out too permissive to bind — the two-rule hard tier, the
@@ -1065,6 +1251,16 @@ Step 6f adds two more.
 > the generator's lines as too narrow and blamed the rulebook. The narrowness was the shortest path keeping the
 > first of many equal-cost paths, and it was measurable all along by running with no criterion at all — a control
 > that costs one row and was not there.
+
+The interface work adds one that is about instruments rather than about music, and it arrives with three instances
+rather than one.
+
+> **A check says nothing about the region it does not cover, and that region drifts.** `tests/references.rs` found
+> 53 stale references the first time it ran, in a repository that had just been tidied by hand. Clippy found 30
+> warnings the first time it ran, two of them real and one silently changing the music. And `docs/` was swept for
+> `.md` only, so the one document written in `.html` contradicted itself within two commits. Every one of those
+> regions was under review the whole time, which is the point: **review is a check with no record of where it has
+> been**, and it looks identical from the outside whether it covered something or not.
 
 **Three separate defects have been argument-order or identity confusions in code that looked symmetric and was
 not** — the swapped checker arguments here, the lo/hi role tracking of step 1, and the duplicate spellings. Two of
