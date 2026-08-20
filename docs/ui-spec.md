@@ -333,6 +333,25 @@ plainly marked as a font.
 
 ### 5.2 Behaviour
 
+**Wheel to pan, ctrl and wheel to zoom** — over the score, and over nothing else.
+A score is a horizontal thing, so a vertical wheel moves along it; the horizontal
+delta counts too, for whoever has a trackpad that sends one. The scroll bar still
+drags, because taking that away would be taking something and giving nothing.
+
+Zoom is **about the pointer**: the bar under it stays under it. Zooming about the
+left edge looks fine on the first notch and has thrown the reader across the page
+by the fourth, and keeping the point costs one ratio. `score::View` holds the two
+numbers and does that arithmetic, apart from the drawing, because it is the part
+of zooming that can be *wrong* rather than merely ugly — and a struct with two
+numbers can be tested where a wheel event over a rectangle cannot.
+
+**The plan strip does not zoom and does not pan.** It fits the whole piece, which
+is its entire job; a view that shows everything has nothing to zoom to. What it
+gained instead is the other half of the pair: once the score is zoomed in, the
+strip **shades what is off the page**, so the overview says where the detail view
+is looking. That is the reason to have both views rather than a preference
+between them.
+
 - Horizontal scroll locked to the plan strip, so the two views always agree.
 - Entry blocks tinted behind the notes in the voice colour, so the theme is
   findable on the page without reading it.
@@ -894,6 +913,7 @@ Status is one of **done**, **partial** — usable and honestly incomplete — or
 | 4.2 | Adding and removing a return, and the close, from the strip and the panel alike | `the_shapes_the_handles_can_reach_all_compose` |
 | 5.1 | Beams, by beat and by contiguity, with stubs and flags | `a_beam_stays_inside_its_beat`, `a_duration_wants_the_beams_it_should` |
 | 5.1 | Clefs, from a two-glyph SMuFL subset placed by its own geometry | `both_clefs_have_ink_in_them`, `a_clef_is_the_size_smufl_says` |
+| 5.2 | Wheel to pan and ctrl-wheel to zoom the score, about the pointer, with the strip shading what is off the page | `a_bar_under_the_pointer_stays_under_it`, `the_view_stays_inside_the_piece` |
 | 3.2 | Importing a subject from a `**kern` file | `an_imported_subject_replaces_the_design` |
 | 5.2 | The score following the playhead while it plays | by inspection |
 
@@ -987,9 +1007,10 @@ Stated rather than left to be discovered:
 - **The plan strip does not scroll, and the two views are deliberately not
   locked.** 5.2 asked for a locked scroll; building it made the reason against
   clear. The strip's whole job is to show the shape of the piece at once, and an
-  overview that scrolls has stopped being an overview. So the strip scales to fit
-  and the score scrolls and follows the playhead. At sixty bars the strip will
-  get cramped and that is a different problem from this one.
+  overview that scrolls has stopped being an overview. So the strip fits, the
+  score pans and zooms, and the strip shades the part the score is not showing.
+  At sixty bars the strip will get cramped and that is a different problem from
+  this one.
 - **Nothing is persisted between runs.** 8.4's interface state wants `eframe`'s
   persistence feature, which is not enabled. The *music* is persisted, through 8.
 - **An edit rewrites everything after it**, which is 4.2's withdrawn claim and

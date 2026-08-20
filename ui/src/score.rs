@@ -17,7 +17,7 @@
 //! them.
 
 use contrapunctus::kern::{Voice, TICKS_PER_WHOLE};
-use egui::{Pos2, Rect, Sense, Stroke, Ui, Vec2};
+use egui::{Pos2, Sense, Stroke, Ui, Vec2};
 
 use crate::theme;
 
@@ -32,6 +32,63 @@ pub fn height(voices: usize) -> f32 {
   voices as f32 * (STAFF + BETWEEN) + 12.0
 }
 
+/// Where the score is looking, and how closely.
+///
+/// Kept apart from the drawing because it is the one part of zooming that can be
+/// *wrong* rather than merely ugly, and a struct with two numbers can be tested
+/// where a wheel event over a rectangle cannot.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct View {
+  /// Pixels per bar.
+  pub zoom: f32,
+  /// How far along, in pixels.
+  pub look: f32,
+}
+
+impl Default for View {
+  fn default() -> View {
+    View { zoom: 46.0, look: 0.0 }
+  }
+}
+
+impl View {
+  pub const CLOSEST: f32 = 400.0;
+  pub const WIDEST: f32 = 8.0;
+
+  /// How wide the whole piece is at this zoom, never narrower than the window
+  /// it is shown in.
+  pub fn content(&self, bars: f32, window: f32) -> f32 {
+    (bars * self.zoom).max(window)
+  }
+
+  /// Move along by `by` pixels, staying inside the piece.
+  pub fn pan(&mut self, by: f32, bars: f32, window: f32) {
+    let content = self.content(bars, window);
+    self.look = (self.look + by).clamp(0.0, (content - window).max(0.0));
+  }
+
+  /// Zoom by `factor`, **about the point `px` from the window's left edge**.
+  ///
+  /// Which is the whole difficulty: zooming about the left edge instead is what
+  /// makes a reader lose their place, and keeping the bar under the pointer
+  /// under the pointer costs one ratio. A test asserts that it does.
+  pub fn zoom_about(&mut self, px: f32, factor: f32, bars: f32, window: f32) {
+    let before = self.content(bars, window);
+    let hold = (self.look + px) / before.max(1.0);
+    self.zoom = (self.zoom * factor).clamp(View::WIDEST, View::CLOSEST);
+    let after = self.content(bars, window);
+    self.look = (hold * after - px).clamp(0.0, (after - window).max(0.0));
+  }
+
+  /// Keep `at` — a pixel into the content — inside the window, with a margin.
+  /// What following the playhead means.
+  pub fn keep_in_sight(&mut self, at: f32, bars: f32, window: f32) {
+    let content = self.content(bars, window);
+    let margin = window * 0.25;
+    self.look = self.look.clamp(at - window + margin, at - margin).clamp(0.0, (content - window).max(0.0));
+  }
+}
+
 /// The page, as one value.
 pub struct Sheet<'a> {
   pub voices: &'a [Voice],
@@ -41,17 +98,13 @@ pub struct Sheet<'a> {
   pub beat: i64,
   pub width: f32,
   pub playhead: Option<i64>,
-  /// Keep the playhead on the page, which is wanted while the sound moves and
-  /// not while a reader is looking somewhere on purpose.
-  pub follow: bool,
 }
 
 impl Sheet<'_> {
 /// Draw every voice, one staff each. Returns a tick to seek to, if the reader
 /// clicked the page — spec 5.2, and the score is an output in every other way.
 pub fn show(&self, ui: &mut Ui) -> Option<i64> {
-  let (voices, key, measure, width, playhead, follow) =
-    (self.voices, self.key, self.measure, self.width, self.playhead, self.follow);
+  let (voices, key, measure, width, playhead) = (self.voices, self.key, self.measure, self.width, self.playhead);
   let want = Vec2::new(width.max(ui.available_width()), height(voices.len()));
   let (resp, p) = ui.allocate_painter(want, Sense::click());
   let area = resp.rect;
@@ -250,13 +303,6 @@ pub fn show(&self, ui: &mut Ui) -> Option<i64> {
       [Pos2::new(x, area.top() + 2.0), Pos2::new(x, area.bottom() - 2.0)],
       Stroke::new(1.5, ui.visuals().strong_text_color()),
     );
-    // While the sound is moving, keep the playhead on the page. The strip beside
-    // this shows the whole piece at once and never scrolls, which is why the two
-    // views are not locked together: an overview that scrolled would stop being
-    // an overview, and following is what a detail view is for.
-    if follow {
-      ui.scroll_to_rect(Rect::from_min_max(Pos2::new(x - 120.0, area.top()), Pos2::new(x + 120.0, area.bottom())), None);
-    }
   }
 
   // Clicking the page listens from there. The same conversion the notes were
@@ -471,5 +517,79 @@ mod tests {
       beamed += groups.iter().filter(|g| g.len() > 1).count();
     }
     assert!(beamed > 0, "nothing in the whole fugue got beamed, so this checked nothing");
+  }
+}
+
+#[cfg(test)]
+mod view_tests {
+  use super::View;
+
+  const BARS: f32 = 27.0;
+  const WINDOW: f32 = 800.0;
+
+  /// **Zooming about the pointer leaves the bar under it under it.**
+  ///
+  /// The property the whole gesture is judged by, and the one an interface gets
+  /// wrong by zooming about the left edge — which looks fine on the first notch
+  /// and has thrown the reader across the page by the fourth.
+  #[test]
+  fn a_bar_under_the_pointer_stays_under_it() {
+    for px in [10.0f32, 200.0, 400.0, 790.0] {
+      for factor in [1.1f32, 0.9, 2.0, 0.5] {
+        let mut v = View { zoom: 46.0, look: 300.0 };
+        let before = (v.look + px) / v.content(BARS, WINDOW);
+        v.zoom_about(px, factor, BARS, WINDOW);
+        let after = (v.look + px) / v.content(BARS, WINDOW);
+        // only where the clamp is not what decided it — at the ends of the
+        // piece there is nowhere further to go, and staying put is correct
+        let stuck = v.look <= 0.0 || v.look >= (v.content(BARS, WINDOW) - WINDOW).max(0.0) - 0.01;
+        if !stuck {
+          assert!((before - after).abs() < 1e-3, "px {px}, factor {factor}: {before:.4} became {after:.4}");
+        }
+      }
+    }
+  }
+
+  /// Zoom stays between its limits however hard the wheel is turned, and the
+  /// piece never scrolls off either end.
+  #[test]
+  fn the_view_stays_inside_the_piece() {
+    let mut v = View::default();
+    for _ in 0..200 {
+      v.zoom_about(400.0, 1.3, BARS, WINDOW);
+      assert!(v.zoom <= View::CLOSEST);
+      assert!(v.look >= 0.0 && v.look <= (v.content(BARS, WINDOW) - WINDOW).max(0.0) + 0.01);
+    }
+    for _ in 0..200 {
+      v.zoom_about(400.0, 0.7, BARS, WINDOW);
+      assert!(v.zoom >= View::WIDEST);
+      assert!(v.look >= 0.0 && v.look <= (v.content(BARS, WINDOW) - WINDOW).max(0.0) + 0.01);
+    }
+    for by in [-10_000.0f32, 10_000.0] {
+      v.pan(by, BARS, WINDOW);
+      assert!(v.look >= 0.0 && v.look <= (v.content(BARS, WINDOW) - WINDOW).max(0.0) + 0.01, "panned to {}", v.look);
+    }
+  }
+
+  /// Zoomed all the way out, the piece fits and there is nowhere to pan to —
+  /// which is the plan strip's permanent state and has to be a legal one here.
+  #[test]
+  fn a_piece_that_fits_does_not_scroll() {
+    let mut v = View { zoom: View::WIDEST, look: 0.0 };
+    assert_eq!(v.content(BARS, WINDOW), WINDOW, "27 bars at the widest zoom should fit in 800 px");
+    v.pan(500.0, BARS, WINDOW);
+    assert_eq!(v.look, 0.0, "there was nowhere to go and it went somewhere");
+  }
+
+  /// Following the playhead brings it inside the window and leaves it there.
+  #[test]
+  fn following_keeps_the_playhead_on_the_page() {
+    let mut v = View { zoom: 120.0, look: 0.0 };
+    let content = v.content(BARS, WINDOW);
+    for at in [0.0f32, 500.0, 1500.0, content - 1.0] {
+      v.keep_in_sight(at, BARS, WINDOW);
+      let on = at >= v.look && at <= v.look + WINDOW;
+      assert!(on, "the playhead at {at} is not on a page showing {}..{}", v.look, v.look + WINDOW);
+    }
   }
 }

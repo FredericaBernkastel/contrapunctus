@@ -77,6 +77,17 @@ pub struct App {
   /// and how the register is balanced. Interface state and not music: none of it
   /// changes a note, and none of it goes in a settings file.
   mix: Mix,
+  /// Where the score is looking and how closely. The plan strip has no
+  /// equivalent and wants none: it fits the whole piece, which is its entire
+  /// job, and a view that shows everything has nothing to zoom to.
+  ///
+  /// Driven here rather than left to the scroll area, because the wheel means
+  /// *pan* over this view and a scroll area would spend it going nowhere
+  /// vertically.
+  view: score::View,
+  /// What part of the piece the score is showing, as fractions — the plan strip
+  /// draws it, so that zooming in does not lose the reader.
+  seen: Option<(f32, f32)>,
   /// The very score the player holds. Kept so that every tick-to-sample
   /// conversion goes through the tempo the sound was actually built at, rather
   /// than through whatever the tempo control says at the moment of asking.
@@ -112,6 +123,8 @@ impl Default for App {
       player: None,
       no_sound: None,
       mix: Mix::default(),
+      view: score::View::default(),
+      seen: None,
       sound: None,
     }
   }
@@ -504,6 +517,8 @@ impl App {
 
     let mut edit = None;
     let mut seek = None;
+    // Where the score ended up, so the wheel over it can be read afterwards.
+    let mut viewport: Option<(egui::Rect, f32, f32, f32)> = None;
     egui::CentralPanel::default_margins().show(ui, |ui| {
       let dark = ui.visuals().dark_mode;
 
@@ -589,28 +604,70 @@ impl App {
         }
       });
       let head = self.playhead();
-      let asked = strip::Strip { out, design: &self.design, layout: &self.layout, playhead: head }.show(ui);
+      let seen = self.seen.filter(|(a, b)| *b - *a < 0.999);
+      let asked =
+        strip::Strip { out, design: &self.design, layout: &self.layout, playhead: head, window: seen }.show(ui);
       edit = asked.edit;
       seek = asked.seek;
 
       ui.add_space(10.0);
-      ui.label(RichText::new("SCORE").monospace().weak().small());
-      egui::ScrollArea::both().max_height(score::height(out.voices.len()) + 12.0).show(ui, |ui| {
-        let want = (out.bars as f32 * 46.0).max(ui.available_width());
-        let following = self.player.as_ref().is_some_and(|p| p.is_playing());
-        let sheet = score::Sheet {
-          voices: &out.voices,
-          key: &self.design.key,
-          measure,
-          beat: self.design.beat,
-          width: want,
-          playhead: head,
-          follow: following,
-        };
-        if let Some(t) = sheet.show(ui) {
-          seek = Some(t);
+      ui.horizontal(|ui| {
+        ui.label(RichText::new("SCORE").monospace().weak().small());
+        ui.label(RichText::new("wheel to pan · ctrl and wheel to zoom").weak().small());
+        if self.view != score::View::default()
+          && ui.small_button("fit").on_hover_text("Back to the whole piece").clicked()
+        {
+          self.view = score::View::default();
         }
       });
+
+      let window = ui.available_width();
+      let bars = out.bars as f32;
+      let content = self.view.content(bars, window);
+
+      // Keep the playhead on the page while the sound moves. Done here rather
+      // than by `scroll_to_rect` inside the score, because two things setting
+      // the offset is two things disagreeing about it.
+      if self.player.as_ref().is_some_and(|p| p.is_playing()) {
+        if let Some(t) = head {
+          let at = (t as f32 / compose::length(&out.blocks).max(1) as f32) * content;
+          self.view.keep_in_sight(at, bars, window);
+        }
+      }
+      self.view.pan(0.0, bars, window);
+
+      let scrolled = egui::ScrollArea::horizontal()
+        // The wheel belongs to this application over this view: it pans, and
+        // with ctrl it zooms. The bar still drags, because taking that away
+        // would be taking something and giving nothing.
+        .scroll_source(egui::scroll_area::ScrollSource {
+          scroll_bar: true,
+          drag: egui::scroll_area::DragScroll::OnTouch,
+          mouse_wheel: false,
+        })
+        .scroll_offset(egui::Vec2::new(self.view.look, 0.0))
+        .max_height(score::height(out.voices.len()) + 12.0)
+        .show(ui, |ui| {
+          let sheet = score::Sheet {
+            voices: &out.voices,
+            key: &self.design.key,
+            measure,
+            beat: self.design.beat,
+            width: content,
+            playhead: head,
+          };
+          sheet.show(ui)
+        });
+      if let Some(t) = scrolled.inner {
+        seek = Some(t);
+      }
+      self.view.look = scrolled.state.offset.x;
+      // The wheel is read after the view is drawn, because the rect it has to be
+      // over is what the drawing returns. One frame of lag, and scrolling
+      // repaints anyway.
+      viewport = Some((scrolled.inner_rect, content, window, bars));
+      // For the strip, next frame: it is drawn above this and cannot know yet.
+      self.seen = Some((self.view.look / content.max(1.0), (self.view.look + window) / content.max(1.0)));
 
       ui.add_space(10.0);
       ui.separator();
@@ -632,6 +689,32 @@ impl App {
         ui.label(RichText::new(line).weak().small());
       }
     });
+
+    // **Wheel to pan, ctrl and wheel to zoom**, over the score and nowhere else.
+    // The plan strip fits the whole piece by design and has nothing to zoom to,
+    // so the wheel there is left to the page.
+    //
+    // Read after the view is drawn because the rect it must be over is what the
+    // drawing returns. That is a frame of lag on a gesture that repaints
+    // continuously, which is to say none that can be seen.
+    if let Some((rect, _content, window, bars)) = viewport {
+      let (scroll, zooming, at) = ui.input(|i| {
+        (i.smooth_scroll_delta, i.modifiers.command || i.modifiers.ctrl, i.pointer.hover_pos())
+      });
+      let over = at.is_some_and(|p| rect.contains(p));
+      if over && scroll != egui::Vec2::ZERO {
+        if zooming {
+          let px = at.map_or(rect.width() * 0.5, |p| p.x - rect.left());
+          self.view.zoom_about(px, (scroll.y * 0.004).exp(), bars, window);
+        } else {
+          // A score is a horizontal thing, so a vertical wheel moves along it.
+          // The horizontal delta counts too, for whoever has a wheel or a
+          // trackpad that sends one.
+          self.view.pan(-scroll.y - scroll.x, bars, window);
+        }
+        ui.ctx().request_repaint();
+      }
+    }
 
     // Applied after the panel, not inside it: the panel holds a borrow of the
     // outcome it is drawing, and an edit replaces that outcome.

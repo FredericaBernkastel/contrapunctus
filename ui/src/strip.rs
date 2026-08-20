@@ -162,6 +162,13 @@ pub struct Strip<'a> {
   pub design: &'a Design,
   pub layout: &'a Layout,
   pub playhead: Option<i64>,
+  /// What part of the piece the score is showing, as fractions of the whole.
+  ///
+  /// The strip fits the whole piece and the score does not, so once the score is
+  /// zoomed in the two views are looking at different things — and the strip is
+  /// the one that can say so. An overview that shows where the detail view is
+  /// looking is the reason to have both.
+  pub window: Option<(f32, f32)>,
 }
 
 impl Strip<'_> {
@@ -461,6 +468,24 @@ impl Strip<'_> {
       let r = p.text(at, Align2::LEFT_BOTTOM, &said, FontId::proportional(11.0), ui.visuals().strong_text_color());
       p.rect_filled(r.expand(3.0), CornerRadius::same(3), ui.visuals().panel_fill.gamma_multiply(0.85));
       p.text(at, Align2::LEFT_BOTTOM, said, FontId::proportional(11.0), ui.visuals().strong_text_color());
+    }
+
+    // Where the score is looking, when that is less than everything. Drawn under
+    // the playhead and over the blocks: it is context, not a mark.
+    if let Some((a, b)) = self.window.filter(|(a, b)| *b - *a < 0.999) {
+      let (l, r) = (area.left() + area.width() * a, area.left() + area.width() * b);
+      let win = Rect::from_min_max(Pos2::new(l, area.top() + RULER - 4.0), Pos2::new(r, area.bottom() - HANDLES));
+      // Shade what is *not* on the page, rather than what is: the eye goes to
+      // the bright part, and the bright part should be the music being read.
+      for side in [
+        Rect::from_min_max(Pos2::new(area.left(), win.top()), Pos2::new(l, win.bottom())),
+        Rect::from_min_max(Pos2::new(r, win.top()), Pos2::new(area.right(), win.bottom())),
+      ] {
+        if side.width() > 0.5 {
+          p.rect_filled(side, CornerRadius::ZERO, ui.visuals().panel_fill.gamma_multiply(0.55));
+        }
+      }
+      p.rect_stroke(win, CornerRadius::same(2), Stroke::new(1.0, faint.gamma_multiply(0.6)), StrokeKind::Inside);
     }
 
     // The playhead, over everything, because it is the one mark that says *now*
