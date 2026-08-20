@@ -2632,7 +2632,7 @@ a result that *can* be displayed without being checked is one that will be.
 | you want | you call |
 |---|---|
 | a whole fugue, checked | `compose::fugue` |
-| **one block rewritten, the rest untouched** | `compose::refill`, or `compose::refill_span` for several |
+| **an edit rewritten forward, the bars before it untouched** | `compose::refill_span` |
 | the derivation only, to draw a plan | `compose::derive` |
 | the notes only | `compose::generate` |
 | a fill against voices you already have | `realise::fill` |
@@ -2648,39 +2648,46 @@ a result that *can* be displayed without being checked is one that will be.
 
 #### Editing one block without recomposing the piece
 
-An interface over this wants to change one thing and see one thing change. It can:
-[`compose::refill`](src/compose.rs) rewrites a single block and leaves every other note where it was, which a test
-asserts over the whole piece rather than at the seam.
-
-**One edit is not always one block**, which the interface found. Changing where a return goes changes the key of
-the episode that travels to it *and* the entry that arrives, so `compose::refill_span` takes a range and pins only
-its **outer** seams — refilled one at a time, the seam between them is fixed to notes chosen for the key being
-edited away. Whether that matters is honestly small: over 144 key changes on 8 subjects a span refill succeeded
-110 times against 108, which is two discordant pairs and no evidence at all. The argument is the principle, and
-that a span of two is the smallest case there is.
+An interface over this wants to change one thing and see as little as possible change.
+[`compose::refill_span`](src/compose.rs) rewrites a range of blocks and leaves every note **before** them where it
+was, which a test asserts over the whole piece rather than at the seam.
 
 It works because the fill is blockwise and the only thing crossing a block boundary is **the pitch each voice ends
-on**. `Problem::terminal` pins those — the mirror of `Problem::prior` — so a refilled block is a drop-in
-replacement and nothing after it is searched again. On a twelve-block fugue that is a twelfth of the work; at five
-voices, where one block costs more than a whole three-voice piece, it is the difference between an editor that
-responds and one that recomputes.
+on**. `Problem::prior` carries that forward; `Problem::terminal` can pin it backward, so a span refilled to the
+*same* ending is a drop-in replacement and nothing after it is searched again.
 
-Two limits, both refusals rather than surprises. **Span-preserving edits only** — changing a block's key or its
-voice keeps the piece the same length and refills locally; lengthening an episode or adding a middle moves every
-later bar, and no pin makes that local. And the pinned ending may simply be **unreachable** once the block's
-contents have changed, which is reported so the caller can fall back to [`compose::fugue`]. That is not rare:
-**about a quarter of key changes are not local**, 34 of 144 in the same sweep. A caller that wants the fast path
-has to be one that can also say it did not get it.
+**And that pin is why an edit runs to the end of the piece instead.** It is a real constraint carrying real
+information — what the piece sounded like *before* the edit — and that information is **history**, not a parameter.
+A settings file records `Design`, `Layout`, tier and seed; it records no history. So a piece reached by pinned
+local edits was not a piece the generator would write from its own settings, and saving it and loading it gave
+something else. The interface reported a fingerprint mismatch between engine `0.1.0` and engine `0.1.0`, which is
+how the fault was found.
+
+> **A local edit that pins its own boundary is a function of the history, not of the settings.** The pin cannot go
+> in the file, because it is not a fact about this piece — it is a fact about a piece that no longer exists.
+
+A span that runs to the end of the piece has nothing following it to protect, takes no pin, and is then **exactly
+what `compose::fugue` writes**. A test asserts that equality directly, which is what makes an edited fugue
+reproducible from a file at all. The saving is that the untouched prefix is not searched again — most of the work
+for an edit late in the piece, and none of it for an edit at the front.
+
+Two limits, both refusals rather than surprises. **Span-preserving edits only** — changing a block's key or the
+order of the returns keeps the piece the same length and refills forward; lengthening an episode or adding a middle
+moves every later bar, and this refuses rather than pretending. And a refill can simply fail, which is reported so
+the caller can fall back to [`compose::fugue`].
+
+The 110-of-144 figure a previous version of this section carried — how often a *pinned* refill could reach its old
+ending — is withdrawn along with the pinning it measured. It described something the program no longer does.
 
 The seed is keyed on **what a block is** — its kind, voice, key and length — and not on its position, so editing
 one block does not reseed the others. The index-keyed seed it replaced would have redrawn the whole piece under any
 edit that changed the block list.
 
 That key is [`compose::identities`](src/compose.rs), and it is also how a caller asks for **one block again**.
-`Layout::rerolls` nudges a named block’s seed and leaves every other seed alone, so *write those bars again* is one
-block’s worth of search rather than a new fugue. It lives in the layout rather than beside the seed because it is a
-parameter of the piece: a settings file that omitted it would come back a different fugue, and `docs/ui-spec.md`
-section 8 promises it will not.
+`Layout::rerolls` nudges a named block’s seed and leaves every other seed alone, so *write those bars again* asks
+the search for one block and takes the rest of the piece as it follows. It lives in the layout rather than beside
+the seed because it is a parameter of the piece: a settings file that omitted it would come back a different fugue,
+and `docs/ui-spec.md` section 8 promises it will not.
 
 **What this does not solve is five voices.** Refilling reduces how many blocks are searched; it does not make one
 searchable. A block with four or five free voices is past [§2.7](#27-where-a-solver-takes-over-from-the-dp)'s wall,

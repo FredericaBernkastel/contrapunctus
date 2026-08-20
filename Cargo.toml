@@ -10,7 +10,12 @@
 # passes through touches a crate.
 [package]
 name = "contrapunctus"
-version = "0.1.0"
+# 0.1.1 because the engine writes different music than 0.1.0 did: an edit used
+# to refill only the blocks it touched, pinning the last of them to what the
+# piece sounded before the edit, and that pin was history a settings file cannot
+# carry. Files written by 0.1.0 that were edited before saving will say so on
+# load, which is exactly what the fingerprint is for.
+version = "0.1.1"
 edition = "2021"
 publish = false
 

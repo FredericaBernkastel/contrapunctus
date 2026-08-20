@@ -477,6 +477,133 @@ pub struct Relaxed {
   pub cold: Vec<usize>,
 }
 
+/// One block, filled — **the only place a block is written**.
+///
+/// It exists because there were two such places and they had drifted apart in
+/// four ways: the relaxation ladder, the terminal pin, how the prior for the
+/// next block is taken, and whether a voice about to enter is given one at all.
+/// Generating a piece and refilling part of one then disagreed about what a
+/// block *is*, which is how a saved fugue stopped reproducing.
+///
+/// The block's notes at tick zero, the prior for whatever follows, and which
+/// attempt succeeded — nought if nothing had to be relaxed.
+type Written = (Vec<Voice>, Vec<Option<Pitch>>, usize);
+
+/// Returns [`Written`].
+#[allow(clippy::too_many_arguments)]
+fn fill_block(
+  d: &Design,
+  blocks: &[Block],
+  bi: usize,
+  plan: &[harmony::Segment],
+  tier: &[Rule],
+  seed: u64,
+  prior: &[Option<Pitch>],
+  terminal: &[Option<Pitch>],
+) -> Result<Written, String> {
+  let b = &blocks[bi];
+  let held = held_of(Some(b));
+  // Which voice takes the *next* block's placed line. A voice about to state
+  // the subject drops out before it does — which is what Bach writes, and which
+  // is also the only way to stop it entering by a leap of an eleventh from
+  // wherever its accompanying line happened to end. The entry's first note is
+  // placed by the derivation, so no amount of care in the fill can reach it; the
+  // fix is to have nothing there to reach from. A test found this, at bar 3, in
+  // the first fugue this generator produced.
+  let next = blocks.get(bi + 1).map(held_of_ref);
+  // a bar of rest where the block can spare one, half the block where it cannot
+  // — a one-bar subject has no bar to give
+  let quiet = d.measure.min(b.len / 2);
+  let line = match &b.kind {
+    Kind::Entry { shift, tonal, .. } => state(d, 0, *shift, *tonal),
+    Kind::Episode { shift, .. } => sequence(d, 0, b.len, *shift),
+  };
+  // every voice gets notes: the held one its placed line, the rest the
+  // subject's rhythm, whose pitches the search discards
+  let voices: Vec<Voice> = (0..d.voices)
+    .map(|v| {
+      if v == held {
+        line.clone()
+      } else if Some(v) == next && quiet > 0 {
+        Voice { notes: rhythm(d, 0, b.len - quiet, v) }
+      } else {
+        Voice { notes: rhythm(d, 0, b.len, v) }
+      }
+    })
+    .collect();
+  if voices.iter().any(|v| v.notes.is_empty()) {
+    return Err(format!("block {bi} leaves a voice with no notes to place"));
+  }
+  let free: Vec<bool> = (0..d.voices).map(|v| v != held).collect();
+  let here: Vec<harmony::Segment> = plan
+    .iter()
+    .filter(|s| s.start >= b.at && s.start < b.at + b.len)
+    .map(|s| harmony::Segment { start: s.start - b.at, end: s.end - b.at, ..s.clone() })
+    .collect();
+
+  let mut got = None;
+  let mut why = String::new();
+  for attempt in 0..3 {
+    let pr = Problem {
+      voices: voices.clone(),
+      free: free.clone(),
+      compass: d.compass.clone(),
+      key: d.key,
+      measure: d.measure,
+      // the join goes before the plan does. The plan is §2.3's obligation
+      // system and it is also what keeps the search tractable — dropping it
+      // first turns a dead block into an exploded one, which is worse. The
+      // prior is this generator's own convenience and is dropped first.
+      plan: if attempt < 2 { here.clone() } else { vec![] },
+      tier,
+      weights: [1.0; 6],
+      prescribe: [0.0; 3],
+      prior: if attempt == 0 { prior.to_vec() } else { vec![] },
+      terminal: terminal.to_vec(),
+      samples: 0,
+      seed,
+      beta: 0.0,
+    }
+    .drawing();
+    match realise::fill(&pr) {
+      Ok(s) => {
+        got = Some((s, attempt));
+        break;
+      }
+      Err(e) => why = e,
+    }
+  }
+  let Some((sol, attempt)) = got else {
+    // say what was being asked for, not only that it failed: a refusal whose
+    // context is invisible is a refusal nobody can act on
+    let lo = line.notes.iter().map(|n| n.pitch.step).min().unwrap_or(0);
+    let hi = line.notes.iter().map(|n| n.pitch.step).max().unwrap_or(0);
+    let ranges: Vec<String> = (0..d.voices)
+      .filter(|v| free[*v])
+      .map(|v| format!("v{v} {}..{}", d.compass[v].0, d.compass[v].1))
+      .collect();
+    return Err(format!(
+      "block {bi} at bar {}: {why}
+     held voice {held} spans {lo}..{hi}; free voices {}",
+      b.at / d.measure + 1,
+      ranges.join(", ")
+    ));
+  };
+
+  let chosen = sol.chosen();
+  let mut after: Vec<Option<Pitch>> = vec![None; d.voices];
+  for (v, filled) in chosen.iter().enumerate() {
+    if let Some(last) = filled.notes.iter().max_by_key(|n| n.onset) {
+      after[v] = Some(last.pitch);
+    }
+    // a voice that rested before entering enters cold, which is the point
+    if Some(v) == next && quiet > 0 {
+      after[v] = None;
+    }
+  }
+  Ok((chosen.to_vec(), after, attempt))
+}
+
 /// Generate: derive a plan, then fill it **block by block**.
 ///
 /// One call per block rather than one for the piece, because
@@ -506,117 +633,19 @@ pub fn generate(
   let mut prior: Vec<Option<Pitch>> = vec![None; d.voices];
   let mut relaxed = Relaxed::default();
 
-  for (bi, b) in blocks.iter().enumerate() {
-    let held = match &b.kind {
-      Kind::Entry { voice, .. } => *voice,
-      Kind::Episode { voice, .. } => *voice,
-    };
-    // Which voice takes the *next* block's placed line. A voice about to state
-    // the subject drops out before it does — which is what Bach writes, and
-    // which is also the only way to stop it entering by a leap of an eleventh
-    // from wherever its accompanying line happened to end. The entry's first
-    // note is placed by the derivation, so no amount of care in the fill can
-    // reach it; the fix is to have nothing there to reach from. A test found
-    // this, at bar 3, in the first fugue this generator produced.
-    let next = blocks.get(bi + 1).map(|nb| match &nb.kind {
-      Kind::Entry { voice, .. } => *voice,
-      Kind::Episode { voice, .. } => *voice,
-    });
-    // a bar of rest where the block can spare one, half the block where it
-    // cannot — a one-bar subject has no bar to give
-    let quiet = d.measure.min(b.len / 2);
-    let line = match &b.kind {
-      Kind::Entry { shift, tonal, .. } => state(d, 0, *shift, *tonal),
-      Kind::Episode { shift, .. } => sequence(d, 0, b.len, *shift),
-    };
-    // every voice gets notes: the held one its placed line, the rest the
-    // subject's rhythm, whose pitches the search discards
-    let voices: Vec<Voice> = (0..d.voices)
-      .map(|v| {
-        if v == held {
-          line.clone()
-        } else if Some(v) == next && quiet > 0 {
-          Voice { notes: rhythm(d, 0, b.len - quiet, v) }
-        } else {
-          Voice { notes: rhythm(d, 0, b.len, v) }
-        }
-      })
-      .collect();
-    if voices.iter().any(|v| v.notes.is_empty()) {
-      return Err(format!("block {bi} leaves a voice with no notes to place"));
+  for bi in 0..blocks.len() {
+    let (filled, after, attempt) = fill_block(d, &blocks, bi, &plan, tier, seeds[bi], &prior, &[])?;
+    relaxed.blocks += (attempt > 0) as usize;
+    relaxed.without_prior += (attempt >= 1) as usize;
+    relaxed.without_plan += (attempt >= 2) as usize;
+    if attempt >= 1 {
+      relaxed.cold.push(bi);
     }
-    let free: Vec<bool> = (0..d.voices).map(|v| v != held).collect();
-    let here: Vec<harmony::Segment> = plan
-      .iter()
-      .filter(|s| s.start >= b.at && s.start < b.at + b.len)
-      .map(|s| harmony::Segment { start: s.start - b.at, end: s.end - b.at, ..s.clone() })
-      .collect();
-    let joined: Vec<Option<Pitch>> = prior.clone();
-
-    let mut sol = None;
-    let mut why = String::new();
-    for attempt in 0..3 {
-      let pr = Problem {
-        voices: voices.clone(),
-        free: free.clone(),
-        compass: d.compass.clone(),
-        key: d.key,
-        measure: d.measure,
-        // the join goes before the plan does. The plan is §2.3's obligation
-        // system and it is also what keeps the search tractable — dropping it
-        // first turns a dead block into an exploded one, which is worse. The
-        // prior is this generator's own convenience and is dropped first.
-        plan: if attempt < 2 { here.clone() } else { vec![] },
-        tier,
-        weights: [1.0; 6],
-        prescribe: [0.0; 3],
-        prior: if attempt == 0 { joined.clone() } else { vec![] },
-        terminal: vec![],
-        samples: 0,
-        seed: seeds[bi],
-        beta: 0.0,
-      }
-      .drawing();
-      match realise::fill(&pr) {
-        Ok(s) => {
-          relaxed.blocks += (attempt > 0) as usize;
-          relaxed.without_prior += (attempt >= 1) as usize;
-          relaxed.without_plan += (attempt >= 2) as usize;
-          if attempt >= 1 {
-            relaxed.cold.push(bi);
-          }
-          sol = Some(s);
-          break;
-        }
-        Err(e) => why = e,
-      }
+    let at = blocks[bi].at;
+    for (v, notes) in filled.iter().enumerate() {
+      out[v].notes.extend(notes.notes.iter().map(|n| Note { onset: n.onset + at, ..*n }));
     }
-    let Some(sol) = sol else {
-      // say what was being asked for, not only that it failed: a refusal whose
-      // context is invisible is a refusal nobody can act on
-      let lo = line.notes.iter().map(|n| n.pitch.step).min().unwrap_or(0);
-      let hi = line.notes.iter().map(|n| n.pitch.step).max().unwrap_or(0);
-      let ranges: Vec<String> = (0..d.voices)
-        .filter(|v| free[*v])
-        .map(|v| format!("v{v} {}..{}", d.compass[v].0, d.compass[v].1))
-        .collect();
-      return Err(format!(
-        "block {bi} at bar {}: {why}
-     held voice {held} spans {lo}..{hi}; free voices {}",
-        b.at / d.measure + 1,
-        ranges.join(", ")
-      ));
-    };
-    for (v, filled) in sol.chosen().iter().enumerate() {
-      if let Some(last) = filled.notes.iter().max_by_key(|n| n.onset) {
-        prior[v] = Some(last.pitch);
-      }
-      // a voice that rested before entering enters cold, which is the point
-      if Some(v) == next && quiet > 0 {
-        prior[v] = None;
-      }
-      out[v].notes.extend(filled.notes.iter().map(|n| Note { onset: n.onset + b.at, ..*n }));
-    }
+    prior = after;
   }
   for v in out.iter_mut() {
     v.notes.sort_by_key(|n| n.onset);
@@ -829,20 +858,24 @@ pub fn refill_span(
 
   let full = plan(d, &blocks);
   let seeds = seeds(&blocks, seed, &l.rerolls);
-  // The running result. Each block's prior is read off *this*, so a block sees
-  // what the one before it in the span actually wrote; the terminal is read off
-  // `prev`, because that is what the untouched tail still expects.
+  // The running result. Each block's prior comes off *this*, so a block sees
+  // what the one before it in the span actually wrote.
   let mut out = prev.voices.clone();
+  let mut prior: Vec<Option<Pitch>> = (0..d.voices)
+    .map(|v| {
+      let at = blocks[from].at;
+      out[v].notes.iter().filter(|n| n.onset < at).max_by_key(|n| n.onset).map(|n| n.pitch)
+    })
+    .collect();
 
   for bi in from..=to {
     let b = &blocks[bi];
-    let prior: Vec<Option<Pitch>> = (0..d.voices)
-      .map(|v| out[v].notes.iter().filter(|n| n.onset < b.at).max_by_key(|n| n.onset).map(|n| n.pitch))
-      .collect();
-    // Only the last block of the span is pinned at its end. Pinning the others
-    // would fix the seams *inside* the edit to notes chosen for what is being
-    // edited away.
-    let terminal: Vec<Option<Pitch>> = if bi == to {
+    // **Pinned only where something follows the span**, and read off `prev`
+    // because that is what the untouched tail still expects. A span that runs to
+    // the end of the piece has nothing to protect, so it takes no pin — and that
+    // is the case in which this is *exactly* what `generate` would have written,
+    // which is what makes an edited fugue reproducible from its settings.
+    let terminal: Vec<Option<Pitch>> = if bi == to && to + 1 < blocks.len() {
       (0..d.voices)
         .map(|v| crate::kern::sounding(&prev.voices[v], b.at + b.len - 1).map(|(p, _)| p))
         .collect()
@@ -850,54 +883,14 @@ pub fn refill_span(
       vec![]
     };
 
-    let held = held_of(Some(b));
-    let line = match &b.kind {
-      Kind::Entry { shift, tonal, .. } => state(d, 0, *shift, *tonal),
-      Kind::Episode { shift, .. } => sequence(d, 0, b.len, *shift),
-    };
-    let next = blocks.get(bi + 1).map(held_of_ref);
-    let quiet = d.measure.min(b.len / 2);
-    let voices: Vec<Voice> = (0..d.voices)
-      .map(|v| {
-        if v == held {
-          line.clone()
-        } else if Some(v) == next && quiet > 0 {
-          Voice { notes: rhythm(d, 0, b.len - quiet, v) }
-        } else {
-          Voice { notes: rhythm(d, 0, b.len, v) }
-        }
-      })
-      .collect();
-
-    let here: Vec<harmony::Segment> = full
-      .iter()
-      .filter(|s| s.start >= b.at && s.start < b.at + b.len)
-      .map(|s| harmony::Segment { start: s.start - b.at, end: s.end - b.at, ..s.clone() })
-      .collect();
-
-    let pr = Problem {
-      voices,
-      free: (0..d.voices).map(|v| v != held).collect(),
-      compass: d.compass.clone(),
-      key: d.key,
-      measure: d.measure,
-      plan: here,
-      tier,
-      weights: [1.0; 6],
-      prescribe: [0.0; 3],
-      prior,
-      terminal,
-      samples: 0,
-      seed: seeds[bi],
-      beta: 0.0,
-    }
-    .drawing();
-    let sol = realise::fill(&pr).map_err(|e| format!("block {bi}: {e}"))?;
+    let (filled, after, _) =
+      fill_block(d, &blocks, bi, &full, tier, seeds[bi], &prior, &terminal).map_err(|e| e.to_string())?;
+    prior = after;
 
     // splice: the block's own bars replaced, everything else untouched
-    for (v, filled) in sol.chosen().iter().enumerate() {
+    for (v, notes) in filled.iter().enumerate() {
       out[v].notes.retain(|n| n.onset < b.at || n.onset >= b.at + b.len);
-      out[v].notes.extend(filled.notes.iter().map(|n| Note { onset: n.onset + b.at, ..*n }));
+      out[v].notes.extend(notes.notes.iter().map(|n| Note { onset: n.onset + b.at, ..*n }));
       out[v].notes.sort_by_key(|n| n.onset);
     }
   }
@@ -1264,6 +1257,55 @@ mod tests {
     uniq.sort_unstable();
     uniq.dedup();
     assert_eq!(s.len(), uniq.len(), "two blocks share a seed: {s:?}");
+  }
+
+  /// **A refill that runs to the end of the piece is exactly what `generate`
+  /// writes.**
+  ///
+  /// This is the guarantee `docs/ui-spec.md` section 8 rests on, and it was
+  /// false until it was tested. An edited fugue is saved as its settings, and
+  /// loading regenerates from them — so if editing produced something the
+  /// generator would not, a saved piece came back as a different piece and the
+  /// fingerprint said so. Which it did: the report was a mismatch between engine
+  /// 0.1.0 and engine 0.1.0.
+  ///
+  /// The cause was that a refilled span pins its last block's ending to what the
+  /// piece sounded *before* the edit, and that pin is information the settings do
+  /// not carry. A span reaching the end of the piece has nothing following to
+  /// protect, so it takes no pin, and then the two agree note for note.
+  #[test]
+  fn a_refill_to_the_end_is_what_the_generator_would_have_written() {
+    let d = design();
+    let l0 = Layout::default();
+    let base = fugue(&d, &l0, crate::automaton::HARD, 0x5EED).expect("a fugue");
+    let ids = identities(&base.blocks);
+    let last = base.blocks.len() - 1;
+
+    for bi in [1usize, 5, 8, last] {
+      let mut l = l0.clone();
+      l.rerolls.push((ids[bi], 1));
+
+      let spliced = refill_span(&d, &l, crate::automaton::HARD, 0x5EED, &base, bi, last).expect("refill");
+      let fresh = fugue(&d, &l, crate::automaton::HARD, 0x5EED).expect("fugue");
+      assert_eq!(
+        crate::settings::fingerprint(&spliced.voices),
+        crate::settings::fingerprint(&fresh.voices),
+        "refilling from block {bi} to the end differs from generating the whole piece"
+      );
+
+      // and it really did change something, or the comparison proves nothing
+      assert_ne!(crate::settings::fingerprint(&spliced.voices), crate::settings::fingerprint(&base.voices));
+
+      // everything *before* the edit is untouched, which is the locality that
+      // survives — and the one worth having, since it is the part already heard
+      let at = base.blocks[bi].at;
+      for v in 0..d.voices {
+        let before = |o: &Outcome| -> Vec<(i64, i16, i8)> {
+          o.voices[v].notes.iter().filter(|n| n.onset < at).map(|n| (n.onset, n.pitch.step, n.pitch.alter)).collect()
+        };
+        assert_eq!(before(&base), before(&spliced), "block {bi}: the bars before the edit moved");
+      }
+    }
   }
 
   /// **Asking for one block again changes that block's seed and no other.**

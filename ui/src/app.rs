@@ -152,16 +152,26 @@ impl App {
     }
   }
 
-  /// An edit that rewrites some blocks and moves none: local if it can be,
-  /// recomposed if it cannot, and it says which.
+  /// An edit that rewrites some blocks and moves none.
   ///
-  /// The affected blocks go through as **one span**, not one after another. A
-  /// return owns its episode and its entry, and refilling those separately pins
-  /// the seam between them to notes chosen for the key being edited away.
+  /// **It rewrites from the first affected block to the end of the piece, and
+  /// that is not laziness.** Refilling only the edited blocks means pinning the
+  /// last of them to what the piece sounded *before* the edit, and that pin is
+  /// information a settings file does not carry — so a piece reached by editing
+  /// was not one the generator would produce from its own settings, and saving
+  /// it and opening it again gave a different fugue. Running to the end takes no
+  /// pin, and then the result is exactly what `compose::fugue` writes.
+  ///
+  /// What survives of 4.2's locality is the half worth having: **every bar
+  /// before the edit is untouched**, which is the part already heard. The bars
+  /// after it follow from the change, which is what they should do anyway — a
+  /// return sent somewhere else and everything after it pretending otherwise was
+  /// never the more musical answer.
   fn recolour(&mut self, e: strip::Edit, blocks: std::ops::RangeInclusive<usize>, l: Layout) {
     let Some(prev) = self.out.take() else { return };
-    let (first, last) = (*blocks.start(), *blocks.end());
-    if last >= prev.blocks.len() {
+    let first = *blocks.start();
+    let last = prev.blocks.len().saturating_sub(1);
+    if first > last {
       self.out = Some(prev);
       return;
     }
@@ -171,29 +181,16 @@ impl App {
     let next = match compose::refill_span(&self.design, &l, self.tier.rules(), self.seed, &prev, first, last) {
       Ok(o) => o,
       Err(why) => {
-        // Not *local* — not impossible. About a quarter of key changes come
-        // back this way, so stopping would refuse an ordinary request on a
-        // technicality. Recompose, and say which of the two happened: the
-        // difference is exactly the promise the interface made.
-        match compose::fugue(&self.design, &l, self.tier.rules(), self.seed) {
-          Ok(o) => {
-            self.status =
-              Some(format!("{said} — not reachable from where the piece was, so the whole fugue was rewritten ({why})"));
-            self.layout = l;
-            self.out = Some(o);
-            self.fidelity = None;
-          }
-          Err(e) => {
-            self.status = Some(format!("that will not fill: {e}"));
-            self.out = Some(prev);
-          }
-        }
+        self.status = Some(format!("{said} will not fill: {why}"));
+        self.out = Some(prev);
         return;
       }
     };
     let ms = t0.elapsed().as_secs_f64() * 1000.0;
-    self.status =
-      Some(format!("{said} — {} blocks rewritten in {ms:.0} ms, the rest untouched", last - first + 1));
+    self.status = Some(format!(
+      "{said} — {} blocks rewritten in {ms:.0} ms, and every bar before them is untouched",
+      last - first + 1
+    ));
     self.layout = l;
     self.out = Some(next);
     self.fidelity = None;
@@ -1006,107 +1003,68 @@ mod tests {
     App { out: Some(start.clone()), layout: layout.clone(), ..App::default() }
   }
 
-  /// A key change that stays local rewrites only the blocks that middle owns
-  /// and **leaves every other note exactly where it was**.
+  /// **Every edit leaves the bars before it alone, and produces a piece the
+  /// settings reproduce.**
   ///
-  /// This is the claim spec 4.2 makes to the user and the one an interface is
-  /// most tempted to fudge: recomposing would look almost right, differ
-  /// everywhere, and be much easier. Checked over the whole piece rather than at
-  /// the seams, because a splice that tore one bar later would pass a boundary
-  /// check and still be wrong on screen.
+  /// Two claims and the second is the one that was false. A settings file
+  /// records the design, the layout, the tier and the seed, and section 8
+  /// promises that loading one gives the same fugue note for note — so what is
+  /// on screen has to be what `compose::fugue` writes from those. It was not:
+  /// an edit refilled only the blocks it touched and pinned the last of them to
+  /// what the piece sounded *before* the edit, and that pin is history the file
+  /// does not carry. Saving an edited fugue and opening it reported a mismatch
+  /// between engine 0.1.0 and engine 0.1.0.
   ///
-  /// About a quarter of key changes are *not* local — the pinned ending is not
-  /// reachable from where the piece happens to be — and those are recomposed
-  /// instead. The test asserts the promise on whichever ones hold it, and that
-  /// at least one does, so it cannot pass by never taking the local path.
+  /// So an edit now rewrites to the end of the piece, and this asserts both
+  /// halves of what that buys: the bars before are untouched, and the whole
+  /// thing regenerates from its own settings.
   #[test]
-  fn a_local_key_change_leaves_every_other_note_alone() {
+  fn every_edit_keeps_the_past_and_stays_reproducible() {
     let mut app = App::default();
     app.compose();
     let start = app.out.clone().expect("a fugue");
     let l0 = app.layout.clone();
-    let mut local = 0;
+    let ids = compose::identities(&start.blocks);
 
-    for k in 0..l0.middles.len() {
-      for deg in 0..7i16 {
-        if l0.middles[k] == deg {
-          continue;
-        }
-        let mut probe = probe_from(&start, &l0);
-        probe.apply(strip::Edit::Key(k, deg));
-        let after = probe.out.as_ref().expect("still a fugue");
-        let said = probe.status.clone().unwrap_or_default();
+    let mut tried = 0;
+    let mut edits: Vec<strip::Edit> = vec![strip::Edit::MoveMiddle(0, 2), strip::Edit::MoveMiddle(2, 0)];
+    edits.extend((0..l0.middles.len()).flat_map(|k| (0..7i16).map(move |d| strip::Edit::Key(k, d))));
+    edits.extend((0..start.blocks.len()).map(|b| strip::Edit::Reroll { block: b, id: ids[b] }));
 
-        if said.contains("the rest untouched") {
-          local += 1;
-          let owned = compose::blocks_of_middle(&probe.design, &probe.layout, k);
-          let from = start.blocks[owned[0]].at;
-          let to = start.blocks[owned[owned.len() - 1]].at + start.blocks[owned[owned.len() - 1]].len;
-          let outside = |v: &contrapunctus::kern::Voice| -> Vec<(i64, i64, i16, i8)> {
-            v.notes
-              .iter()
-              .filter(|n| n.onset < from || n.onset >= to)
-              .map(|n| (n.onset, n.dur, n.pitch.step, n.pitch.alter))
-              .collect()
-          };
-          for (a, b) in start.voices.iter().zip(&after.voices) {
-            assert_eq!(outside(a), outside(b), "middle {k} to degree {deg} changed notes outside its span");
-          }
-          assert_eq!(start.bars, after.bars, "a span-preserving edit must not change the length");
-        } else {
-          // not local: the piece was rewritten, and the layout still took the edit
-          assert_eq!(probe.layout.middles[k], deg, "neither local nor rewritten: {said}");
-        }
-      }
-    }
-    assert!(local > 0, "no key change was local, so the promise was never tested");
-  }
-
-  /// **Asking for one block again rewrites that block and nothing else.**
-  ///
-  /// The claim 4.2's reroll makes, and the one that would be easiest to fake by
-  /// recomposing with a different seed — which would look almost right and
-  /// differ everywhere. Checked over the whole piece, note for note, outside the
-  /// block's own bars.
-  #[test]
-  fn a_reroll_rewrites_one_block_and_no_others() {
-    let mut app = App::default();
-    app.compose();
-    let start = app.out.clone().expect("a fugue");
-    let l0 = app.layout.clone();
-
-    let mut rewrote = 0;
-    for block in 0..start.blocks.len() {
-      let id = compose::identities(&start.blocks)[block];
+    for e in edits {
       let mut probe = probe_from(&start, &l0);
-      probe.apply(strip::Edit::Reroll { block, id });
-      let after = probe.out.as_ref().expect("still a fugue");
-      if !probe.status.as_deref().unwrap_or("").contains("the rest untouched") {
-        continue; // it refused and recomposed, which the next test covers
+      probe.apply(e);
+      let Some(after) = probe.out.as_ref() else { continue };
+      if probe.layout == l0 {
+        continue; // a no-op, or it refused and left everything alone
       }
-      rewrote += 1;
+      tried += 1;
 
-      let (from, to) = (start.blocks[block].at, start.blocks[block].at + start.blocks[block].len);
-      let outside = |v: &contrapunctus::kern::Voice| -> Vec<(i64, i64, i16, i8)> {
-        v.notes
+      // 1. the piece is what its own settings produce
+      let fresh = compose::fugue(&probe.design, &probe.layout, probe.tier.rules(), probe.seed)
+        .expect("the settings must generate something");
+      assert_eq!(
+        contrapunctus::settings::fingerprint(&after.voices),
+        contrapunctus::settings::fingerprint(&fresh.voices),
+        "{e:?} left a piece its own settings do not reproduce"
+      );
+
+      // 2. and the bars before the edit did not move
+      let Some(range) = e.touches(&probe.design, &probe.layout) else { continue };
+      let at = start.blocks[*range.start()].at;
+      let before = |o: &Outcome, v: usize| -> Vec<(i64, i64, i16, i8)> {
+        o.voices[v]
+          .notes
           .iter()
-          .filter(|n| n.onset < from || n.onset >= to)
+          .filter(|n| n.onset < at)
           .map(|n| (n.onset, n.dur, n.pitch.step, n.pitch.alter))
           .collect()
       };
-      for (a, b) in start.voices.iter().zip(&after.voices) {
-        assert_eq!(outside(a), outside(b), "rerolling block {block} changed notes outside it");
+      for v in 0..probe.design.voices {
+        assert_eq!(before(&start, v), before(after, v), "{e:?} moved a bar before the edit");
       }
-      assert_eq!(start.bars, after.bars, "a reroll must not change the length");
-      assert_eq!(probe.layout.rerolls, vec![(id, 1)], "the reroll was not recorded in the layout");
-      // recorded in the layout is what makes it survive a save — spec 8
-      assert_ne!(
-        contrapunctus::settings::fingerprint(&start.voices),
-        contrapunctus::settings::fingerprint(&after.voices),
-        "rerolling block {block} changed nothing at all"
-      );
     }
-    assert!(rewrote > 0, "no reroll was local, so the promise was never tested");
+    assert!(tried > 20, "only {tried} edits actually applied, so this proves little");
   }
 
   /// Whatever happens, an edit either applies or leaves nothing behind.

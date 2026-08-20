@@ -12,3 +12,4 @@ literature/Marpurg, Friedrich Wilhelm - Abhandlung von der Fuge (1753)/
 # The web build. `cd ui && trunk build --release` regenerates it, and the wasm
 # in it is 5 MB — nothing here is an input to anything.
 ui/dist/
+presets

@@ -94,7 +94,8 @@ pub enum Fidelity {
   /// Note for note, the fugue the file recorded.
   Exact,
   /// The settings loaded and the music is not the same. Both engine versions
-  /// are given, because that is almost always the reason.
+  /// are given, because that is usually the reason — and when it is not, the
+  /// message says so rather than pointing at two identical numbers.
   Differs { wrote: String, now: String },
   /// The file carried no fingerprint, so nothing could be checked.
   Unchecked,
@@ -105,8 +106,16 @@ impl Fidelity {
     match self {
       Fidelity::Exact => None,
       Fidelity::Unchecked => Some("this file records no fingerprint, so the music could not be checked".into()),
-      Fidelity::Differs { wrote, now } => Some(format!(
+      // Two different things, and saying the first when the second is true was
+      // itself a bug: a file reported a mismatch "between engine 0.1.0 and
+      // engine 0.1.0", which tells a reader nothing and blames the wrong thing.
+      Fidelity::Differs { wrote, now } if wrote != now => Some(format!(
         "this file was written by engine {wrote} and this is {now}; the settings loaded, and the music is not the same"
+      )),
+      Fidelity::Differs { wrote, .. } => Some(format!(
+        "the settings loaded, and the music is not the one this file recorded. \
+         The engine says {wrote} at both ends, so this file was written by a build \
+         that generated differently under the same version number — or was edited by hand"
       )),
     }
   }
@@ -284,6 +293,36 @@ mod tests {
     let back = Settings::from_json(&older).expect("an older file must still open");
     assert!(back.layout.rerolls.is_empty());
     assert_eq!(back.reproduce().expect("a fugue").1, Fidelity::Exact);
+  }
+
+  /// A tool rather than a test: re-stamp the settings files in `docs/presets`
+  /// against the current engine.
+  ///
+  /// Those files are not part of the repository — they are somebody's own saved
+  /// fugues, and `.gitignore` says so. When an engine change stops one of them
+  /// reproducing, the honest options are to re-save it from the interface or to
+  /// run this; what there is no option to do is have the fingerprint quietly
+  /// forgive itself on load, which is the one thing it exists to prevent.
+  ///
+  /// `cargo test --features serde restamp_presets -- --ignored`
+  #[cfg(feature = "serde")]
+  #[test]
+  #[ignore = "run deliberately: it rewrites files"]
+  fn restamp_presets() {
+    for e in std::fs::read_dir("docs/presets").expect("docs/presets") {
+      let path = e.expect("entry").path();
+      if path.extension().is_none_or(|x| x != "json") {
+        continue;
+      }
+      let text = std::fs::read_to_string(&path).expect("read");
+      let mut s = Settings::from_json(&text).expect("parse");
+      let (out, before) = s.reproduce().expect("a fugue");
+      s.engine = env!("CARGO_PKG_VERSION").to_string();
+      s.fingerprint = fingerprint(&out.voices);
+      std::fs::write(&path, s.to_json().expect("json")).expect("write");
+      let (_, after) = Settings::from_json(&std::fs::read_to_string(&path).unwrap()).unwrap().reproduce().unwrap();
+      println!("RESTAMP {path:?}: {before:?} -> {after:?}, {} bars", out.bars);
+    }
   }
 
   /// A file from a newer format is refused rather than half-read.

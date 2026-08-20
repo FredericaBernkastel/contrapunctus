@@ -175,24 +175,48 @@ rather than against the claim. That test earned its place immediately:
 degree it carries, so shuffling the order changes keys and moves not one bar. It
 goes down the fast path.
 
-*Span-preserving* — a key change, a voice change, a per-block reroll. The piece
-stays the same length, `compose::refill_span` rewrites the blocks that edit owns,
-and **every other note stays exactly where it was**. Sub-100 ms; repaint
-immediately.
+*Span-preserving* — a key change, a reordering, a per-block reroll. The piece
+stays the same length, and `compose::refill_span` rewrites **from the first
+affected block to the end**, so every bar *before* the edit is untouched.
 
-Two things learned by building it. **One edit is not one block:** changing where
-a return goes changes the key of the episode that travels to it *and* the entry
-that arrives, so a middle owns two blocks and they have to be refilled as a span
-— refilled one at a time, the seam between them is pinned to notes chosen for the
-key being edited away.
+### A claim withdrawn, and the bug that withdrew it
 
-And **about a quarter of key changes are not local at all**: 110 of 144 tried
-succeeded, and the rest could not reach the pinned ending from where the piece
-happened to be. That is not a failure — the edit is possible, it is simply not
-local — so the interface recomposes and *says which of the two happened*. The
-promise is the whole value of the fast path, and an interface that quietly
-recomposed while claiming locality would be worth less than one that never
-claimed it.
+This section used to promise more: that a span-preserving edit rewrote only the
+blocks it owned and **every other note stayed exactly where it was**. That was
+true of the notes and false of the piece, and it broke section 8.
+
+Refilling only the edited blocks means pinning the last of them to what the piece
+sounded *before* the edit. That pin is real information and it is **history** —
+it says what some earlier version of this fugue happened to end on, and a
+settings file records no history. So an edited fugue was not one the generator
+would write from its own settings, and saving it and opening it again produced a
+different piece. The report was a fingerprint mismatch between engine `0.1.0` and
+engine `0.1.0`, which is a sentence that tells a reader nothing and blames the
+wrong thing twice over.
+
+> **A local edit that pins its own boundary is not a function of the settings, it
+> is a function of the history.** The pin cannot go in the file, because it is
+> not a parameter of the piece — it is a fact about a piece that no longer
+> exists.
+
+Running to the end takes no pin, and then the result is exactly what
+`compose::fugue` writes. A test in `compose` asserts precisely that, and one in
+the interface asserts it over thirty-odd edits.
+
+What is left of the locality is the half worth having: **the bars before the edit
+do not move**, which is the part already heard. The bars after it follow from the
+change — which is what they should do anyway. A return sent somewhere else, with
+everything after it carrying on as though nothing had happened, was never the
+more musical answer; it was the faster one.
+
+The cost is real and it is stated: an edit is now most of a generate rather than
+one block of one, so the *hundred milliseconds* this section used to promise is
+a few hundred. At three voices that is still immediate. At five it will not be,
+and the answer there is the same worker 7.3 wants, not a pin.
+
+The 110-of-144 figure this section used to carry — how often a pinned refill
+could reach its old ending — is withdrawn with the pin that produced it. It
+measured something the program no longer does.
 
 *Span-changing* — episode length, the link's length, adding or removing a middle,
 toggling the close. Everything after moves in time. `compose::refill_span`
@@ -606,7 +630,7 @@ readme §10.5's claim that no reported figure passes through a crate.
 ```json
 {
   "format": 1,
-  "engine": "0.1.0",
+  "engine": "0.1.1",
   "design": {
     "subject": { "notes": [ { "onset": 120, "dur": 120, "pitch": { "step": 28, "alter": 0 }, "attack": true } ] },
     "voices": 3,
@@ -640,6 +664,14 @@ load, and the promise this whole section exists for would be false for exactly
 the pieces somebody had worked on hardest. It is keyed on the block's identity —
 what it is, not where it sits — so it survives an edit that inserts something
 before it.
+
+**The engine version earns its place here.** A file written by `0.1.0` and opened
+by `0.1.1` says so, and that is exactly what happened: the edit path changed, the
+music it writes changed with it, and files saved before it report a mismatch on
+load with both numbers named. A saved file that stops reproducing can be
+re-saved from the interface, or re-stamped by the `restamp_presets` tool —
+**deliberately**, never as a side effect of opening one, which would be the
+fingerprint quietly forgiving itself.
 
 `format` is the format's version, bumped when a field's meaning changes rather
 than when one is added: **unknown keys are ignored**, so an older build opens a
@@ -724,9 +756,11 @@ Already done before this and needing nothing further:
 
 - `compose::Design` / `Layout` / `Outcome` — every control in §3 is a field that
   exists.
-- `compose::refill` with `Problem::terminal` — a span-preserving edit rewrites
-  one block and leaves every other note alone, which a test asserts over the
-  whole piece.
+- `compose::refill_span` — a span-preserving edit rewrites forward from the
+  first affected block and leaves every bar before it alone, which a test asserts
+  over the whole piece. Run to the end it is exactly `compose::fugue`, which is
+  what keeps 4.2's edits reproducible from a settings file; `Problem::terminal`
+  is still there and is now used only where something follows the span.
 - Block seeds keyed on **what a block is**, so an edit does not reseed its
   neighbours.
 - `compose::fugue` returns the notes *and* every judgement §8 can pass on them,
@@ -915,7 +949,14 @@ Stated rather than left to be discovered:
   then nothing to click to bring it back. A gesture whose undo is somewhere else
   is worse than a checkbox, so they stayed checkboxes. Item 2 is a way to do it
   that is not one-way, not the gesture itself.
-- **A key change that is not local recomposes**, which is right, but the blocks
-  about to change are not faded while it happens — the fading is on the drag,
-  where there is time to see it, and a recompose at three voices is over before
-  there is. At five voices it would not be.
+- **An edit rewrites everything after it**, which is 4.2's withdrawn claim and
+  the price of a settings file that reproduces. The bars after an edit are not
+  faded while it happens; at three voices it is over before anything could be
+  seen, and at five it will not be.
+- **Six faults have now been found by somebody using this, and none by a test.**
+  Four listening reports, a clock that compiles and panics, an audio stream a
+  stalled frame destroys, and a settings file that did not reproduce what it
+  recorded. Every one was in something the tests were not pointed at — the ear,
+  the browser, the sound card, and the difference between a piece and its
+  history. The pattern is worth naming: the tests here check what the program
+  computes, and each of these was about what the program *is for*.
