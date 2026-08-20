@@ -598,7 +598,16 @@ impl App {
       egui::ScrollArea::both().max_height(score::height(out.voices.len()) + 12.0).show(ui, |ui| {
         let want = (out.bars as f32 * 46.0).max(ui.available_width());
         let following = self.player.as_ref().is_some_and(|p| p.is_playing());
-        if let Some(t) = score::show(ui, &out.voices, &self.design.key, measure, want, head, following) {
+        let sheet = score::Sheet {
+          voices: &out.voices,
+          key: &self.design.key,
+          measure,
+          beat: self.design.beat,
+          width: want,
+          playhead: head,
+          follow: following,
+        };
+        if let Some(t) = sheet.show(ui) {
           seek = Some(t);
         }
       });

@@ -8,7 +8,11 @@
 //! argument that section makes for the lattice turns out to be the argument for
 //! it being drawable.
 //!
-//! What is not here yet is beaming and real clef glyphs; the roadmap says so.
+//! Beamed, and by geometry rather than by a font: a beam is a thick line between
+//! two stem ends, and the rules for where one goes are about beats and
+//! contiguity, both of which the tick lattice already answers exactly. Clef
+//! glyphs are the one thing here that would want a font, and the roadmap has
+//! them.
 
 use contrapunctus::kern::{Voice, TICKS_PER_WHOLE};
 use egui::{Align2, FontId, Pos2, Rect, Sense, Stroke, Ui, Vec2};
@@ -23,17 +27,26 @@ pub fn height(voices: usize) -> f32 {
   voices as f32 * (STAFF + BETWEEN) + 12.0
 }
 
+/// The page, as one value.
+pub struct Sheet<'a> {
+  pub voices: &'a [Voice],
+  pub key: &'a [i8; 7],
+  pub measure: i64,
+  /// What a beat is, which is what decides where a beam may run to.
+  pub beat: i64,
+  pub width: f32,
+  pub playhead: Option<i64>,
+  /// Keep the playhead on the page, which is wanted while the sound moves and
+  /// not while a reader is looking somewhere on purpose.
+  pub follow: bool,
+}
+
+impl Sheet<'_> {
 /// Draw every voice, one staff each. Returns a tick to seek to, if the reader
 /// clicked the page — spec 5.2, and the score is an output in every other way.
-pub fn show(
-  ui: &mut Ui,
-  voices: &[Voice],
-  key: &[i8; 7],
-  measure: i64,
-  width: f32,
-  playhead: Option<i64>,
-  follow: bool,
-) -> Option<i64> {
+pub fn show(&self, ui: &mut Ui) -> Option<i64> {
+  let (voices, key, measure, width, playhead, follow) =
+    (self.voices, self.key, self.measure, self.width, self.playhead, self.follow);
   let want = Vec2::new(width.max(ui.available_width()), height(voices.len()));
   let (resp, p) = ui.allocate_painter(want, Sense::click());
   let area = resp.rect;
@@ -86,49 +99,138 @@ pub fn show(
       ui.visuals().weak_text_color(),
     );
 
-    for n in v.notes.iter().filter(|n| n.attack) {
-      let step = n.pitch.step;
-      let y = y_of(step);
-      let x = x_of(n.onset);
-      let w = ((x_of(n.onset + n.dur) - x) * 0.55).clamp(3.0, 5.5);
-      let hollow = n.dur * 4 >= TICKS_PER_WHOLE * 2; // a half note or longer
+    // Noteheads, ledger lines and accidentals: one note at a time, because none
+    // of them depends on what any other note is doing.
+    let heads: Vec<Head> = v
+      .notes
+      .iter()
+      .filter(|n| n.attack)
+      .map(|n| {
+        let x = x_of(n.onset);
+        let w = ((x_of(n.onset + n.dur) - x) * 0.55).clamp(3.0, 5.5);
+        Head { onset: n.onset, dur: n.dur, step: n.pitch.step, alter: n.pitch.alter, x, y: y_of(n.pitch.step), w }
+      })
+      .collect();
+
+    let c = theme::voice(vi, dark);
+    for h in &heads {
+      let hollow = h.dur * 4 >= TICKS_PER_WHOLE * 2; // a half note or longer
 
       // Ledger lines: every other step outside the five, which is what a line
       // *is* — an even offset from the middle line.
-      let out_of = |s: i16| (s - centre).abs() > 4;
-      if out_of(step) {
-        let dir = if step > centre { 1 } else { -1 };
-        let mut s = centre + dir * 6;
-        while (s - centre).abs() <= (step - centre).abs() {
-          if (s - centre) % 2 == 0 {
-            let ly = y_of(s);
-            p.line_segment([Pos2::new(x - w - 2.0, ly), Pos2::new(x + w + 2.0, ly)], Stroke::new(1.0, line));
+      if (h.step - centre).abs() > 4 {
+        let dir = if h.step > centre { 1 } else { -1 };
+        let mut st = centre + dir * 6;
+        while (st - centre).abs() <= (h.step - centre).abs() {
+          if (st - centre) % 2 == 0 {
+            let ly = y_of(st);
+            p.line_segment([Pos2::new(h.x - h.w - 2.0, ly), Pos2::new(h.x + h.w + 2.0, ly)], Stroke::new(1.0, line));
           }
-          s += dir;
+          st += dir;
         }
       }
 
-      let c = theme::voice(vi, dark);
       if hollow {
-        p.circle_stroke(Pos2::new(x, y), w, Stroke::new(1.4, c));
+        p.circle_stroke(Pos2::new(h.x, h.y), h.w, Stroke::new(1.4, c));
       } else {
-        p.circle_filled(Pos2::new(x, y), w, c);
-      }
-      // Stem: up below the middle line, down above it, which is the ordinary
-      // convention and keeps the staff from growing.
-      let up = step < centre;
-      let sx = if up { x + w - 0.5 } else { x - w + 0.5 };
-      let sy = if up { y - HALF * 7.0 } else { y + HALF * 7.0 };
-      if n.dur * 2 < TICKS_PER_WHOLE * 2 {
-        p.line_segment([Pos2::new(sx, y), Pos2::new(sx, sy)], Stroke::new(1.2, c));
+        p.circle_filled(Pos2::new(h.x, h.y), h.w, c);
       }
 
       // An accidental where the note's own alteration differs from what the key
       // signature already says about that letter — the rule §2.1's lattice makes
       // a comparison rather than an inference.
-      let sig = key[step.rem_euclid(7) as usize];
-      if n.pitch.alter != sig {
-        accidental(&p, Pos2::new(x - w - 5.0, y), n.pitch.alter, c);
+      if h.alter != key[h.step.rem_euclid(7) as usize] {
+        accidental(&p, Pos2::new(h.x - h.w - 5.0, h.y), h.alter, c);
+      }
+    }
+
+    // Stems and beams, which do depend on the neighbours — a beam is the one
+    // mark in notation that is about a *group*.
+    for group in beam_groups(&heads, self.beat) {
+      let run = &heads[group.clone()];
+      // One direction for the whole group, decided by whichever note is
+      // furthest from the middle line: the ordinary rule, and the one that
+      // keeps a beam from crossing the staff.
+      let far = run.iter().max_by_key(|h| (h.step - centre).abs()).map(|h| h.step).unwrap_or(centre);
+      let up = far < centre;
+      let dir = if up { -1.0 } else { 1.0 };
+
+      // The beam sits a fixed reach from the *outermost* notehead, so it never
+      // crosses one, and it tilts with the run rather than staying level.
+      let reach = HALF * 7.0;
+      let tip = |h: &Head| h.y + dir * reach;
+      let (first, last) = (&run[0], &run[run.len() - 1]);
+      let (mut y0, mut y1) = (tip(first), tip(last));
+      if run.len() > 1 {
+        // clamp the slope: a beam that follows a wide leap literally is a beam
+        // nobody can read
+        let slope = (y1 - y0).clamp(-HALF * 3.0, HALF * 3.0);
+        y1 = y0 + slope;
+        let along = |x: f32| y0 + (y1 - y0) * ((x - first.x) / (last.x - first.x).max(1.0));
+        // and it must still clear every notehead in the run
+        let push: f32 = run.iter().map(|h| (h.y + dir * (h.w + HALF * 2.0)) - along(h.x)).fold(0.0, |a: f32, b| if up { a.min(b) } else { a.max(b) });
+        if (up && push < 0.0) || (!up && push > 0.0) {
+          y0 += push;
+          y1 += push;
+        }
+      }
+      let at = |h: &Head| -> f32 {
+        if run.len() < 2 {
+          tip(h)
+        } else {
+          y0 + (y1 - y0) * ((h.x - first.x) / (last.x - first.x).max(1.0))
+        }
+      };
+      let sx = |h: &Head| if up { h.x + h.w - 0.5 } else { h.x - h.w + 0.5 };
+
+      for h in run {
+        if h.dur * 2 >= TICKS_PER_WHOLE * 2 {
+          continue; // a whole note has no stem
+        }
+        p.line_segment([Pos2::new(sx(h), h.y), Pos2::new(sx(h), at(h))], Stroke::new(1.2, c));
+      }
+
+      // One pass per beam level. A level is drawn over each maximal run of
+      // notes that are short enough to need it, and a run of one gets a stub —
+      // which is how a lone sixteenth among eighths is written.
+      let deepest = run.iter().map(|h| beams_of(h.dur)).max().unwrap_or(0);
+      for level in 1..=deepest {
+        let mut k = 0;
+        while k < run.len() {
+          if beams_of(run[k].dur) < level {
+            k += 1;
+            continue;
+          }
+          let mut j = k;
+          while j + 1 < run.len() && beams_of(run[j + 1].dur) >= level {
+            j += 1;
+          }
+          let dy = dir * (level as f32 - 1.0) * (HALF * 1.6);
+          let (mut ax, mut bx) = (sx(&run[k]), sx(&run[j]));
+          let (mut ay, mut by) = (at(&run[k]) + dy, at(&run[j]) + dy);
+          if k == j {
+            // a stub, pointing back toward the note it belongs with — or
+            // forward when there is nothing behind it
+            let reach = (HALF * 2.2).min(run.len() as f32 * HALF * 2.2);
+            if k > 0 {
+              ax = bx - reach;
+              ay = by;
+            } else if run.len() > 1 {
+              bx = ax + reach;
+              by = ay;
+            } else {
+              // A single note on its own: a flag, drawn as a short stroke away
+              // from the stem, which is what a flag is at this size. It leaves
+              // the stem to the right whichever way the stem points — the *tilt*
+              // carries the direction, and a first draft that branched on `up`
+              // for the reach had both arms the same, which clippy said so.
+              bx = ax + HALF * 2.0;
+              by = ay + dir * -HALF * 1.6;
+            }
+          }
+          p.line_segment([Pos2::new(ax, ay), Pos2::new(bx, by)], Stroke::new(2.2, c));
+          k = j + 1;
+        }
       }
     }
   }
@@ -157,6 +259,65 @@ pub fn show(
     }
   }
   None
+}
+}
+
+/// One notehead, with everything the drawing needs already resolved.
+struct Head {
+  onset: i64,
+  dur: i64,
+  step: i16,
+  alter: i8,
+  x: f32,
+  y: f32,
+  /// Half the notehead's width, which is also how far a stem sits from centre.
+  w: f32,
+}
+
+/// How many beams a duration wants. A quarter or longer wants none.
+///
+/// Counted **down from a quarter** rather than up from the duration, and the
+/// difference is dots. A dotted eighth is three-quarters of a quarter, so
+/// doubling it overshoots and the first version of this called it a quarter and
+/// drew it with no beam at all — a note the corpus is full of, rendered wrong.
+/// Halving from a quarter until the value is no longer than the note finds the
+/// base value the dot was added to, which is what the beam count is about.
+fn beams_of(dur: i64) -> usize {
+  let mut n = 0;
+  let mut d = contrapunctus::kern::TICKS_PER_QUARTER;
+  while d > dur.max(1) && n < 8 {
+    d /= 2;
+    n += 1;
+  }
+  n
+}
+
+/// Which notes are beamed together.
+///
+/// Two rules, and the tick lattice answers both exactly: notes join when one
+/// **ends where the next begins**, and when they fall in the **same beat**. A
+/// beam that crossed a beat would hide the metre, which is the one thing a beam
+/// is there to show. Notes long enough to want no beam are groups of one, so
+/// that the stem drawing below has a single path through.
+fn beam_groups(heads: &[Head], beat: i64) -> Vec<std::ops::Range<usize>> {
+  let beat = beat.max(1);
+  let mut out: Vec<std::ops::Range<usize>> = vec![];
+  let mut start = 0usize;
+  for i in 0..heads.len() {
+    let joins = i > start
+      && beams_of(heads[i].dur) > 0
+      && beams_of(heads[i - 1].dur) > 0
+      && heads[i - 1].onset + heads[i - 1].dur == heads[i].onset
+      && heads[i - 1].onset / beat == heads[i].onset / beat;
+    if !joins && i > start {
+      out.push(start..i);
+      start = i;
+    }
+  }
+  if start < heads.len() {
+    out.push(start..heads.len());
+  }
+  out
 }
 
 /// Draw a sharp, flat or natural from line segments. Three glyphs, no font, and
@@ -196,4 +357,116 @@ fn mean_step(v: &Voice) -> i16 {
 fn note_name(step: i16) -> String {
   const LETTER: [char; 7] = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
   format!("{}{}", LETTER[step.rem_euclid(7) as usize], step.div_euclid(7))
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use contrapunctus::kern::TICKS_PER_QUARTER as Q;
+
+  fn heads(spec: &[(i64, i64)]) -> Vec<Head> {
+    spec
+      .iter()
+      .map(|&(onset, dur)| Head { onset, dur, step: 28, alter: 0, x: onset as f32, y: 0.0, w: 4.0 })
+      .collect()
+  }
+
+  /// How many beams a duration wants, against the values that actually occur.
+  #[test]
+  fn a_duration_wants_the_beams_it_should() {
+    assert_eq!(beams_of(Q * 4), 0, "a whole note");
+    assert_eq!(beams_of(Q * 2), 0, "a half");
+    assert_eq!(beams_of(Q), 0, "a quarter");
+    assert_eq!(beams_of(Q / 2), 1, "an eighth");
+    assert_eq!(beams_of(Q / 4), 2, "a sixteenth");
+    assert_eq!(beams_of(Q / 8), 3, "a thirty-second");
+    // **Dots.** A dotted eighth is three-quarters of a quarter, and it carries
+    // the beams of the eighth it is a dot on. Counting up from the duration
+    // overshoots and calls it a quarter, which is what the first version did.
+    assert_eq!(beams_of(Q / 2 + Q / 4), 1, "a dotted eighth");
+    assert_eq!(beams_of(Q / 4 + Q / 8), 2, "a dotted sixteenth");
+    assert_eq!(beams_of(Q + Q / 2), 0, "a dotted quarter");
+  }
+
+  /// **A beam runs within a beat and across nothing else.**
+  ///
+  /// The two rules, and both are exact here because the tick lattice is: notes
+  /// join when one ends where the next begins, and when they fall in the same
+  /// beat. A beam that crossed a beat would hide the metre, which is the one
+  /// thing a beam is there to show.
+  #[test]
+  fn a_beam_stays_inside_its_beat() {
+    // four sixteenths filling one beat: one group
+    let g = beam_groups(&heads(&[(0, Q / 4), (Q / 4, Q / 4), (Q / 2, Q / 4), (3 * Q / 4, Q / 4)]), Q);
+    assert_eq!(g, vec![0..4]);
+
+    // eight of them fill two beats: two groups, not one
+    let spec: Vec<(i64, i64)> = (0..8).map(|i| (i * Q / 4, Q / 4)).collect();
+    assert_eq!(beam_groups(&heads(&spec), Q), vec![0..4, 4..8]);
+
+    // a gap between them breaks the beam even inside a beat
+    let g = beam_groups(&heads(&[(0, Q / 4), (Q / 2, Q / 4)]), Q);
+    assert_eq!(g, vec![0..1, 1..2], "a rest between two notes must break the beam");
+
+    // and a quarter is never beamed to anything
+    let g = beam_groups(&heads(&[(0, Q / 2), (Q / 2, Q / 2), (Q, Q)]), Q);
+    assert_eq!(g, vec![0..2, 2..3]);
+  }
+
+  /// Every note belongs to exactly one group, in order — the property the
+  /// drawing relies on and the one an off-by-one in the grouping would break.
+  #[test]
+  fn the_groups_cover_every_note_once() {
+    let spec: Vec<(i64, i64)> = vec![
+      (0, Q / 4),
+      (Q / 4, Q / 4),
+      (Q / 2, Q / 2),
+      (Q, Q),
+      (2 * Q, Q / 2),
+      (2 * Q + Q / 2, Q / 4),
+      (2 * Q + 3 * Q / 4, Q / 4),
+    ];
+    let hs = heads(&spec);
+    let groups = beam_groups(&hs, Q);
+    let mut seen = 0usize;
+    for (i, g) in groups.iter().enumerate() {
+      assert_eq!(g.start, seen, "group {i} does not start where the last one ended");
+      assert!(g.end > g.start, "group {i} is empty");
+      seen = g.end;
+    }
+    assert_eq!(seen, hs.len(), "the groups do not reach the last note");
+  }
+
+  /// The real thing: every voice of a generated fugue groups without panicking
+  /// and covers all its notes.
+  #[test]
+  fn a_generated_fugue_beams_end_to_end() {
+    let d = crate::catalog::load().subjects[1].design(3);
+    let o = contrapunctus::compose::fugue(
+      &d,
+      &contrapunctus::compose::Layout::default(),
+      contrapunctus::automaton::Tier::Full.rules(),
+      0x5EED,
+    )
+    .expect("a fugue");
+
+    let mut beamed = 0usize;
+    for v in &o.voices {
+      let hs: Vec<Head> = v
+        .notes
+        .iter()
+        .filter(|n| n.attack)
+        .map(|n| Head { onset: n.onset, dur: n.dur, step: n.pitch.step, alter: n.pitch.alter, x: 0.0, y: 0.0, w: 4.0 })
+        .collect();
+      let groups = beam_groups(&hs, d.beat);
+      let mut seen = 0;
+      for g in &groups {
+        assert_eq!(g.start, seen);
+        seen = g.end;
+      }
+      assert_eq!(seen, hs.len());
+      beamed += groups.iter().filter(|g| g.len() > 1).count();
+    }
+    assert!(beamed > 0, "nothing in the whole fugue got beamed, so this checked nothing");
+  }
 }

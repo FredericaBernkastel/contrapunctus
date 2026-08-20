@@ -289,6 +289,20 @@ out to be the argument for it being drawable.
   (960 per whole note), so spacing is exact.
 - **Duration**: `Note::dur` against `TICKS_PER_WHOLE` gives the note value
   directly. Beams join runs of eighths and shorter within a beat.
+
+**Beaming, and what it turned out to hinge on.** Two rules decide a group and
+the tick lattice answers both exactly: notes join when one **ends where the next
+begins**, and when they fall in the **same beat**. A beam across a beat would
+hide the metre, which is the one thing a beam is there to show. Each beam level
+is drawn over every maximal run of notes short enough to need it, so a lone
+sixteenth among eighths gets its second beam as a stub, and a short note with
+nothing to join gets a flag.
+
+The count of beams is taken by halving **down from a quarter** until the value is
+no longer than the note, rather than doubling up from the note. The difference is
+**dots**: a dotted eighth is three quarters of a quarter, doubling it overshoots,
+and the first version called it a quarter and drew it with no beam at all — a
+note the corpus is full of, rendered wrong. A test found it on the first run.
 - **Clef**: treble for voices whose mean `step` is above middle C, bass below —
   the same mean-pitch ordering `midi::write_score` already uses for track order.
 
@@ -860,6 +874,7 @@ Status is one of **done**, **partial** — usable and honestly incomplete — or
 | 3.2 | Choosing which voice of an imported file is the subject | `an_imported_subject_replaces_the_design` |
 | 4.2 | Asking for one block to be written again, and it surviving a save | `a_rerolled_block_survives_a_round_trip` |
 | 4.2 | Adding and removing a return, and the close, from the strip and the panel alike | `the_shapes_the_handles_can_reach_all_compose` |
+| 5.1 | Beams, by beat and by contiguity, with stubs and flags | `a_beam_stays_inside_its_beat`, `a_duration_wants_the_beams_it_should` |
 | 3.2 | Importing a subject from a `**kern` file | `an_imported_subject_replaces_the_design` |
 | 5.2 | The score following the playhead while it plays | by inspection |
 
@@ -889,8 +904,7 @@ silence is, in samples.
 | 2 | 4.3 | A voice drag at all | there is no `Layout` field for it — see below |
 | 3 | 6.3 | System MIDI out, behind a feature | a `midir` dependency, and a device to try it on |
 | 4 | 3.3 | The compass as draggable ranges on a staff | nothing |
-| 5 | 5.1 | Beams | nothing; they are geometry, and want no font |
-| 6 | 5.1 | Clef glyphs from an embedded SMuFL subset | a font subset |
+| 5 | 5.1 | Clef glyphs from an embedded SMuFL subset | a font subset |
 
 **Item 2 needs saying properly, because 4.3 assumed something that is not
 there.** That section says a voice drag should ghost its knock-on rather than
@@ -905,10 +919,10 @@ decision. The row is honest about that now; it used to read as interface work.
 
 Stated rather than left to be discovered:
 
-- **The score has no beams and no clef glyphs.** Eighths and shorter carry a
-  plain stem, and each staff is labelled with the note name of its bottom line
-  instead of a clef. The label is arguably better for section 1's beginner and it
-  needs no font; the glyphs want the SMuFL subset 5.1 describes.
+- **The score has no clef glyphs.** Each staff is labelled with the note name of
+  its bottom line instead. The label is arguably better for section 1's beginner
+  and it needs no font; the glyphs want the SMuFL subset 5.1 describes. Beams are
+  drawn, and want no font at all.
 - **The synth reads as chiptune.** That is a fair description of what was 
   built — three odd partials with
   a hard envelope, no filter, no decay, is close to what an FM chip does, and
