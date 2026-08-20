@@ -23,6 +23,7 @@ use crate::catalog::{self, Catalog, Journey};
 use crate::audio::Player;
 use crate::files::{self, Imported, Loaded, Note};
 use crate::schedule;
+use crate::synth::Mix;
 use crate::task::Slot;
 use crate::{report, score, strip, theme};
 
@@ -72,9 +73,10 @@ pub struct App {
   /// Why there is no sound, if there is none. Spec 6.3's rule, applied to the
   /// synth as well: absence is stated, never silent.
   no_sound: Option<String>,
-  /// A bit per voice, set to silence it while listening. Interface state, not
-  /// music: it changes what is audible and nothing about what is written.
-  mute: u32,
+  /// What is audible, as against what is written — which voices are silenced
+  /// and how the register is balanced. Interface state and not music: none of it
+  /// changes a note, and none of it goes in a settings file.
+  mix: Mix,
   /// The very score the player holds. Kept so that every tick-to-sample
   /// conversion goes through the tempo the sound was actually built at, rather
   /// than through whatever the tempo control says at the moment of asking.
@@ -109,7 +111,7 @@ impl Default for App {
       importing: Slot::default(),
       player: None,
       no_sound: None,
-      mute: 0,
+      mix: Mix::default(),
       sound: None,
     }
   }
@@ -225,7 +227,7 @@ impl App {
     }
     match Player::open() {
       Ok(p) => {
-        p.set_mute(self.mute);
+        p.set_mix(self.mix);
         self.player = Some(p);
         self.no_sound = None;
         self.reload_sound();
@@ -551,7 +553,7 @@ impl App {
         // Silencing a voice is how anyone learns to follow one, which is the
         // whole point of a synth whose job is clarity rather than beauty.
         for v in 0..self.design.voices {
-          let on = self.mute & (1 << v) == 0;
+          let on = self.mix.mute & (1 << v) == 0;
           let c = theme::voice(v, dark);
           let tag = RichText::new(format!("{}", v + 1)).color(if on { c } else { ui.visuals().weak_text_color() });
           if ui
@@ -559,10 +561,32 @@ impl App {
             .on_hover_text(if on { "Silence this voice" } else { "Hear this voice again" })
             .clicked()
           {
-            self.mute ^= 1 << v;
+            self.mix.mute ^= 1 << v;
             if let Some(p) = self.player.as_ref() {
-              p.set_mute(self.mute);
+              p.set_mix(self.mix);
             }
+          }
+        }
+
+        // The one-knob equalizer. A tilt is the simplest useful shape an
+        // equalizer has, and it is the shape this particular complaint has: the
+        // ear hears high notes as louder than low ones at the same amplitude, so
+        // what wants adjusting is the slope across the register and not a set of
+        // bands. A listener reported it; the default came from that report.
+        ui.add_space(12.0);
+        ui.label(RichText::new("balance").monospace().weak().small());
+        let slider = egui::Slider::new(&mut self.mix.tilt, 0.0..=6.0).suffix(" dB/8ve").fixed_decimals(1);
+        if ui
+          .add_sized([132.0, 18.0], slider)
+          .on_hover_text(
+            "How much the high voices are quietened against the low ones. Equal amplitude is not \
+             equal loudness — the ear is far more sensitive high up — so at zero the soprano \
+             dominates. Three is where this landed by ear.",
+          )
+          .changed()
+        {
+          if let Some(p) = self.player.as_ref() {
+            p.set_mix(self.mix);
           }
         }
       });

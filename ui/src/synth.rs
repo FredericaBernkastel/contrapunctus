@@ -35,6 +35,69 @@ const HEADROOM: f32 = 0.72;
 const PARTIALS: [(f32, f32); 3] = [(1.0, 1.0), (3.0, -1.0 / 9.0), (5.0, 1.0 / 25.0)];
 const NORM: f32 = 0.810_569_5;
 
+/// Where the tilt does nothing — near the bottom of the generator's compass, so
+/// that the correction only ever **attenuates**. Boosting the bass instead would
+/// be the same balance and less headroom, and headroom is what a clipping test
+/// has to keep.
+const TILT_PIVOT_HZ: f32 = 65.0;
+
+/// What one voice sounds at, in the register it is in.
+///
+/// **Equal amplitude is not equal loudness.** The ear is far more sensitive
+/// around two to five kilohertz than it is low down, so a soprano and a bass
+/// written at the same amplitude are not heard at the same level — the soprano
+/// dominates, which is what a listener reported. Nothing about the synth was
+/// wrong except that it treated a physical quantity as a perceptual one.
+///
+/// The correction is a **tilt**: a fixed number of decibels of attenuation per
+/// octave above the pivot. That is the simplest thing that has the right shape,
+/// and it is deliberately not an inversion of an equal-loudness contour — those
+/// are defined at a stated listening level and flatten out as the level rises,
+/// so inverting one would over-correct for anybody playing this loudly. What is
+/// here instead is a knob with a sane default, and a test that measures what it
+/// achieves with A-weighting rather than asserting that it works.
+pub fn register_gain(hz: f32, tilt_db_per_octave: f32) -> f32 {
+  let octaves = (hz / TILT_PIVOT_HZ).max(1e-6).log2().max(0.0);
+  10f32.powf(-tilt_db_per_octave.max(0.0) * octaves / 20.0)
+}
+
+/// What a listener has asked for, as against what is written.
+///
+/// Neither of these is music: they change what is audible and nothing about what
+/// is on the page. They travel together because the audio callback wants them in
+/// one read.
+#[derive(Clone, Copy, Debug)]
+pub struct Mix {
+  /// A bit per voice, set to silence it.
+  pub mute: u32,
+  /// Decibels of attenuation per octave above [`TILT_PIVOT_HZ`].
+  pub tilt: f32,
+}
+
+impl Default for Mix {
+  /// **Four and a half decibels an octave, because that is where the spread is
+  /// narrowest and not because it sounded about right.**
+  ///
+  /// A-weighted level across the compass the generator writes in, C3 to F6:
+  ///
+  /// ```text
+  ///   0 dB/8ve   15.7 dB spread     the complaint
+  /// 1.5          10.6
+  /// 3.0           6.4               guessed first, and beaten
+  /// 4.5           3.1               the minimum
+  /// 6.0           5.7               overshoots; the bass becomes the loud end
+  /// ```
+  ///
+  /// One caveat the instrument cannot cover. A-weighting describes the ear at a
+  /// *quiet* level, and the equal-loudness contours flatten as the level rises —
+  /// so 4.5 is the right correction for someone listening softly and somewhat
+  /// too much for someone listening loudly. That is what the knob is for, and
+  /// why it goes down to nothing.
+  fn default() -> Mix {
+    Mix { mute: 0, tilt: 4.5 }
+  }
+}
+
 /// The rate comes off the [`Score`] rather than being held here, so a score
 /// scheduled at one rate cannot be rendered at another.
 pub struct Synth {
@@ -76,10 +139,10 @@ impl Synth {
   /// signal, because a fugue is not a stereo image and putting the voices in
   /// different ears would make the counterpoint easier to follow than it is.
   ///
-  /// A bit set in `mute` silences that voice. Its cursor still advances, so
+  /// A bit set in `mix.mute` silences that voice. Its cursor still advances, so
   /// unmuting mid-piece rejoins the line where it now is rather than where it
   /// was left.
-  pub fn render(&mut self, score: &Score, from: u64, out: &mut [f32], channels: usize, mute: u32) -> u64 {
+  pub fn render(&mut self, score: &Score, from: u64, out: &mut [f32], channels: usize, mix: Mix) -> u64 {
     self.fit(score.voices.len());
     let frames = out.len() / channels.max(1);
     let rate = score.rate.max(1) as f32;
@@ -89,7 +152,7 @@ impl Synth {
 
     for i in 0..frames {
       let s = from + i as u64;
-      let mut mix = 0.0f32;
+      let mut sum = 0.0f32;
 
       for (v, line) in score.voices.iter().enumerate() {
         // walk forward past anything that has finished
@@ -111,17 +174,17 @@ impl Synth {
         if self.phase[v] > std::f32::consts::TAU {
           self.phase[v] -= std::f32::consts::TAU;
         }
-        if mute & (1 << v) != 0 {
+        if mix.mute & (1 << v) != 0 {
           continue;
         }
         let mut w = 0.0;
         for (k, amp) in PARTIALS {
           w += amp * (self.phase[v] * k).sin();
         }
-        mix += w * NORM * gain * per_voice;
+        sum += w * NORM * gain * per_voice * register_gain(note.hz, mix.tilt);
       }
 
-      let frame = mix.clamp(-1.0, 1.0);
+      let frame = sum.clamp(-1.0, 1.0);
       for c in 0..channels {
         out[i * channels + c] = frame;
       }
@@ -137,6 +200,31 @@ mod tests {
 
   const RATE: u32 = 48_000;
 
+  /// The A-weighting curve, as the standard defines it.
+  ///
+  /// Used here as an **instrument and not as the correction**. A-weighting is a
+  /// stated approximation of what the ear does to a quiet sound, which makes it
+  /// a fair yardstick for asking whether two notes are heard at the same level
+  /// and a poor thing to invert into a synth, since it flattens as the level
+  /// rises. Measuring with one curve and correcting with a plainer one keeps the
+  /// two honest about each other.
+  fn a_weight(f: f32) -> f32 {
+    let f2 = f * f;
+    let num = 12194.0f32.powi(2) * f2 * f2;
+    let den = (f2 + 20.6f32.powi(2))
+      * ((f2 + 107.7f32.powi(2)) * (f2 + 737.9f32.powi(2))).sqrt()
+      * (f2 + 12194.0f32.powi(2));
+    num / den
+  }
+
+  /// How loud one note of this synth is heard to be, in decibels, summing the
+  /// partials the waveform actually has.
+  fn heard_db(hz: f32, tilt: f32) -> f32 {
+    let g = register_gain(hz, tilt);
+    let e: f32 = PARTIALS.iter().map(|(k, amp)| (amp * NORM * g * a_weight(hz * k)).powi(2)).sum();
+    10.0 * e.max(1e-30).log10()
+  }
+
   fn one_note(from: u64, to: u64, midi: i16) -> Score {
     Score {
       voices: vec![vec![Sounding { from, to, midi, hz: schedule::hz(midi) }]],
@@ -146,6 +234,56 @@ mod tests {
     }
   }
 
+  /// **The tilt narrows the spread across the register, and by how much is
+  /// measured rather than claimed.**
+  ///
+  /// A listener reported that high notes were significantly louder than low
+  /// ones, which was true and was mine: every note got the same amplitude, and
+  /// the ear is far more sensitive up high than down low. This measures what
+  /// that costs and what the correction buys, over the compass the generator
+  /// actually writes in — `catalog::compass` at three voices, step 21 to 45,
+  /// which is a bass F2 to a soprano F6.
+  #[test]
+  fn the_tilt_narrows_what_the_ear_hears() {
+    let notes: Vec<f32> = (21..=45)
+      .map(|step| schedule::hz(contrapunctus::pitch::Pitch::new(step, 0).midi()))
+      .collect();
+    let spread = |tilt: f32| -> f32 {
+      let db: Vec<f32> = notes.iter().map(|hz| heard_db(*hz, tilt)).collect();
+      db.iter().cloned().fold(f32::MIN, f32::max) - db.iter().cloned().fold(f32::MAX, f32::min)
+    };
+
+    let flat = spread(0.0);
+    let tilted = spread(Mix::default().tilt);
+    assert!(flat > 12.0, "the complaint should be visible: only {flat:.1} dB across the compass");
+    assert!(tilted < 5.0, "the tilt left {tilted:.1} dB of the {flat:.1}");
+
+    // **The default is the minimum, not a guess that was never checked.** The
+    // first one written here was 3 dB and it was beaten by a third; this fails
+    // if some later change to the waveform moves the optimum away from it.
+    let best = [0.0f32, 1.5, 3.0, 4.5, 6.0]
+      .into_iter()
+      .min_by(|a, b| spread(*a).total_cmp(&spread(*b)))
+      .unwrap();
+    assert_eq!(best, Mix::default().tilt, "the default tilt is no longer the narrowest of the settings tried");
+  }
+
+  /// The tilt only ever quietens, so it cannot cost headroom. Boosting the bass
+  /// would have been the same balance and a clipping test to renegotiate.
+  #[test]
+  fn the_tilt_never_makes_anything_louder() {
+    for step in 14..=52i16 {
+      let hz = schedule::hz(contrapunctus::pitch::Pitch::new(step, 0).midi());
+      for tilt in [0.0, 1.5, 3.0, 6.0] {
+        let g = register_gain(hz, tilt);
+        assert!(g <= 1.0 + 1e-6, "{hz:.0} Hz at {tilt} dB/oct gained {g}");
+        assert!(g > 0.0, "{hz:.0} Hz at {tilt} dB/oct went silent");
+      }
+    }
+    // and at zero it is exactly off
+    assert!((register_gain(880.0, 0.0) - 1.0).abs() < 1e-6);
+  }
+
   /// A note sounds where it is and nowhere else.
   #[test]
   fn silence_before_and_after_a_note() {
@@ -153,7 +291,7 @@ mod tests {
     let mut sy = Synth::new();
     sy.seek(&sc, 0);
     let mut buf = vec![0.0f32; 4000];
-    sy.render(&sc, 0, &mut buf, 1, 0);
+    sy.render(&sc, 0, &mut buf, 1, Mix { mute: 0, tilt: 0.0 });
     assert!(buf[..1000].iter().all(|x| *x == 0.0), "sound before the note");
     assert!(buf[3000..].iter().all(|x| *x == 0.0), "sound after the note");
     assert!(buf[1500..2500].iter().any(|x| x.abs() > 0.1), "no sound during the note");
@@ -168,7 +306,7 @@ mod tests {
     let mut sy = Synth::new();
     sy.seek(&sc, 0);
     let mut buf = vec![0.0f32; RATE as usize];
-    sy.render(&sc, 0, &mut buf, 1, 0);
+    sy.render(&sc, 0, &mut buf, 1, Mix { mute: 0, tilt: 0.0 });
     assert!(buf[0].abs() < 0.02, "the note starts at {}", buf[0]);
     assert!(buf[RATE as usize - 1].abs() < 0.02, "the note ends at {}", buf[RATE as usize - 1]);
   }
@@ -195,7 +333,7 @@ mod tests {
     let mut at = 0u64;
     let mut buf = vec![0.0f32; 4096];
     while at < sc.samples {
-      at = sy.render(&sc, at, &mut buf, 1, 0);
+      at = sy.render(&sc, at, &mut buf, 1, Mix::default());
       peak = peak.max(buf.iter().fold(0.0f32, |m, x| m.max(x.abs())));
     }
     assert!(peak > 0.2, "the whole piece rendered at peak {peak} — something is not sounding");
@@ -222,7 +360,7 @@ mod tests {
       let mut sy = Synth::new();
       sy.seek(&sc, 0);
       let mut buf = vec![0.0f32; 16_000];
-      sy.render(&sc, 0, &mut buf, 1, mute);
+      sy.render(&sc, 0, &mut buf, 1, Mix { mute, tilt: 0.0 });
       buf.iter().map(|x| x * x).sum::<f32>() / buf.len() as f32
     };
     let both = energy(0);

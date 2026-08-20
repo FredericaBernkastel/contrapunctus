@@ -333,6 +333,46 @@ conversion**. Free functions would take the tempo as an argument, and a caller
 that passed a tempo the score was not built at would get a playhead that drifted
 — slowly, plausibly, and only after the tempo had been changed once.
 
+#### Equal amplitude is not equal loudness
+
+The fifth listening report: *"higher pitches are significantly louder than lower
+ones."* True, and mine. Every note got the same amplitude, and the ear is far
+more sensitive around two to five kilohertz than it is low down, so the soprano
+dominated a texture the code believed was balanced. Nothing was wrong with the
+synth except that it treated a physical quantity as a perceptual one.
+
+The correction is a **tilt** — decibels of attenuation per octave above a pivot
+near the bottom of the compass, so it only ever quietens and cannot cost the
+headroom a clipping test has to keep. What it achieves is measured rather than
+asserted, using **A-weighting as the instrument**, over C3 to F6:
+
+| tilt | A-weighted spread |
+|---:|---:|
+| 0 dB/8ve | 15.7 dB — the complaint |
+| 1.5 | 10.6 |
+| 3.0 | 6.4 |
+| **4.5** | **3.1 — the minimum** |
+| 6.0 | 5.7 — overshoots; the bass becomes the loud end |
+
+**The first default written was 3 dB, chosen because it seemed about right, and
+the measurement beat it by a third.** A test now asserts the default is the
+narrowest of the settings tried, so a later change to the waveform that moves the
+optimum fails rather than quietly leaving a stale number.
+
+A-weighting is used to *measure* and not to *correct*, and the difference
+matters: it describes the ear at a quiet level and the equal-loudness contours
+flatten as the level rises, so inverting it into the synth would over-correct for
+anybody playing this loudly. Measuring with one curve and correcting with a
+plainer one keeps the two honest about each other — and it is why the tilt is a
+control rather than a constant.
+
+**A tilt and not a bank of bands**, which is what was asked for. A multi-band
+equalizer would be the right answer to a timbre that is wrong; this is a
+*balance* that is wrong, across the register, and the shape of the fix is a
+slope. It is one knob in the header beside the voice toggles, it goes to zero,
+and past about five it makes things worse in the other direction — which the
+table above is the reason to know.
+
 ### 6.3 System MIDI out — optional
 
 `midir`, which also targets Web MIDI on wasm.
@@ -717,11 +757,19 @@ the numbers, one agreed with them, and one found something no number was looking
 at (three voices resting in unison, four tenths of a second, every six seconds).
 The interface's real job is to make the next one easier to get.
 
-A fourth has now happened, on the synth rather than on the music, and it
-corrected nothing: the timbre was described as chiptune and passed. Record those
-too. A report that confirms is weak evidence and it is still evidence, and a log
-that only keeps the reports which found something will read, in hindsight, as
-though listening always finds something.
+Two more have happened since, both on the synth rather than on the music. The
+fourth corrected nothing — the timbre was described as chiptune and passed — and
+is recorded anyway, because a log that keeps only the reports which found
+something will read, in hindsight, as though listening always finds something.
+
+The fifth found a real fault that no test here was looking for: **the high voices
+were significantly louder than the low ones**, which was true, was mine, and was
+15.7 dB of it. 6.2 has the account. It is worth noticing what kind of fault that
+is. Every existing test asked whether the right *signal* came out — no clicks, no
+clipping, the right duration, nothing swallowed — and every one passed, because
+the signal was right. What was wrong was the relation between the signal and an
+ear, and this repository had no instrument for that until the report arrived and
+one was written.
 
 ---
 
@@ -821,6 +869,12 @@ Stated rather than left to be discovered:
   weaker kind than the three that corrected.
 - **No metronome, and one tempo for the whole piece.** Neither has been asked
   for by anything yet.
+- **The register tilt is a correction and not a model.** It makes the A-weighted
+  spread across the compass small; it does not make the synth sound like an
+  instrument, and it takes no account of how loudly anybody is playing it. If a
+  listener still finds one voice dominating after it, the next thing to add is a
+  **per-voice trim** rather than more bands — the imbalance a listener notices in
+  a fugue is nearly always one *voice*, and each voice keeps to a register.
 - **Two faults have been found by opening the page, and none by a test.** A
   clock that compiles and panics (7.4), and an audio stream that a stalled frame
   destroys permanently (6.4). Both are in the layer no test here reaches — the

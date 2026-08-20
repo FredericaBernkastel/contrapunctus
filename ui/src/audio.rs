@@ -23,7 +23,10 @@ use std::sync::{
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
-use crate::{schedule::Score, synth::Synth};
+use crate::{
+  schedule::Score,
+  synth::{Mix, Synth},
+};
 
 enum Cmd {
   Load(Arc<Score>),
@@ -35,8 +38,11 @@ pub struct Player {
   pos: Arc<AtomicU64>,
   playing: Arc<AtomicBool>,
   /// A bit per voice, set to silence it. An atomic rather than a command,
-  /// because a mute should take effect on the next buffer and never queue.
+  /// because a change to what is audible should take effect on the next buffer
+  /// and never queue behind one.
   mute: Arc<AtomicU32>,
+  /// The register tilt, as `f32` bits — same reasoning, same lifetime.
+  tilt: Arc<AtomicU32>,
   tx: Sender<Cmd>,
   /// Dropping this stops the sound, so it is held even though nothing reads it.
   _stream: cpal::Stream,
@@ -55,12 +61,22 @@ impl Player {
     let pos = Arc::new(AtomicU64::new(0));
     let playing = Arc::new(AtomicBool::new(false));
     let mute = Arc::new(AtomicU32::new(0));
+    let tilt = Arc::new(AtomicU32::new(Mix::default().tilt.to_bits()));
     let (tx, rx) = mpsc::channel::<Cmd>();
 
-    let stream = build(&device, &config, channels, pos.clone(), playing.clone(), mute.clone(), rx)?;
+    let engine = Engine {
+      synth: Synth::new(),
+      score: Arc::new(Score::default()),
+      rx,
+      pos: pos.clone(),
+      playing: playing.clone(),
+      mute: mute.clone(),
+      tilt: tilt.clone(),
+    };
+    let stream = build(&device, &config, channels, engine)?;
     stream.play().map_err(|e| format!("the stream would not start: {e}"))?;
 
-    Ok(Player { rate, pos, playing, mute, tx, _stream: stream })
+    Ok(Player { rate, pos, playing, mute, tilt, tx, _stream: stream })
   }
 
   pub fn rate(&self) -> u32 {
@@ -82,11 +98,14 @@ impl Player {
     self.playing.store(on, Ordering::Relaxed);
   }
 
-  /// Silence the voices whose bit is set. Nothing else about the piece changes,
-  /// so the playhead and the score still describe what is written rather than
-  /// what is audible — which is the point of listening to two voices of three.
-  pub fn set_mute(&self, mask: u32) {
-    self.mute.store(mask, Ordering::Relaxed);
+  /// What to silence and how to balance the register.
+  ///
+  /// Nothing here changes the piece, so the playhead and the score still
+  /// describe what is written rather than what is audible — which is the point
+  /// of listening to two voices of three.
+  pub fn set_mix(&self, mix: Mix) {
+    self.mute.store(mix.mute, Ordering::Relaxed);
+    self.tilt.store(mix.tilt.to_bits(), Ordering::Relaxed);
   }
 
   pub fn is_playing(&self) -> bool {
@@ -106,12 +125,8 @@ fn build(
   device: &cpal::Device,
   config: &cpal::SupportedStreamConfig,
   channels: usize,
-  pos: Arc<AtomicU64>,
-  playing: Arc<AtomicBool>,
-  mute: Arc<AtomicU32>,
-  rx: Receiver<Cmd>,
+  mut engine: Engine,
 ) -> Result<cpal::Stream, String> {
-  let mut engine = Engine { synth: Synth::new(), score: Arc::new(Score::default()), rx, pos, playing, mute };
   let cfg = config.config();
   let oops = |e| eprintln!("audio stream error: {e}");
 
@@ -170,6 +185,7 @@ struct Engine {
   pos: Arc<AtomicU64>,
   playing: Arc<AtomicBool>,
   mute: Arc<AtomicU32>,
+  tilt: Arc<AtomicU32>,
 }
 
 impl Engine {
@@ -200,7 +216,11 @@ impl Engine {
       data.fill(0.0);
       return;
     }
-    let next = self.synth.render(&self.score, at, data, channels, self.mute.load(Ordering::Relaxed));
+    let mix = Mix {
+      mute: self.mute.load(Ordering::Relaxed),
+      tilt: f32::from_bits(self.tilt.load(Ordering::Relaxed)),
+    };
+    let next = self.synth.render(&self.score, at, data, channels, mix);
     self.pos.store(next, Ordering::Relaxed);
   }
 }
