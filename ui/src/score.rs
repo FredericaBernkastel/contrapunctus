@@ -8,20 +8,25 @@
 //! argument that section makes for the lattice turns out to be the argument for
 //! it being drawable.
 //!
-//! Beamed, and by geometry rather than by a font: a beam is a thick line between
+//! Clefs come from an embedded SMuFL subset — `crate::glyph`, and
+//! `ui/assets/README.md` for where it came from. Beams are geometry rather than
+//! a font: a beam is a thick line between
 //! two stem ends, and the rules for where one goes are about beats and
 //! contiguity, both of which the tick lattice already answers exactly. Clef
 //! glyphs are the one thing here that would want a font, and the roadmap has
 //! them.
 
 use contrapunctus::kern::{Voice, TICKS_PER_WHOLE};
-use egui::{Align2, FontId, Pos2, Rect, Sense, Stroke, Ui, Vec2};
+use egui::{Pos2, Rect, Sense, Stroke, Ui, Vec2};
 
 use crate::theme;
 
 const HALF: f32 = 4.0; // half a staff space, so a step is one of these
 const STAFF: f32 = HALF * 8.0; // five lines span eight half-spaces
-const BETWEEN: f32 = 30.0; // room above and below for ledger lines
+// Room above and below the five lines. A G clef reaches 1.4 staff spaces above
+// the top line and 1.6 below the bottom one — further than any ledger line this
+// music needs — so it is the clef that sets this.
+const BETWEEN: f32 = 34.0;
 
 pub fn height(voices: usize) -> f32 {
   voices as f32 * (STAFF + BETWEEN) + 12.0
@@ -88,15 +93,19 @@ pub fn show(&self, ui: &mut Ui) -> Option<i64> {
       t += measure.max(1);
     }
 
-    // No clef glyph yet — the name of the bottom line instead, which is at least
-    // as useful to spec 1's beginner and needs no embedded font. The roadmap
-    // has the SMuFL subset that replaces this.
-    p.text(
-      Pos2::new(area.left() + 2.0, mid + STAFF / 2.0),
-      Align2::LEFT_CENTER,
-      note_name(centre - 4),
-      FontId::monospace(9.0),
-      ui.visuals().weak_text_color(),
+    // The clef, with its **baseline on the line it names** — the G line for
+    // treble, second from the bottom, and the F line for bass, second from the
+    // top. SMuFL puts each clef's origin there, so this is the definition of
+    // correct placement rather than an approximation of it.
+    let space = HALF * 2.0;
+    let names = if treble { mid + space } else { mid - space };
+    crate::glyph::clef(
+      &p,
+      if treble { crate::glyph::G_CLEF } else { crate::glyph::F_CLEF },
+      area.left() + 3.0,
+      names,
+      space,
+      ui.visuals().text_color(),
     );
 
     // Noteheads, ledger lines and accidentals: one note at a time, because none
@@ -351,12 +360,6 @@ fn accidental(p: &egui::Painter, at: Pos2, alter: i8, c: egui::Color32) {
 fn mean_step(v: &Voice) -> i16 {
   let n = v.notes.iter().filter(|n| n.attack).count().max(1);
   (v.notes.iter().filter(|n| n.attack).map(|n| n.pitch.step as i32).sum::<i32>() / n as i32) as i16
-}
-
-/// `E4` — the letter and the octave, from the diatonic step alone.
-fn note_name(step: i16) -> String {
-  const LETTER: [char; 7] = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
-  format!("{}{}", LETTER[step.rem_euclid(7) as usize], step.div_euclid(7))
 }
 
 #[cfg(test)]

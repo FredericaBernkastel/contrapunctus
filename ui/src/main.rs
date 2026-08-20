@@ -12,6 +12,7 @@ mod app;
 mod audio;
 mod catalog;
 mod files;
+mod glyph;
 mod report;
 mod schedule;
 mod score;
@@ -32,7 +33,10 @@ fn main() -> eframe::Result {
   eframe::run_native(
     "contrapunctus",
     options,
-    Box::new(|_cc| Ok(Box::<app::App>::default())),
+    Box::new(|cc| {
+      glyph::install(&cc.egui_ctx);
+      Ok(Box::<app::App>::default())
+    }),
   )
 }
 
@@ -57,7 +61,10 @@ fn main() {
       .expect("`workbench` is a canvas");
 
     let started = eframe::WebRunner::new()
-      .start(canvas, eframe::WebOptions::default(), Box::new(|_cc| Ok(Box::<app::App>::default())))
+      .start(canvas, eframe::WebOptions::default(), Box::new(|cc| {
+        glyph::install(&cc.egui_ctx);
+        Ok(Box::<app::App>::default())
+      }))
       .await;
 
     // Whatever happens, say so on the page rather than in a console nobody has

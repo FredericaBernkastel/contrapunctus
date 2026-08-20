@@ -985,8 +985,19 @@ mod tests {
   fn every_view_paints() {
     let mut app = App::default();
     assert!(!app.cat.subjects.is_empty(), "the embedded corpus supplied no subjects");
+    // With the clefs installed, so the score's real drawing path is the one that
+    // runs — `__run_test_ui` would install an empty font set instead.
+    let ctx = egui::Context::default();
+    crate::glyph::install(&ctx);
     for _ in 0..2 {
-      egui::__run_test_ui(|ui| app.draw(ui));
+      let mut once = Some(&mut app);
+      ctx
+        .run_ui(Default::default(), |ui| {
+          if let Some(app) = once.take() {
+            app.draw(ui);
+          }
+        })
+        .drop_without_applying_deltas();
     }
     assert!(app.out.is_some(), "the default settings did not produce a fugue: {:?}", app.refused);
   }

@@ -308,10 +308,28 @@ note the corpus is full of, rendered wrong. A test found it on the first run.
 
 Rendered with `egui::Painter` primitives: `line_segment` for staves, stems,
 beams and ledger lines; `circle_filled` scaled into an ellipse, or a small
-filled convex path, for noteheads. Accidentals and clefs are the only glyphs
-that want a font — either a SMuFL subset embedded with `egui::FontDefinitions`,
-or drawn as paths. **Embed the glyphs**; do not rely on a system music font,
-because there is not one on the web.
+filled convex path, for noteheads. Accidentals are drawn from line segments —
+three glyphs, and they are the only shapes here simple enough to be worth
+drawing rather than setting.
+
+**The clefs are a font, and the reason is the geometry rather than the drawing.**
+`ui/assets/clefs.otf` is two glyphs of Bravura, SMuFL's reference font: 15 kB of
+868, which costs the browser build 0.07 MB. SMuFL specifies that **one em is four
+staff spaces** and that **each clef's origin sits on the line it names**, so a
+clef drawn at a size of four staff spaces with its baseline on the G or F line is
+placed exactly right *by construction* — there is no constant in `glyph.rs` that
+anybody tuned by eye, which there certainly would have been had the outlines been
+drawn by hand. egui anchors a galley by its box rather than its baseline, and the
+two differ by the ascent, so the baseline is read off the laid-out glyph
+(`Glyph::pos`) rather than guessed at.
+
+Do not rely on a system music font: there is not one on the web. And note what
+the licence costs, because it is not nothing — Bravura is OFL 1.1 with **Reserved
+Font Name**, so the subset had to be renamed to be redistributable at all, and
+its licence travels with it. That is the argument against lifting the outlines
+into source instead: they would still be derived from the font, and the
+obligation would be far less visible sitting in a `.rs` file than beside a file
+plainly marked as a font.
 
 ### 5.2 Behaviour
 
@@ -875,6 +893,7 @@ Status is one of **done**, **partial** — usable and honestly incomplete — or
 | 4.2 | Asking for one block to be written again, and it surviving a save | `a_rerolled_block_survives_a_round_trip` |
 | 4.2 | Adding and removing a return, and the close, from the strip and the panel alike | `the_shapes_the_handles_can_reach_all_compose` |
 | 5.1 | Beams, by beat and by contiguity, with stubs and flags | `a_beam_stays_inside_its_beat`, `a_duration_wants_the_beams_it_should` |
+| 5.1 | Clefs, from a two-glyph SMuFL subset placed by its own geometry | `both_clefs_have_ink_in_them`, `a_clef_is_the_size_smufl_says` |
 | 3.2 | Importing a subject from a `**kern` file | `an_imported_subject_replaces_the_design` |
 | 5.2 | The score following the playhead while it plays | by inspection |
 
@@ -904,7 +923,6 @@ silence is, in samples.
 | 2 | 4.3 | A voice drag at all | there is no `Layout` field for it — see below |
 | 3 | 6.3 | System MIDI out, behind a feature | a `midir` dependency, and a device to try it on |
 | 4 | 3.3 | The compass as draggable ranges on a staff | nothing |
-| 5 | 5.1 | Clef glyphs from an embedded SMuFL subset | a font subset |
 
 **Item 2 needs saying properly, because 4.3 assumed something that is not
 there.** That section says a voice drag should ghost its knock-on rather than
@@ -919,10 +937,10 @@ decision. The row is honest about that now; it used to read as interface work.
 
 Stated rather than left to be discovered:
 
-- **The score has no clef glyphs.** Each staff is labelled with the note name of
-  its bottom line instead. The label is arguably better for section 1's beginner
-  and it needs no font; the glyphs want the SMuFL subset 5.1 describes. Beams are
-  drawn, and want no font at all.
+- **The score has no time signature and no key signature.** Both are drawn by
+  every other engraver and neither is drawn here; the font subset would need a
+  few more glyphs for the first, and the second is accidentals this program
+  already knows how to draw.
 - **The synth reads as chiptune.** That is a fair description of what was 
   built — three odd partials with
   a hard envelope, no filter, no decay, is close to what an FM chip does, and
