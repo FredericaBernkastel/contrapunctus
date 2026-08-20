@@ -39,8 +39,23 @@ parameter's real name in mono, so a beginner reads *How far it travels* and an
 expert reads `middles = [4, 5, 3]` underneath. Nobody is lied to and nobody
 learns a second layout.
 
+**Plain does not mean wrong, which took a correction to get right.** The subject
+was called *the tune* throughout the interface, on the grounds that a beginner
+knows what a tune is. But *subject* is the name for it, it is one word, it is no
+harder than *tune*, and the library has called it that all along — so the plain
+label was buying nothing and costing the reader the word they will meet
+everywhere else. It says **subject** now, and so does the strip: an entry's block
+reads *subject* where it read *theme*.
+
+The rule that came out of it: plain language is for **describing** a thing —
+*times the subject comes back*, *how far it travels* — and never for **renaming**
+one. A reader who learns *tune* here has to unlearn it; a reader who learns
+*subject* here can go and read about fugues. The tooltips are where the technical
+name of a *quantity* goes when the label describes it instead: the returns slider
+says middle entries, and what §8.15 measured of them.
+
 **The centrepiece is the plan strip, not the score.** Three lanes, one per voice,
-the theme drawn solid where it sounds and hatched where it is away, with the key
+the subject drawn solid where it sounds and hatched where it is away, with the key
 plan as a ribbon underneath. It teaches what a fugue *is* by being looked at, and
 it is the one view where a non-expert can make a judgement worth making. The
 score sits below it and is secondary.
@@ -69,7 +84,7 @@ score sits below it and is secondary.
 ┌──────────────────────────────────────────────────────────────────────┐
 │ Contrapunctus   [Simple|Advanced]        ▶ ■   Export ▾   Save  Open │
 ├───────────────┬──────────────────────────────────────────────────────┤
-│ THE TUNE      │  PLAN        ← the centrepiece, editable             │
+│ THE SUBJECT   │  PLAN        ← the centrepiece, editable             │
 │  staff        ├──────────────────────────────────────────────────────┤
 │  Choose…      │                                                      │
 │  Import…      │  SCORE       ← staves, playhead, follows the plan    │
@@ -91,9 +106,9 @@ draws and which columns the report shows.
 
 | control | plain label | library field |
 |---|---|---|
-| Subject picker | The tune | `Design::subject` |
+| Subject picker | The subject | `Design::subject` |
 | Voice count | How many voices | `Design::voices` |
-| Return count | Times the tune comes back | `Layout::middles.len()` |
+| Return count | Times the subject comes back | `Layout::middles.len()` |
 | Journey preset | How far it travels | `Layout::middles` |
 | Strictness | How strictly it follows the rules | `tier` |
 | Reroll | Try a different one | `seed` |
@@ -353,7 +368,7 @@ is looking. That is the reason to have both views rather than a preference
 between them.
 
 - Horizontal scroll locked to the plan strip, so the two views always agree.
-- Entry blocks tinted behind the notes in the voice colour, so the theme is
+- Entry blocks tinted behind the notes in the voice colour, so the subject is
   findable on the page without reading it.
 - Playhead follows audio position; clicking a bar seeks.
 - No editing. The score is an output.

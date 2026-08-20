@@ -742,7 +742,7 @@ impl App {
     // drawing — the same one the strip's edits go through.
     let mut from_panel: Option<strip::Edit> = None;
 
-    group(ui, "THE TUNE");
+    group(ui, "THE SUBJECT");
     let name = self
       .chosen
       .and_then(|i| self.cat.subjects.get(i))
@@ -832,9 +832,15 @@ impl App {
     });
 
     ui.add_space(8.0);
-    labelled(ui, "Times the tune comes back", "Layout::middles.len()");
+    labelled(ui, "Times the subject comes back", "Layout::middles.len()");
     let mut returns = self.layout.middles.len();
-    if ui.add(egui::Slider::new(&mut returns, 1..=6).show_value(true)).changed() {
+    if ui
+      .add(egui::Slider::new(&mut returns, 1..=6).show_value(true))
+      .on_hover_text(
+        "Statements of the subject after the exposition — middle entries, in the usual name for them.          §8.15 measured a median of three across the book, and a range of none to nine.",
+      )
+      .changed()
+    {
       resize(&mut self.layout.middles, returns);
       changed = true;
     }

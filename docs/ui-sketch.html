@@ -178,8 +178,14 @@ li b{color:var(--ink)}
   than rearranges. A plain-language label sits above the parameter's real name in mono, so a beginner reads
   <em>How far it travels</em> and an expert reads <code>middles = [4, 5, 3]</code> on the line underneath. Nobody
   is lied to and nobody has to learn a second layout.</p>
+  <p><b>Plain language describes a thing; it does not rename one.</b> The subject was called <em>the tune</em>
+  here at first, on the grounds that a beginner knows what a tune is. But <em>subject</em> is the name for it,
+  it is one word, it is no harder, and it is what every book about fugues will call it — so the plain label
+  was buying nothing and costing the reader the word they need next. <em>Times the subject comes back</em> is
+  plain about what a control does; <em>the tune</em> was plain about what a thing is called, which is not the
+  same and is not this interface&rsquo;s to decide.</p>
   <div class="notecard"><b>The centrepiece is the plan strip</b>, not the score. Three lanes, one per voice, with
-  the theme drawn solid where it sounds. It teaches what a fugue is by being looked at — you watch the tune move
+  the subject drawn solid where it sounds. It teaches what a fugue is by being looked at — you watch the subject move
   from voice to voice — and it is the one view where a non-expert can make a judgement worth making.</div>
 </section>
 
@@ -204,7 +210,7 @@ li b{color:var(--ink)}
       <div class="left">
 
         <div class="group">
-          <div class="grouphead">The tune</div>
+          <div class="grouphead">The subject</div>
           <svg viewBox="0 0 250 58" width="100%" height="58" aria-label="The subject on a staff">
             <g stroke="var(--rule)" stroke-width="1">
               <line x1="6" y1="14" x2="244" y2="14"/><line x1="6" y1="21" x2="244" y2="21"/>
@@ -247,7 +253,7 @@ li b{color:var(--ink)}
           </div>
 
           <div class="ctl">
-            <label>Times the tune comes back</label>
+            <label>Times the subject comes back</label>
             <div class="slider"><i style="width:42%"></i><b style="left:42%"></b></div>
             <div class="sub">middles.len() = 3 · Bach's median</div>
           </div>
@@ -277,7 +283,7 @@ li b{color:var(--ink)}
         <div class="pane">
           <div class="panehead">
             <h4>Plan</h4>
-            <span class="panenote">where the tune is, and where it is not — 27 bars</span>
+            <span class="panenote">where the subject is, and where it is not — 27 bars</span>
           </div>
           <svg viewBox="0 0 830 132" width="100%" height="132" aria-label="Plan: three voice lanes over 27 bars">
             <g font-family="IBM Plex Mono, monospace" font-size="8" fill="var(--ink3)">
@@ -301,8 +307,8 @@ li b{color:var(--ink)}
               <rect x="210" y="32" width="90" height="16" rx="2" fill="var(--v1-soft)" stroke="var(--v1)" stroke-dasharray="3 2"/>
               <rect x="450" y="32" width="60" height="16" rx="2" fill="var(--v1)"/>
               <rect x="660" y="32" width="90" height="16" rx="2" fill="var(--v1-soft)" stroke="var(--v1)" stroke-dasharray="3 2"/>
-              <text x="4" y="44" font-family="IBM Plex Sans" font-size="9" fill="#fff">theme</text>
-              <text x="454" y="44" font-family="IBM Plex Sans" font-size="9" fill="#fff">theme</text>
+              <text x="4" y="44" font-family="IBM Plex Sans" font-size="9" fill="#fff">subject</text>
+              <text x="454" y="44" font-family="IBM Plex Sans" font-size="9" fill="#fff">subject</text>
             </g>
             <!-- alto -->
             <g>
@@ -311,8 +317,8 @@ li b{color:var(--ink)}
               <rect x="510" y="64" width="90" height="16" rx="2" fill="var(--v2-soft)" stroke="var(--v2)" stroke-dasharray="3 2"/>
               <rect x="750" y="64" width="60" height="16" rx="2" fill="var(--v2)"/>
               <text x="64" y="76" font-family="IBM Plex Sans" font-size="9" fill="#fff">answer</text>
-              <text x="304" y="76" font-family="IBM Plex Sans" font-size="9" fill="#fff">theme</text>
-              <text x="754" y="76" font-family="IBM Plex Sans" font-size="9" fill="#fff">theme</text>
+              <text x="304" y="76" font-family="IBM Plex Sans" font-size="9" fill="#fff">subject</text>
+              <text x="754" y="76" font-family="IBM Plex Sans" font-size="9" fill="#fff">subject</text>
             </g>
             <!-- bass -->
             <g>
@@ -320,7 +326,7 @@ li b{color:var(--ink)}
               <rect x="150" y="96" width="60" height="16" rx="2" fill="var(--v3)"/>
               <rect x="360" y="96" width="90" height="16" rx="2" fill="var(--v3-soft)" stroke="var(--v3)" stroke-dasharray="3 2"/>
               <rect x="600" y="96" width="60" height="16" rx="2" fill="var(--v3)"/>
-              <text x="154" y="108" font-family="IBM Plex Sans" font-size="9" fill="#fff">theme</text>
+              <text x="154" y="108" font-family="IBM Plex Sans" font-size="9" fill="#fff">subject</text>
             </g>
 
             <!-- key ribbon -->
@@ -336,8 +342,8 @@ li b{color:var(--ink)}
             <line x1="322" y1="12" x2="322" y2="132" stroke="var(--bad)" stroke-width="1.5"/>
           </svg>
           <div class="legend" style="margin-top:8px">
-            <span><span class="sw" style="background:var(--v1)"></span>the tune, sounding</span>
-            <span><span class="sw" style="background:var(--v1-soft);border:1px dashed var(--v1)"></span>episode — the tune is away</span>
+            <span><span class="sw" style="background:var(--v1)"></span>the subject, sounding</span>
+            <span><span class="sw" style="background:var(--v1-soft);border:1px dashed var(--v1)"></span>episode — the subject is away</span>
             <span><span class="sw" style="background:var(--bad)"></span>playhead</span>
           </div>
         </div>
@@ -374,7 +380,7 @@ li b{color:var(--ink)}
               <ellipse cx="655" cy="19" rx="4.2" ry="3.1"/><ellipse cx="685" cy="22" rx="4.2" ry="3.1"/>
               <ellipse cx="715" cy="16" rx="4.2" ry="3.1"/><ellipse cx="745" cy="19" rx="4.2" ry="3.1"/>
             </g>
-            <!-- alto notes, highlighted: the theme is here -->
+            <!-- alto notes, highlighted: the subject is here -->
             <rect x="240" y="52" width="180" height="40" fill="var(--v2-soft)" rx="3"/>
             <g fill="var(--v2)">
               <ellipse cx="70" cy="72" rx="4.2" ry="3.1"/><ellipse cx="115" cy="69" rx="4.2" ry="3.1"/>
@@ -389,7 +395,7 @@ li b{color:var(--ink)}
               <ellipse cx="655" cy="69" rx="4.2" ry="3.1"/><ellipse cx="700" cy="72" rx="4.2" ry="3.1"/>
               <ellipse cx="745" cy="66" rx="4.2" ry="3.1"/><ellipse cx="790" cy="72" rx="4.2" ry="3.1"/>
             </g>
-            <text x="244" y="49" font-family="IBM Plex Sans" font-size="9" fill="var(--v2)">the theme, 5th entry</text>
+            <text x="244" y="49" font-family="IBM Plex Sans" font-size="9" fill="var(--v2)">the subject, 5th entry</text>
             <!-- bass notes -->
             <g fill="var(--v3)">
               <ellipse cx="70" cy="128" rx="4.2" ry="3.1"/><ellipse cx="130" cy="122" rx="4.2" ry="3.1"/>
@@ -407,7 +413,7 @@ li b{color:var(--ink)}
           <div class="panehead"><h4>How it turned out</h4></div>
           <div class="report">
             <div class="line"><span class="dot" style="background:var(--ok)"></span>
-              It is shaped like a fugue — the theme enters in all three voices, then travels and comes home.</div>
+              It is shaped like a fugue — the subject enters in all three voices, then travels and comes home.</div>
             <div class="line"><span class="dot" style="background:var(--ok)"></span>
               It keeps the rules of counterpoint. <span class="num">70 rough moments per thousand — Bach averages 112.</span></div>
             <div class="line"><span class="dot" style="background:var(--ok)"></span>
@@ -563,9 +569,9 @@ li b{color:var(--ink)}
   <table>
     <thead><tr><th>Control</th><th>Simple label</th><th>Library</th></tr></thead>
     <tbody>
-      <tr><td>Subject picker</td><td>The tune</td><td class="mono">Design::subject · kern::read + clip</td></tr>
+      <tr><td>Subject picker</td><td>The subject</td><td class="mono">Design::subject · kern::read + clip</td></tr>
       <tr><td>Voice count</td><td>How many voices</td><td class="mono">Design::voices</td></tr>
-      <tr><td>Return count</td><td>Times the tune comes back</td><td class="mono">Layout::middles.len()</td></tr>
+      <tr><td>Return count</td><td>Times the subject comes back</td><td class="mono">Layout::middles.len()</td></tr>
       <tr><td>Journey preset</td><td>How far it travels</td><td class="mono">Layout::middles</td></tr>
       <tr><td>Episode length</td><td>— <span class="sub">advanced</span></td><td class="mono">Layout::episode_bars</td></tr>
       <tr><td>Link</td><td>— <span class="sub">advanced</span></td><td class="mono">Layout::link</td></tr>

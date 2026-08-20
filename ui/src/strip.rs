@@ -1,8 +1,8 @@
 //! The plan strip — spec 4, and the centrepiece of the interface.
 //!
-//! One lane per voice, `x` proportional to tick, the theme drawn solid where it
+//! One lane per voice, `x` proportional to tick, the subject drawn solid where it
 //! sounds. The reason this and not the score is the centrepiece: it teaches what
-//! a fugue *is* by being looked at. You watch the tune move from voice to voice,
+//! a fugue *is* by being looked at. You watch the subject move from voice to voice,
 //! and that is the one judgement someone with no theory can make and be right
 //! about.
 //!
@@ -541,7 +541,7 @@ fn block_rect(b: &Block, v: usize, x_of: &impl Fn(i64) -> f32, lane_top: &impl F
 #[allow(clippy::too_many_arguments)]
 fn draw_block(p: &egui::Painter, ui: &Ui, b: &Block, v: usize, r: Rect, dark: bool, fading: bool, cold: bool) {
   let (label, solid) = match &b.kind {
-    Kind::Entry { tonal, .. } => (if *tonal { "answer" } else { "theme" }, true),
+    Kind::Entry { tonal, .. } => (if *tonal { "answer" } else { "subject" }, true),
     Kind::Episode { .. } => ("episode", false),
   };
   let c = theme::voice(v, dark);
@@ -608,9 +608,9 @@ fn middle_under(x: f32, d: &Design, l: &Layout, x_of: &impl Fn(i64) -> f32) -> O
 
 fn describe(b: &Block) -> String {
   match &b.kind {
-    Kind::Entry { tonal: true, .. } => "The answer — the tune, adjusted to fit the new key".into(),
-    Kind::Entry { .. } => "The theme".into(),
-    Kind::Episode { .. } => "An episode — the tune is away, and a fragment of it travels".into(),
+    Kind::Entry { tonal: true, .. } => "The answer — the subject, adjusted to fit the new key".into(),
+    Kind::Entry { .. } => "The subject".into(),
+    Kind::Episode { .. } => "An episode — the subject is away, and a fragment of it travels".into(),
   }
 }
 

@@ -2,7 +2,7 @@
 //!
 //! A voice keeps its colour everywhere it appears — the plan strip, the score's
 //! tint, the report. That is the whole of the visual system, and it is what lets
-//! spec 1's non-expert follow the theme from lane to lane without being told
+//! spec 1's non-expert follow the subject from lane to lane without being told
 //! what a voice is.
 
 use egui::Color32;

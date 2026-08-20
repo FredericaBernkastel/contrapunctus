@@ -1,4 +1,4 @@
-//! The subjects on offer — spec 3.2's *the tune*.
+//! The subjects on offer — spec 3.2's *the subject*.
 //!
 //! Read from `embedded::FUGUES`, which is the corpus compiled into the library,
 //! so this works in a browser with no network fetch and reports the same notes
