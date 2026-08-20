@@ -353,6 +353,14 @@ A score is a horizontal thing, so a vertical wheel moves along it; the horizonta
 delta counts too, for whoever has a trackpad that sends one. The scroll bar still
 drags, because taking that away would be taking something and giving nothing.
 
+**Where the zoom comes from is not a detail.** When a wheel event carries egui's
+zoom modifier, egui moves the wheel into `zoom_factor_delta` and leaves
+`smooth_scroll_delta` at zero — so an implementation that reads the scroll delta
+and the ctrl key separately has a zoom branch that can *never* run, while panning
+goes on working perfectly. That is what shipped, and what it looked like from
+outside was a zoom that did nothing. Read `InputState::zoom_delta` instead, which
+is the factor already, and which prefers a trackpad pinch when there is one.
+
 Zoom is **about the pointer**: the bar under it stays under it. Zooming about the
 left edge looks fine on the first notch and has thrown the reader across the page
 by the fourth, and keeping the point costs one ratio. `score::View` holds the two
@@ -928,7 +936,7 @@ Status is one of **done**, **partial** — usable and honestly incomplete — or
 | 4.2 | Adding and removing a return, and the close, from the strip and the panel alike | `the_shapes_the_handles_can_reach_all_compose` |
 | 5.1 | Beams, by beat and by contiguity, with stubs and flags | `a_beam_stays_inside_its_beat`, `a_duration_wants_the_beams_it_should` |
 | 5.1 | Clefs, from a two-glyph SMuFL subset placed by its own geometry | `both_clefs_have_ink_in_them`, `a_clef_is_the_size_smufl_says` |
-| 5.2 | Wheel to pan and ctrl-wheel to zoom the score, about the pointer, with the strip shading what is off the page | `a_bar_under_the_pointer_stays_under_it`, `the_view_stays_inside_the_piece` |
+| 5.2 | Wheel to pan and ctrl-wheel to zoom the score, about the pointer, with the strip shading what is off the page | `a_bar_under_the_pointer_stays_under_it`, `the_wheel_pans_and_ctrl_and_the_wheel_zooms` |
 | 3.2 | Importing a subject from a `**kern` file | `an_imported_subject_replaces_the_design` |
 | 5.2 | The score following the playhead while it plays | by inspection |
 
@@ -1032,10 +1040,14 @@ Stated rather than left to be discovered:
   the price of a settings file that reproduces. The bars after an edit are not
   faded while it happens; at three voices it is over before anything could be
   seen, and at five it will not be.
-- **Six faults have now been found by somebody using this, and none by a test.**
+- **Seven faults have now been found by somebody using this, and none by a test.**
   Four listening reports, a clock that compiles and panics, an audio stream a
   stalled frame destroys, and a settings file that did not reproduce what it
   recorded. Every one was in something the tests were not pointed at — the ear,
   the browser, the sound card, and the difference between a piece and its
-  history. The pattern is worth naming: the tests here check what the program
-  computes, and each of these was about what the program *is for*.
+  history, and a zoom that read the wrong input channel. The pattern is worth
+  naming: the tests here check what the program *computes*, and every one of
+  these was in what the program *does* — the ear, the browser, the sound card,
+  the difference between a piece and its history, and the wheel. The zoom is the
+  sharpest case, because its arithmetic had four tests and all four passed: they
+  covered the half that was right.

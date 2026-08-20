@@ -85,6 +85,9 @@ pub struct App {
   /// *pan* over this view and a scroll area would spend it going nowhere
   /// vertically.
   view: score::View,
+  /// Where the score was drawn, which is what a wheel has to be over to mean
+  /// anything. Kept because a test cannot aim at a rectangle it cannot see.
+  page: Option<egui::Rect>,
   /// What part of the piece the score is showing, as fractions — the plan strip
   /// draws it, so that zooming in does not lose the reader.
   seen: Option<(f32, f32)>,
@@ -124,6 +127,7 @@ impl Default for App {
       no_sound: None,
       mix: Mix::default(),
       view: score::View::default(),
+      page: None,
       seen: None,
       sound: None,
     }
@@ -666,6 +670,7 @@ impl App {
       // over is what the drawing returns. One frame of lag, and scrolling
       // repaints anyway.
       viewport = Some((scrolled.inner_rect, content, window, bars));
+      self.page = Some(scrolled.inner_rect);
       // For the strip, next frame: it is drawn above this and cannot know yet.
       self.seen = Some((self.view.look / content.max(1.0), (self.view.look + window) / content.max(1.0)));
 
@@ -694,25 +699,30 @@ impl App {
     // The plan strip fits the whole piece by design and has nothing to zoom to,
     // so the wheel there is left to the page.
     //
-    // Read after the view is drawn because the rect it must be over is what the
-    // drawing returns. That is a frame of lag on a gesture that repaints
-    // continuously, which is to say none that can be seen.
+    // Read after the view is drawn, because the rectangle the pointer must be
+    // over is what the drawing returns — but in the same frame, so there is no
+    // lag in it.
+    //
+    // **The zoom comes from `zoom_delta` and not from the scroll delta**, which
+    // is not a preference. When a wheel event carries egui's zoom modifier, egui
+    // puts the wheel into `zoom_factor_delta` and leaves `smooth_scroll_delta`
+    // at zero — so reading the scroll and the ctrl key separately, as this did
+    // at first, gives a zoom branch that can never run while panning goes on
+    // working. It also means a trackpad pinch arrives here for nothing, since
+    // `zoom_delta` prefers a touch gesture when there is one.
     if let Some((rect, _content, window, bars)) = viewport {
-      let (scroll, zooming, at) = ui.input(|i| {
-        (i.smooth_scroll_delta, i.modifiers.command || i.modifiers.ctrl, i.pointer.hover_pos())
-      });
-      let over = at.is_some_and(|p| rect.contains(p));
-      if over && scroll != egui::Vec2::ZERO {
-        if zooming {
-          let px = at.map_or(rect.width() * 0.5, |p| p.x - rect.left());
-          self.view.zoom_about(px, (scroll.y * 0.004).exp(), bars, window);
-        } else {
+      let (scroll, zoom, at) = ui.input(|i| (i.smooth_scroll_delta, i.zoom_delta(), i.pointer.hover_pos()));
+      if let Some(p) = at.filter(|p| rect.contains(*p)) {
+        if zoom != 1.0 {
+          self.view.zoom_about(p.x - rect.left(), zoom, bars, window);
+          ui.ctx().request_repaint();
+        } else if scroll != egui::Vec2::ZERO {
           // A score is a horizontal thing, so a vertical wheel moves along it.
           // The horizontal delta counts too, for whoever has a wheel or a
           // trackpad that sends one.
           self.view.pan(-scroll.y - scroll.x, bars, window);
+          ui.ctx().request_repaint();
         }
-        ui.ctx().request_repaint();
       }
     }
 
@@ -1214,6 +1224,86 @@ mod tests {
       assert!(out.bars > 0, "{what} came out empty");
       assert!(!out.blocks.is_empty(), "{what} has no blocks");
     }
+  }
+
+  /// **The wheel reaches the score, with ctrl and without it.**
+  ///
+  /// This is the layer the arithmetic tests do not cover, and it is where the
+  /// bug was: `score::View` was right all along and got no wheel to act on.
+  /// egui moves a ctrl-modified wheel into `zoom_factor_delta` and leaves
+  /// `smooth_scroll_delta` at zero, so reading the scroll and the ctrl key
+  /// separately gave a zoom branch that could never run. Panning worked, which
+  /// is what made it look like a zoom problem rather than an input one.
+  ///
+  /// Synthetic events through the real path, because the mistake was in the
+  /// path.
+  #[test]
+  fn the_wheel_pans_and_ctrl_and_the_wheel_zooms() {
+    use egui::{Event, Modifiers, MouseWheelUnit, Pos2, TouchPhase, Vec2};
+
+    let ctx = egui::Context::default();
+    crate::glyph::install(&ctx);
+    let mut app = App::default();
+
+    let screen = egui::Rect::from_min_size(Pos2::ZERO, egui::vec2(1200.0, 900.0));
+    // **The clock has to move.** egui smooths the wheel by the frame time, and
+    // at a `dt` of nought the smoothing applies nought — a synthetic frame that
+    // never advances receives every event and acts on none of them.
+    let clock = std::cell::Cell::new(1.0f64);
+    let frame = |app: &mut App, events: Vec<Event>| {
+      clock.set(clock.get() + 1.0 / 60.0);
+      let input =
+        egui::RawInput { screen_rect: Some(screen), time: Some(clock.get()), events, ..Default::default() };
+      let mut once = Some(app);
+      ctx
+        .run_ui(input, |ui| {
+          if let Some(app) = once.take() {
+            app.draw(ui);
+          }
+        })
+        .drop_without_applying_deltas();
+    };
+    // The modifiers that matter travel on the wheel event itself: egui decides
+    // whether a wheel is a zoom from `wheel.modifiers`, not from the frame's.
+    let wheel = |at: Pos2, dy: f32, modifiers: Modifiers| {
+      vec![
+        Event::PointerMoved(at),
+        Event::MouseWheel {
+          unit: MouseWheelUnit::Point,
+          delta: Vec2::new(0.0, dy),
+          phase: TouchPhase::Move,
+          modifiers,
+        },
+      ]
+    };
+
+    // one frame to lay out and find the score
+    frame(&mut app, vec![]);
+    let page = app.page.expect("the score was drawn");
+    assert!(page.width() > 100.0, "the score came out {page:?}");
+    let at = page.center();
+
+    // zoom in far enough that there is somewhere to pan to
+    // `Modifiers::COMMAND` is what egui matches its zoom modifier against.
+    let ctrl = Modifiers::COMMAND;
+    let was = app.view.zoom;
+    for _ in 0..8 {
+      frame(&mut app, wheel(at, 40.0, ctrl));
+    }
+    assert!(app.view.zoom > was, "ctrl and the wheel did not zoom: {was} is still {}", app.view.zoom);
+
+    // and the plain wheel moves along the piece
+    let look = app.view.look;
+    for _ in 0..8 {
+      frame(&mut app, wheel(at, -40.0, Modifiers::default()));
+    }
+    assert!(app.view.look > look, "the wheel did not pan: {look} is still {}", app.view.look);
+
+    // a wheel that is nowhere near the score changes nothing
+    let (zoom, look) = (app.view.zoom, app.view.look);
+    frame(&mut app, wheel(Pos2::new(20.0, 20.0), 60.0, ctrl));
+    assert_eq!(app.view.zoom, zoom, "a wheel over the side panel zoomed the score");
+    assert_eq!(app.view.look, look, "a wheel over the side panel panned the score");
   }
 
   /// Whatever happens, an edit either applies or leaves nothing behind.
