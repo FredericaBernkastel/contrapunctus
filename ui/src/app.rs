@@ -497,8 +497,9 @@ impl App {
       files::export_midi(out, &self.design, self.qpm, self.saving.clone());
     }
 
+    let mut panelled = None;
     egui::Panel::left("controls").default_size(288.0).show(ui, |ui| {
-      egui::ScrollArea::vertical().show(ui, |ui| self.controls(ui));
+      panelled = egui::ScrollArea::vertical().show(ui, |ui| self.controls(ui)).inner;
     });
 
     let mut edit = None;
@@ -625,7 +626,7 @@ impl App {
 
     // Applied after the panel, not inside it: the panel holds a borrow of the
     // outcome it is drawing, and an edit replaces that outcome.
-    if let Some(e) = edit {
+    if let Some(e) = edit.or(panelled) {
       self.apply(e);
       self.resound();
     }
@@ -643,8 +644,11 @@ impl App {
 }
 
 impl App {
-  fn controls(&mut self, ui: &mut Ui) {
+  fn controls(&mut self, ui: &mut Ui) -> Option<strip::Edit> {
     let mut changed = false;
+    // An edit the panel asked for, applied by the caller once the panel is done
+    // drawing — the same one the strip's edits go through.
+    let mut from_panel: Option<strip::Edit> = None;
 
     group(ui, "THE TUNE");
     let name = self
@@ -819,38 +823,38 @@ impl App {
         );
       }
 
-      if ui.checkbox(&mut self.layout.close_at_home, "Close at home").changed() {
-        changed = true;
+      let mut close = self.layout.close_at_home;
+      if ui.checkbox(&mut close, "Close at home").changed() {
+        from_panel = Some(strip::Edit::CloseAtHome(close));
       }
 
       ui.add_space(12.0);
+      // The same three edits the plan strip offers, and **through the same
+      // path**: `apply` takes them and the piece changes at once. They used to
+      // set the layout directly and wait for Compose, which meant taking a
+      // return out here and taking one out there did visibly different things.
       group(ui, "MIDDLES");
-      let mut remove = None;
       for i in 0..self.layout.middles.len() {
         ui.horizontal(|ui| {
           ui.label(RichText::new(format!("{}.", i + 1)).monospace().weak());
+          let mut deg = self.layout.middles[i];
           egui::ComboBox::from_id_salt(("deg", i))
             .width(96.0)
-            .selected_text(catalog::degree_name(self.layout.middles[i]))
+            .selected_text(catalog::degree_name(deg))
             .show_ui(ui, |ui| {
               for d in 0..7i16 {
-                if ui.selectable_value(&mut self.layout.middles[i], d, catalog::degree_name(d)).changed() {
-                  changed = true;
+                if ui.selectable_value(&mut deg, d, catalog::degree_name(d)).clicked() {
+                  from_panel = Some(strip::Edit::Key(i, d));
                 }
               }
             });
-          if ui.small_button("✕").clicked() && self.layout.middles.len() > 1 {
-            remove = Some(i);
+          if ui.small_button("✕").on_hover_text("Take this return out").clicked() {
+            from_panel = Some(strip::Edit::RemoveMiddle(i));
           }
         });
       }
-      if let Some(i) = remove {
-        self.layout.middles.remove(i);
-        changed = true;
-      }
       if ui.small_button("＋ add a return").clicked() {
-        self.layout.middles.push(4);
-        changed = true;
+        from_panel = Some(strip::Edit::AddMiddle { at: self.layout.middles.len(), degree: 4 });
       }
 
       ui.add_space(12.0);
@@ -903,6 +907,7 @@ impl App {
           .small(),
       );
     }
+    from_panel
   }
 }
 
@@ -921,6 +926,13 @@ fn describe_edit(e: strip::Edit, l: &Layout) -> String {
       let n = l.rerolls.iter().find(|(k, _)| *k == id).map_or(0, |(_, n)| *n);
       format!("those bars written again (draw {})", n + 1)
     }
+    strip::Edit::AddMiddle { at, .. } => format!("a return added at {} — now {}", at + 1, order()),
+    strip::Edit::RemoveMiddle(_) => match l.middles.len() {
+      0 => "no returns at all, which §8.15 found in the book too".to_string(),
+      _ => format!("a return taken out — now {}", order()),
+    },
+    strip::Edit::CloseAtHome(true) => "closing at home".to_string(),
+    strip::Edit::CloseAtHome(false) => "stopping after the last return".to_string(),
   }
 }
 
@@ -1030,6 +1042,9 @@ mod tests {
     let mut edits: Vec<strip::Edit> = vec![strip::Edit::MoveMiddle(0, 2), strip::Edit::MoveMiddle(2, 0)];
     edits.extend((0..l0.middles.len()).flat_map(|k| (0..7i16).map(move |d| strip::Edit::Key(k, d))));
     edits.extend((0..start.blocks.len()).map(|b| strip::Edit::Reroll { block: b, id: ids[b] }));
+    edits.extend((0..=l0.middles.len()).map(|at| strip::Edit::AddMiddle { at, degree: 4 }));
+    edits.extend((0..l0.middles.len()).map(strip::Edit::RemoveMiddle));
+    edits.push(strip::Edit::CloseAtHome(false));
 
     for e in edits {
       let mut probe = probe_from(&start, &l0);
@@ -1065,6 +1080,31 @@ mod tests {
       }
     }
     assert!(tried > 20, "only {tried} edits actually applied, so this proves little");
+  }
+
+  /// **A piece with no returns, and a piece that does not close at home.**
+  ///
+  /// The handle row can reach both, so both have to be shapes the generator
+  /// accepts rather than states an interface can get stuck in. §8.15 measured a
+  /// range of nought to nine returns across the book, so an empty journey is
+  /// something the book has; a fugue that stops after its last return is not,
+  /// and it is offered anyway because 4.2 lists the close as a parameter and a
+  /// parameter with one legal value is not one.
+  #[test]
+  fn the_shapes_the_handles_can_reach_all_compose() {
+    let d = catalog::load().subjects[1].design(3);
+    let shapes = [
+      ("no returns", Layout { middles: vec![], ..Layout::default() }),
+      ("no close", Layout { close_at_home: false, ..Layout::default() }),
+      ("neither", Layout { middles: vec![], close_at_home: false, ..Layout::default() }),
+      ("nine returns", Layout { middles: vec![4, 5, 3, 1, 6, 2, 4, 5, 3], ..Layout::default() }),
+    ];
+    for (what, l) in shapes {
+      let out = compose::fugue(&d, &l, Tier::Full.rules(), 0x5EED)
+        .unwrap_or_else(|e| panic!("{what} did not compose: {e}"));
+      assert!(out.bars > 0, "{what} came out empty");
+      assert!(!out.blocks.is_empty(), "{what} has no blocks");
+    }
   }
 
   /// Whatever happens, an edit either applies or leaves nothing behind.

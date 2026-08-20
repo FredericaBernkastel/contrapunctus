@@ -157,8 +157,24 @@ nothing else is a parameter.
 | click a return, and choose a degree | where that return goes | `middles[k]` |
 | drag an episode's **right edge** | lengthen or shorten every episode | `episode_bars` |
 | drag the exposition link's edge | its length, or off at zero | `link` |
-| toggle the final block | close at home or stop after the last middle | `close_at_home` |
+| click a **+** in the handle row | add a return there, at the dominant | `middles` grown |
+| a return's menu, *take this return out* | remove it | `middles` shortened |
+| the closing block's menu, or the **+ close** handle | close at home, or stop after the last return | `close_at_home` |
 | click a block, and choose *write these bars again* | refill just that block with a new draw | `rerolls`, keyed on the block's identity |
+
+**Both directions are always on screen, which is what took a second attempt.**
+Adding and removing a return were first tried as gestures on the blocks
+themselves, and came out **one-way**: click the final block to stop closing at
+home and the block you clicked is gone, with nothing left to click to bring it
+back. A gesture whose undo lives somewhere else is worse than a checkbox. The
+answer was not a better gesture but a **row of handles** under the key ribbon —
+a `+` at each place a return could go, and one more at the end for the close when
+it is off — so whichever state the plan is in, the way out of it is visible.
+
+The same three edits are in the Advanced panel, and **they go through the same
+path**: they apply at once rather than waiting for Compose. They used to set the
+layout directly, which meant taking a return out in the panel and taking one out
+on the strip did visibly different things.
 
 **Every block's menu opens on either mouse button.** Which one a person reaches
 for is a habit rather than a decision, there is nothing here for the two to mean
@@ -842,7 +858,8 @@ Status is one of **done**, **partial** — usable and honestly incomplete — or
 | 4.2 | Dragging an episode's edge, the link's edge, and the order of the returns | `an_edit_preserves_the_span_exactly_when_derive_says_it_does` |
 | 4.2 | A live preview of the plan a drag would commit to, with what moves drawn faded | `the_preview_and_the_commit_are_the_same_function` |
 | 3.2 | Choosing which voice of an imported file is the subject | `an_imported_subject_replaces_the_design` |
-| 4.2 | Asking for one block to be written again, and it surviving a save | `a_reroll_rewrites_one_block_and_no_others`, `a_rerolled_block_survives_a_round_trip` |
+| 4.2 | Asking for one block to be written again, and it surviving a save | `a_rerolled_block_survives_a_round_trip` |
+| 4.2 | Adding and removing a return, and the close, from the strip and the panel alike | `the_shapes_the_handles_can_reach_all_compose` |
 | 3.2 | Importing a subject from a `**kern` file | `an_imported_subject_replaces_the_design` |
 | 5.2 | The score following the playhead while it plays | by inspection |
 
@@ -869,13 +886,13 @@ silence is, in samples.
 | # | section | what | blocked on |
 |---|---|---|---|
 | 1 | 7.3 | Generating in a worker, so the sound survives the work | a worker build; 6.4 is the workaround until then |
-| 2 | 4.2 | Adding and removing a return from the strip, and toggling the close | a way to do it that is not one-way — see 12.3 |
-| 3 | 4.3 | A voice drag at all | there is no `Layout` field for it — see below |
-| 4 | 6.3 | System MIDI out, behind a feature | a `midir` dependency, and a device to try it on |
-| 5 | 3.3 | The compass as draggable ranges on a staff | nothing |
-| 6 | 5.1 | Beams, and clef glyphs from an embedded SMuFL subset | a font subset |
+| 2 | 4.3 | A voice drag at all | there is no `Layout` field for it — see below |
+| 3 | 6.3 | System MIDI out, behind a feature | a `midir` dependency, and a device to try it on |
+| 4 | 3.3 | The compass as draggable ranges on a staff | nothing |
+| 5 | 5.1 | Beams | nothing; they are geometry, and want no font |
+| 6 | 5.1 | Clef glyphs from an embedded SMuFL subset | a font subset |
 
-**Item 3 needs saying properly, because 4.3 assumed something that is not
+**Item 2 needs saying properly, because 4.3 assumed something that is not
 there.** That section says a voice drag should ghost its knock-on rather than
 fake independence — but there is nothing to drag. `derive` assigns every voice
 by a chain from the first entry, and `Layout` has no field that changes it, so a
@@ -943,12 +960,6 @@ Stated rather than left to be discovered:
   get cramped and that is a different problem from this one.
 - **Nothing is persisted between runs.** 8.4's interface state wants `eframe`'s
   persistence feature, which is not enabled. The *music* is persisted, through 8.
-- **Adding and removing a return, and the close, are panel controls only.** Both
-  were tried as strip gestures and both come out **one-way**: clicking the final
-  block to turn the close off removes the block there was to click, and there is
-  then nothing to click to bring it back. A gesture whose undo is somewhere else
-  is worse than a checkbox, so they stayed checkboxes. Item 2 is a way to do it
-  that is not one-way, not the gesture itself.
 - **An edit rewrites everything after it**, which is 4.2's withdrawn claim and
   the price of a settings file that reproduces. The bars after an edit are not
   faded while it happens; at three voices it is over before anything could be

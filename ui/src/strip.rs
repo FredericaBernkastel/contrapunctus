@@ -45,11 +45,13 @@ const LANE: f32 = 38.0;
 const GAP: f32 = 4.0;
 const RIBBON: f32 = 18.0;
 const RULER: f32 = 16.0;
+/// The row of handles that add a return, remove one, and close the piece.
+const HANDLES: f32 = 17.0;
 /// How near an episode's right edge the pointer must be to take hold of it.
 const GRIP: f32 = 7.0;
 
 pub fn height(voices: usize) -> f32 {
-  RULER + voices as f32 * (LANE + GAP) + RIBBON + 6.0
+  RULER + voices as f32 * (LANE + GAP) + RIBBON + HANDLES + 6.0
 }
 
 /// What a gesture asks for. Every variant is a `Layout` field, because nothing
@@ -64,6 +66,12 @@ pub enum Edit {
   LinkBars(i64),
   /// The return at `from` moves to `to`.
   MoveMiddle(usize, usize),
+  /// A return is inserted at this position, carrying this degree.
+  AddMiddle { at: usize, degree: i16 },
+  /// The return at this position goes.
+  RemoveMiddle(usize),
+  /// Whether the piece closes with an episode and an entry at home.
+  CloseAtHome(bool),
   /// This block is written again — 4.2's per-block reroll. `id` is what
   /// `Layout::rerolls` is keyed on and `block` is where it is now.
   Reroll { block: usize, id: u64 },
@@ -91,7 +99,13 @@ impl Edit {
         owns(lo).zip(owns(hi)).map(|((a, _), (_, b))| a..=b)
       }
       Edit::Reroll { block, .. } => Some(block..=block),
-      Edit::EpisodeBars(_) | Edit::LinkBars(_) => None,
+      // All of these change how many blocks there are, so every bar after them
+      // moves and there is nothing local about it.
+      Edit::EpisodeBars(_)
+      | Edit::LinkBars(_)
+      | Edit::AddMiddle { .. }
+      | Edit::RemoveMiddle(_)
+      | Edit::CloseAtHome(_) => None,
     }
   }
 
@@ -118,6 +132,15 @@ impl Edit {
         Some((_, n)) => *n = n.wrapping_add(1),
         None => out.rerolls.push((id, 1)),
       },
+      Edit::AddMiddle { at, degree } => out.middles.insert(at.min(out.middles.len()), degree),
+      Edit::RemoveMiddle(k) => {
+        if k < out.middles.len() {
+          out.middles.remove(k);
+        }
+      }
+      // §8.15 found a range of nought to nine returns across the book, so an
+      // empty journey is a shape the book has and not a degenerate case.
+      Edit::CloseAtHome(on) => out.close_at_home = on,
     }
     out
   }
@@ -240,6 +263,10 @@ impl Strip<'_> {
               asked.edit = Some(Edit::Reroll { block: i, id: ids[i] });
               ui.close();
             }
+            if ui.button("take this return out").clicked() {
+              asked.edit = Some(Edit::RemoveMiddle(k));
+              ui.close();
+            }
           });
         }
       } else {
@@ -266,9 +293,16 @@ impl Strip<'_> {
             );
           }
         });
+        let closing = of == Some(Origin::Close);
         opened(&h).show(|ui| {
           if ui.button("write these bars again").clicked() {
             asked.edit = Some(Edit::Reroll { block: i, id: ids[i] });
+            ui.close();
+          }
+          // The other half of the handle at the end of the row: whichever state
+          // the close is in, the way out of it is on screen.
+          if closing && ui.button("stop after the last return").clicked() {
+            asked.edit = Some(Edit::CloseAtHome(false));
             ui.close();
           }
         });
@@ -317,7 +351,7 @@ impl Strip<'_> {
 
     // The key ribbon, adjacent equal degrees merged — otherwise a plan that
     // stays in one key for four blocks reads as four decisions instead of one.
-    let ribbon = area.bottom() - RIBBON;
+    let ribbon = area.bottom() - RIBBON - HANDLES;
     for (from, to, deg) in runs(&showing) {
       let r = Rect::from_min_max(
         Pos2::new(x_of(from) + 1.0, ribbon),
@@ -334,6 +368,75 @@ impl Strip<'_> {
       }
     }
 
+    // ---- the handles: a return added, a return removed, the close toggled
+    //
+    // These are the edits 4.2 wanted as gestures on the blocks themselves, and
+    // as gestures they came out **one-way**: clicking the final block to stop
+    // closing at home removes the block that was clicked, leaving nothing to
+    // click to bring it back. A row of insertion points has both directions
+    // present at once, which is the property that was missing rather than the
+    // gesture.
+    let handles = area.bottom() - HANDLES;
+    let mid_y = handles + HANDLES / 2.0 - 1.0;
+    let owned: Vec<(f32, f32)> = (0..self.layout.middles.len())
+      .filter_map(|k| {
+        let own = compose::blocks_of_middle(self.design, self.layout, k);
+        let (f, t) = (own.first().copied()?, own.last().copied()?);
+        let (a, b) = (showing.get(f)?, showing.get(t)?);
+        Some((x_of(a.at), x_of(b.at + b.len)))
+      })
+      .collect();
+
+    // One handle before each return and one after the last, so a journey of
+    // three offers four places to put a fourth.
+    let mut spots: Vec<(usize, f32)> = owned.iter().enumerate().map(|(k, (a, _))| (k, *a)).collect();
+    if let Some((_, b)) = owned.last() {
+      spots.push((owned.len(), *b));
+    } else {
+      // no returns at all: one handle, in the middle of what there is
+      spots.push((0, area.center().x));
+    }
+
+    for (k, x) in spots {
+      let r = Rect::from_center_size(Pos2::new(x, mid_y), Vec2::splat(HANDLES - 3.0));
+      let h = ui.interact(r, ui.id().with(("add", k)), Sense::click());
+      let lit = h.hovered();
+      p.circle_filled(r.center(), r.width() / 2.0, if lit { theme::wash(0, dark, 200) } else { faint.gamma_multiply(0.25) });
+      p.text(
+        r.center(),
+        Align2::CENTER_CENTER,
+        "+",
+        FontId::proportional(12.0),
+        if lit { ui.visuals().panel_fill } else { ui.visuals().text_color() },
+      );
+      h.on_hover_text(format!("Add a return here — it would be the {} of {}", k + 1, self.layout.middles.len() + 1));
+      if ui.ctx().read_response(ui.id().with(("add", k))).is_some_and(|r| r.clicked()) {
+        // The dominant, because it is what the book returns to most and what
+        // the returns slider already adds when it grows.
+        asked.edit = Some(Edit::AddMiddle { at: k, degree: 4 });
+      }
+    }
+
+    // And the close, which is the other direction of the same problem: when it
+    // is on, its own blocks offer to remove it; when it is off, there is a
+    // handle at the end offering to put it back.
+    if !self.layout.close_at_home {
+      let r = Rect::from_center_size(Pos2::new(area.right() - HANDLES, mid_y), Vec2::new(HANDLES * 3.4, HANDLES - 3.0));
+      let h = ui.interact(r, ui.id().with("close"), Sense::click());
+      let lit = h.hovered();
+      p.rect_filled(r, CornerRadius::same(3), if lit { theme::wash(0, dark, 200) } else { faint.gamma_multiply(0.2) });
+      p.text(
+        r.center(),
+        Align2::CENTER_CENTER,
+        "+ close",
+        FontId::proportional(10.0),
+        if lit { ui.visuals().panel_fill } else { ui.visuals().text_color() },
+      );
+      if h.on_hover_text("End with an episode and a last entry at home, which §8.15 found in 22 fugues of 22.").clicked() {
+        asked.edit = Some(Edit::CloseAtHome(true));
+      }
+    }
+
     // What the drag would do, said in words as well as drawn. A picture of a
     // plan is not much use to someone who does not yet know what a plan is.
     if let Some((e, l)) = &proposed {
@@ -347,8 +450,12 @@ impl Strip<'_> {
         Edit::MoveMiddle(..) => {
           format!("{} — {bars} bars in all", l.middles.iter().map(|d| degree_name(*d)).collect::<Vec<_>>().join(" · "))
         }
-        // Neither is ever dragged, so neither is ever previewed.
-        Edit::Key(..) | Edit::Reroll { .. } => String::new(),
+        // None of these is ever dragged, so none is ever previewed.
+        Edit::Key(..)
+        | Edit::Reroll { .. }
+        | Edit::AddMiddle { .. }
+        | Edit::RemoveMiddle(_)
+        | Edit::CloseAtHome(_) => String::new(),
       };
       let at = Pos2::new(area.left() + 6.0, area.bottom() - RIBBON - 6.0);
       let r = p.text(at, Align2::LEFT_BOTTOM, &said, FontId::proportional(11.0), ui.visuals().strong_text_color());
@@ -540,6 +647,11 @@ mod tests {
       Edit::LinkBars(3),
       Edit::LinkBars(0),
       Edit::Reroll { block: 4, id: 12345 },
+      Edit::AddMiddle { at: 0, degree: 4 },
+      Edit::AddMiddle { at: 3, degree: 1 },
+      Edit::RemoveMiddle(0),
+      Edit::RemoveMiddle(2),
+      Edit::CloseAtHome(false),
     ];
     for e in cases {
       let l = e.applied(&base_layout);
