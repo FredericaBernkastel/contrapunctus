@@ -2676,6 +2676,12 @@ The seed is keyed on **what a block is** — its kind, voice, key and length —
 one block does not reseed the others. The index-keyed seed it replaced would have redrawn the whole piece under any
 edit that changed the block list.
 
+That key is [`compose::identities`](src/compose.rs), and it is also how a caller asks for **one block again**.
+`Layout::rerolls` nudges a named block’s seed and leaves every other seed alone, so *write those bars again* is one
+block’s worth of search rather than a new fugue. It lives in the layout rather than beside the seed because it is a
+parameter of the piece: a settings file that omitted it would come back a different fugue, and `docs/ui-spec.md`
+section 8 promises it will not.
+
 **What this does not solve is five voices.** Refilling reduces how many blocks are searched; it does not make one
 searchable. A block with four or five free voices is past [§2.7](#27-where-a-solver-takes-over-from-the-dp)'s wall,
 and that is the solver in [§9](#9-roadmap). The two fit together well — a CDCL solver is natively incremental, so

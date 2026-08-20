@@ -114,17 +114,40 @@ fn ident(b: &Block, nth: usize) -> u64 {
   h
 }
 
-/// Per-block seeds, stable under insertion elsewhere in the piece.
-pub fn seeds(blocks: &[Block], base: u64) -> Vec<u64> {
+/// Each block's identity, one per block, in order.
+///
+/// The key a caller names a block by when it wants *that* block written again.
+/// An index would not do: it moves when anything before it is inserted, and an
+/// editor's whole business is inserting things.
+pub fn identities(blocks: &[Block]) -> Vec<u64> {
   let mut seen: std::collections::HashMap<u64, usize> = std::collections::HashMap::new();
   blocks
     .iter()
     .map(|b| {
       let bare = ident(b, 0);
       let nth = seen.entry(bare).or_insert(0);
-      let s = base ^ ident(b, *nth);
+      let id = ident(b, *nth);
       *nth += 1;
-      s
+      id
+    })
+    .collect()
+}
+
+/// Per-block seeds, stable under insertion elsewhere in the piece.
+///
+/// `rerolls` nudges individual blocks — [`Layout::rerolls`], keyed on the same
+/// identity. A block that has been asked for again draws differently and every
+/// other block draws exactly as before, which is what makes *this bar, again* a
+/// local operation rather than a new fugue.
+pub fn seeds(blocks: &[Block], base: u64, rerolls: &[(u64, u32)]) -> Vec<u64> {
+  identities(blocks)
+    .into_iter()
+    .map(|id| {
+      let n = rerolls.iter().find(|(k, _)| *k == id).map_or(0, |(_, n)| *n);
+      // The golden-ratio odd constant is only there to move the nudge into the
+      // high bits before it meets the identity; the sampler's SplitMix does the
+      // spreading.
+      base ^ id ^ (n as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
     })
     .collect()
 }
@@ -179,6 +202,20 @@ pub struct Layout {
   /// Whether to close with an episode and a final entry at home. §8.15 found
   /// every fugue in the book ending at home, 22 of 22.
   pub close_at_home: bool,
+  /// Blocks that have been asked for again, and how many times.
+  ///
+  /// Keyed on [`identities`] rather than on an index, so a reroll survives an
+  /// edit that inserts something before it — and so a block that is removed and
+  /// comes back the same block comes back with the same notes, which is the
+  /// behaviour anybody would expect and an index could not give.
+  ///
+  /// It lives in the layout rather than beside the seed because it *is* a
+  /// parameter of the piece: without it in the settings file, a rerolled block
+  /// would not survive a save, and `docs/ui-spec.md` section 8 promises that the
+  /// same file gives the same fugue. Entries whose block no longer exists are
+  /// kept, cost nothing, and are what makes coming back work.
+  #[cfg_attr(feature = "serde", serde(default))]
+  pub rerolls: Vec<(u64, u32)>,
 }
 
 impl Default for Layout {
@@ -192,6 +229,7 @@ impl Default for Layout {
       // one; `voices - 2` in the general case
       link: Some((1, 1)),
       close_at_home: true,
+      rerolls: vec![],
     }
   }
 }
@@ -463,7 +501,7 @@ pub fn generate(
 ) -> Result<(Vec<Block>, Vec<Voice>, Relaxed), String> {
   let blocks = derive(d, l);
   let plan = plan(d, &blocks);
-  let seeds = seeds(&blocks, seed);
+  let seeds = seeds(&blocks, seed, &l.rerolls);
   let mut out: Vec<Voice> = vec![Voice { notes: vec![] }; d.voices];
   let mut prior: Vec<Option<Pitch>> = vec![None; d.voices];
   let mut relaxed = Relaxed::default();
@@ -790,7 +828,7 @@ pub fn refill_span(
   }
 
   let full = plan(d, &blocks);
-  let seeds = seeds(&blocks, seed);
+  let seeds = seeds(&blocks, seed, &l.rerolls);
   // The running result. Each block's prior is read off *this*, so a block sees
   // what the one before it in the span actually wrote; the terminal is read off
   // `prev`, because that is what the untouched tail still expects.
@@ -987,7 +1025,7 @@ mod tests {
     for middles in [vec![4], vec![4, 5, 3], vec![4, 5, 1, 3, 6]] {
       for link in [None, Some((0, 1)), Some((1, 2)), Some((5, 1))] {
         for close in [true, false] {
-          let l = Layout { middles: middles.clone(), episode_bars: 2, link, close_at_home: close };
+          let l = Layout { middles: middles.clone(), episode_bars: 2, link, close_at_home: close, rerolls: vec![] };
           let blocks = derive(&d, &l);
           let os = origins(&d, &l);
           assert_eq!(blocks.len(), os.len(), "{l:?}");
@@ -1202,10 +1240,10 @@ mod tests {
   #[test]
   fn changing_a_late_block_does_not_reseed_the_early_ones() {
     let d = design();
-    let before = seeds(&derive(&d, &Layout::default()), 0x5EED);
+    let before = seeds(&derive(&d, &Layout::default()), 0x5EED, &[]);
     let mut edited = Layout::default();
     *edited.middles.last_mut().unwrap() = 1; // the last middle goes elsewhere
-    let after = seeds(&derive(&d, &edited), 0x5EED);
+    let after = seeds(&derive(&d, &edited), 0x5EED, &[]);
 
     assert_eq!(before.len(), after.len(), "a key change must not change the block count");
     let same = before.iter().zip(&after).take_while(|(a, b)| a == b).count();
@@ -1221,11 +1259,72 @@ mod tests {
     // three middles in the same key, so the blocks are otherwise identical
     let l = Layout { middles: vec![4, 4, 4], ..Layout::default() };
     let blocks = derive(&d, &l);
-    let s = seeds(&blocks, 0x5EED);
+    let s = seeds(&blocks, 0x5EED, &[]);
     let mut uniq = s.clone();
     uniq.sort_unstable();
     uniq.dedup();
     assert_eq!(s.len(), uniq.len(), "two blocks share a seed: {s:?}");
+  }
+
+  /// **Asking for one block again changes that block's seed and no other.**
+  ///
+  /// The point of keying the nudge on identity rather than on an index: an
+  /// editor's business is inserting things, and a reroll that moved when
+  /// something before it grew would be a reroll of whatever happened to be there
+  /// instead.
+  #[test]
+  fn a_reroll_moves_one_seed_and_leaves_the_rest() {
+    let d = design();
+    let l = Layout::default();
+    let blocks = derive(&d, &l);
+    let ids = identities(&blocks);
+    let plain = seeds(&blocks, 0x5EED, &[]);
+
+    let target = 5usize;
+    let once = seeds(&blocks, 0x5EED, &[(ids[target], 1)]);
+    for i in 0..blocks.len() {
+      if i == target {
+        assert_ne!(plain[i], once[i], "the rerolled block kept its seed");
+      } else {
+        assert_eq!(plain[i], once[i], "block {i} moved when block {target} was rerolled");
+      }
+    }
+    // and asking again is a third thing, not a toggle back to the first
+    let twice = seeds(&blocks, 0x5EED, &[(ids[target], 2)]);
+    assert_ne!(twice[target], once[target]);
+    assert_ne!(twice[target], plain[target]);
+  }
+
+  /// And the nudge stays with its block across an edit elsewhere, which is the
+  /// whole reason it is keyed on identity.
+  ///
+  /// Note the claim, which is the same one [`seeds`] makes and no larger.
+  /// Sending a *different* return somewhere else leaves this block the same
+  /// block, and it keeps both its seed and the reroll applied to it. Inserting a
+  /// middle would not: that rotates every later block into another voice, so
+  /// they are different blocks and reseed by design. An editor that promised
+  /// otherwise would be promising something the derivation does not do.
+  #[test]
+  fn a_reroll_stays_with_its_block_across_an_edit_elsewhere() {
+    let d = design();
+    let l = Layout::default();
+    let blocks = derive(&d, &l);
+    let ids = identities(&blocks);
+
+    // the last block, and a change to the *first* middle — a different return
+    let target = blocks.len() - 1;
+    let mine = vec![(ids[target], 1)];
+    let before = seeds(&blocks, 0x5EED, &mine)[target];
+
+    let mut edited = l.clone();
+    edited.middles[0] = 1;
+    let after_blocks = derive(&d, &edited);
+    let after_ids = identities(&after_blocks);
+    assert_eq!(after_ids[target], ids[target], "the last block changed identity under an edit to the first middle");
+    assert_eq!(before, seeds(&after_blocks, 0x5EED, &mine)[target], "the reroll did not follow its block");
+
+    // and it is still a reroll: without the nudge that block draws differently
+    assert_ne!(before, seeds(&after_blocks, 0x5EED, &[])[target]);
   }
 
   /// **The whole texture must never fall silent.** A listener heard this before

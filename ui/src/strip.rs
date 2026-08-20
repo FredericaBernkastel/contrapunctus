@@ -64,23 +64,33 @@ pub enum Edit {
   LinkBars(i64),
   /// The return at `from` moves to `to`.
   MoveMiddle(usize, usize),
+  /// This block is written again — 4.2's per-block reroll. `id` is what
+  /// `Layout::rerolls` is keyed on and `block` is where it is now.
+  Reroll { block: usize, id: u64 },
 }
 
 impl Edit {
-  /// The returns this edit changes, when all it changes is their keys.
+  /// The **blocks** this edit changes, when all it changes is their contents.
   ///
-  /// `Key` moves one return. **Reordering moves several and is still
-  /// span-preserving**, which is not obvious and is the reason this is a range
-  /// rather than an index: `derive` gives every return an episode and an entry
-  /// of the same lengths whatever degree it carries, so shuffling the order
-  /// changes `key_of` and `shift` and moves not one bar. Everything between the
-  /// two ends of the move is affected and nothing outside it is.
+  /// `Key` moves one return, which owns two blocks. **Reordering moves several
+  /// and is still span-preserving**, which is not obvious: `derive` gives every
+  /// return an episode and an entry of the same lengths whatever degree it
+  /// carries, so shuffling the order changes `key_of` and `shift` and moves not
+  /// one bar. A reroll is one block on its own.
   ///
   /// `None` for the edits that move bars, and those are recomposed.
-  pub fn touches(self) -> Option<std::ops::RangeInclusive<usize>> {
+  pub fn touches(self, d: &Design, l: &Layout) -> Option<std::ops::RangeInclusive<usize>> {
+    let owns = |k: usize| {
+      let own = compose::blocks_of_middle(d, l, k);
+      own.first().copied().zip(own.last().copied())
+    };
     match self {
-      Edit::Key(k, _) => Some(k..=k),
-      Edit::MoveMiddle(f, t) => Some(f.min(t)..=f.max(t)),
+      Edit::Key(k, _) => owns(k).map(|(a, b)| a..=b),
+      Edit::MoveMiddle(f, t) => {
+        let (lo, hi) = (f.min(t), f.max(t));
+        owns(lo).zip(owns(hi)).map(|((a, _), (_, b))| a..=b)
+      }
+      Edit::Reroll { block, .. } => Some(block..=block),
       Edit::EpisodeBars(_) | Edit::LinkBars(_) => None,
     }
   }
@@ -104,6 +114,10 @@ impl Edit {
           out.middles.insert(to, m);
         }
       }
+      Edit::Reroll { id, .. } => match out.rerolls.iter_mut().find(|(k, _)| *k == id) {
+        Some((_, n)) => *n = n.wrapping_add(1),
+        None => out.rerolls.push((id, 1)),
+      },
     }
     out
   }
@@ -145,6 +159,9 @@ impl Strip<'_> {
     let lane_top = |v: usize| area.top() + RULER + v as f32 * (LANE + GAP);
 
     let origins = compose::origins(self.design, self.layout);
+    // What each block is, for naming one in a reroll. An index would move under
+    // the next insertion; this does not.
+    let ids = compose::identities(&self.out.blocks);
     let mut asked = Asked::default();
 
     // ---- the gestures, before drawing, because what is drawn depends on them
@@ -218,15 +235,39 @@ impl Strip<'_> {
                 ui.close();
               }
             }
+            ui.separator();
+            if ui.button("write these bars again").clicked() {
+              asked.edit = Some(Edit::Reroll { block: i, id: ids[i] });
+              ui.close();
+            }
           });
         }
-      } else if !matches!(b.kind, Kind::Episode { .. }) {
-        // Entries that are not returns: nothing to edit, everything to explain.
-        let h = ui.interact(r, ui.id().with(("block", i)), Sense::hover());
+      } else {
+        // Every other block: nothing about its *plan* is a parameter, but the
+        // notes in it are still a draw from the legal set, and asking for
+        // another draw is 4.2's reroll.
+        //
+        // A menu rather than 4.2's double-click. A double click that means
+        // something no single click does is a gesture nobody discovers, and the
+        // menu it would replace has to exist anyway for the returns.
+        let h = ui.interact(r, ui.id().with(("block", i)), Sense::click());
         let (at, len, key_of, what) = (b.at, b.len, b.key_of, describe(b));
-        h.on_hover_ui(|ui| {
+        let cold = self.out.relaxed.cold.contains(&i);
+        h.clone().on_hover_ui(|ui| {
           ui.label(egui::RichText::new(what).strong());
           ui.label(format!("bar {} to {}, in {}", at / measure + 1, (at + len) / measure + 1, degree_name(key_of)));
+          if cold {
+            ui.colored_label(
+              theme::warn(ui.visuals().dark_mode),
+              "This block would not fill under every constraint, so one was dropped. The report says which.",
+            );
+          }
+        });
+        egui::Popup::menu(&h).show(|ui| {
+          if ui.button("write these bars again").clicked() {
+            asked.edit = Some(Edit::Reroll { block: i, id: ids[i] });
+            ui.close();
+          }
         });
       }
     }
@@ -303,7 +344,8 @@ impl Strip<'_> {
         Edit::MoveMiddle(..) => {
           format!("{} — {bars} bars in all", l.middles.iter().map(|d| degree_name(*d)).collect::<Vec<_>>().join(" · "))
         }
-        Edit::Key(..) => String::new(),
+        // Neither is ever dragged, so neither is ever previewed.
+        Edit::Key(..) | Edit::Reroll { .. } => String::new(),
       };
       let at = Pos2::new(area.left() + 6.0, area.bottom() - RIBBON - 6.0);
       let r = p.text(at, Align2::LEFT_BOTTOM, &said, FontId::proportional(11.0), ui.visuals().strong_text_color());
@@ -483,34 +525,46 @@ mod tests {
       Edit::EpisodeBars(1),
       Edit::LinkBars(3),
       Edit::LinkBars(0),
+      Edit::Reroll { block: 4, id: 12345 },
     ];
     for e in cases {
-      let after = compose::derive(&d, &e.applied(&base_layout));
+      let l = e.applied(&base_layout);
+      let after = compose::derive(&d, &l);
       let same = after.len() == base.len()
         && after.iter().zip(&base).all(|(a, b)| a.at == b.at && a.len == b.len);
-      assert_eq!(e.touches().is_some(), same, "{e:?} is classified wrongly: derive says same-span = {same}");
+      assert_eq!(e.touches(&d, &l).is_some(), same, "{e:?} is classified wrongly: derive says same-span = {same}");
     }
   }
 
-  /// And the returns a span-preserving edit touches are the ones whose key
+  /// And the **blocks** a span-preserving edit touches are the ones that
   /// actually changed — no fewer, so nothing stale is left behind, and no more,
   /// so the fast path stays fast.
   #[test]
-  fn the_touched_returns_are_the_ones_that_changed() {
+  fn the_touched_blocks_are_the_ones_that_changed() {
+    let d = design();
     let l0 = Layout::default();
+    let before = compose::derive(&d, &l0);
+
     for e in [Edit::Key(1, 6), Edit::MoveMiddle(0, 2), Edit::MoveMiddle(2, 1)] {
       let l = e.applied(&l0);
-      let Some(range) = e.touches() else { continue };
-      let changed: Vec<usize> = (0..l0.middles.len()).filter(|k| l0.middles[*k] != l.middles[*k]).collect();
-      for k in &changed {
-        assert!(range.contains(k), "{e:?} changed return {k} and does not claim to touch it");
+      let Some(range) = e.touches(&d, &l) else { continue };
+      let after = compose::derive(&d, &l);
+      let changed: Vec<usize> =
+        (0..before.len()).filter(|i| before[*i].key_of != after[*i].key_of || before[*i].kind != after[*i].kind).collect();
+      assert!(!changed.is_empty(), "{e:?} changed nothing at all");
+      for i in &changed {
+        assert!(range.contains(i), "{e:?} changed block {i} and does not claim to touch it");
       }
-      // and the claim is tight: its ends are returns that changed
-      if !changed.is_empty() {
-        assert_eq!(*range.start(), changed[0], "{e:?} claims more than it changed");
-        assert_eq!(*range.end(), *changed.last().unwrap(), "{e:?} claims more than it changed");
-      }
+      assert_eq!(*range.start(), changed[0], "{e:?} claims more than it changed");
+      assert_eq!(*range.end(), *changed.last().unwrap(), "{e:?} claims more than it changed");
     }
+
+    // A reroll changes no block's *plan* at all — only the notes drawn into one
+    // — so it claims exactly its own block and derive sees nothing.
+    let e = Edit::Reroll { block: 6, id: compose::identities(&before)[6] };
+    let l = e.applied(&l0);
+    assert_eq!(e.touches(&d, &l), Some(6..=6));
+    assert_eq!(compose::derive(&d, &l).len(), before.len(), "a reroll must not change the plan");
   }
 
   /// A drag says the same thing the commit does, because both go through
@@ -522,6 +576,12 @@ mod tests {
     for e in [Edit::EpisodeBars(5), Edit::LinkBars(2), Edit::LinkBars(0), Edit::MoveMiddle(0, 1)] {
       assert_eq!(e.applied(&l0), e.applied(&l0));
     }
+    // and asking for a block again counts, rather than toggling
+    let once = Edit::Reroll { block: 0, id: 7 }.applied(&l0);
+    assert_eq!(once.rerolls, vec![(7, 1)]);
+    let twice = Edit::Reroll { block: 0, id: 7 }.applied(&once);
+    assert_eq!(twice.rerolls, vec![(7, 2)], "asking twice must not undo asking once");
+
     assert_eq!(Edit::EpisodeBars(99).applied(&l0).episode_bars, 8, "clamped");
     assert_eq!(Edit::EpisodeBars(0).applied(&l0).episode_bars, 1, "clamped");
     assert!(Edit::LinkBars(0).applied(&l0).link.is_none(), "dragged to nothing removes it");

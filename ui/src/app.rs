@@ -144,26 +144,25 @@ impl App {
     if next == self.layout {
       return;
     }
-    match e.touches() {
-      Some(range) => self.recolour(e, range, next),
+    match e.touches(&self.design, &next) {
+      Some(blocks) => self.recolour(e, blocks, next),
       None => self.rebuild(e, next),
     }
   }
 
-  /// A change of key, to one return or to several: local if it can be,
+  /// An edit that rewrites some blocks and moves none: local if it can be,
   /// recomposed if it cannot, and it says which.
-  fn recolour(&mut self, e: strip::Edit, returns: std::ops::RangeInclusive<usize>, l: Layout) {
+  ///
+  /// The affected blocks go through as **one span**, not one after another. A
+  /// return owns its episode and its entry, and refilling those separately pins
+  /// the seam between them to notes chosen for the key being edited away.
+  fn recolour(&mut self, e: strip::Edit, blocks: std::ops::RangeInclusive<usize>, l: Layout) {
     let Some(prev) = self.out.take() else { return };
-
-    // The affected blocks as **one span**, not one after another. A return owns
-    // its episode and its entry, and refilling them separately pins the seam
-    // between them to notes chosen for the key being edited away.
-    let first = compose::blocks_of_middle(&self.design, &l, *returns.start()).first().copied();
-    let last = compose::blocks_of_middle(&self.design, &l, *returns.end()).last().copied();
-    let (Some(first), Some(last)) = (first, last) else {
+    let (first, last) = (*blocks.start(), *blocks.end());
+    if last >= prev.blocks.len() {
       self.out = Some(prev);
       return;
-    };
+    }
 
     let said = describe_edit(e, &l);
     let t0 = web_time::Instant::now();
@@ -897,6 +896,10 @@ fn describe_edit(e: strip::Edit, l: &Layout) -> String {
       Some((_, n)) => format!("a link of {n} bars"),
       None => "no link in the exposition".to_string(),
     },
+    strip::Edit::Reroll { id, .. } => {
+      let n = l.rerolls.iter().find(|(k, _)| *k == id).map_or(0, |(_, n)| *n);
+      format!("those bars written again (draw {})", n + 1)
+    }
   }
 }
 
@@ -962,7 +965,7 @@ mod tests {
   fn every_offered_subject_composes() {
     let cat = catalog::load();
     assert_eq!(cat.subjects.len(), 24, "not offered: {:?}", cat.missing);
-    let brief = Layout { middles: vec![4], episode_bars: 2, link: None, close_at_home: true };
+    let brief = Layout { middles: vec![4], episode_bars: 2, link: None, ..Layout::default() };
     let mut refused = vec![];
     for s in &cat.subjects {
       let d = s.design(3);
@@ -1033,6 +1036,53 @@ mod tests {
       }
     }
     assert!(local > 0, "no key change was local, so the promise was never tested");
+  }
+
+  /// **Asking for one block again rewrites that block and nothing else.**
+  ///
+  /// The claim 4.2's reroll makes, and the one that would be easiest to fake by
+  /// recomposing with a different seed — which would look almost right and
+  /// differ everywhere. Checked over the whole piece, note for note, outside the
+  /// block's own bars.
+  #[test]
+  fn a_reroll_rewrites_one_block_and_no_others() {
+    let mut app = App::default();
+    app.compose();
+    let start = app.out.clone().expect("a fugue");
+    let l0 = app.layout.clone();
+
+    let mut rewrote = 0;
+    for block in 0..start.blocks.len() {
+      let id = compose::identities(&start.blocks)[block];
+      let mut probe = probe_from(&start, &l0);
+      probe.apply(strip::Edit::Reroll { block, id });
+      let after = probe.out.as_ref().expect("still a fugue");
+      if !probe.status.as_deref().unwrap_or("").contains("the rest untouched") {
+        continue; // it refused and recomposed, which the next test covers
+      }
+      rewrote += 1;
+
+      let (from, to) = (start.blocks[block].at, start.blocks[block].at + start.blocks[block].len);
+      let outside = |v: &contrapunctus::kern::Voice| -> Vec<(i64, i64, i16, i8)> {
+        v.notes
+          .iter()
+          .filter(|n| n.onset < from || n.onset >= to)
+          .map(|n| (n.onset, n.dur, n.pitch.step, n.pitch.alter))
+          .collect()
+      };
+      for (a, b) in start.voices.iter().zip(&after.voices) {
+        assert_eq!(outside(a), outside(b), "rerolling block {block} changed notes outside it");
+      }
+      assert_eq!(start.bars, after.bars, "a reroll must not change the length");
+      assert_eq!(probe.layout.rerolls, vec![(id, 1)], "the reroll was not recorded in the layout");
+      // recorded in the layout is what makes it survive a save — spec 8
+      assert_ne!(
+        contrapunctus::settings::fingerprint(&start.voices),
+        contrapunctus::settings::fingerprint(&after.voices),
+        "rerolling block {block} changed nothing at all"
+      );
+    }
+    assert!(rewrote > 0, "no reroll was local, so the promise was never tested");
   }
 
   /// Whatever happens, an edit either applies or leaves nothing behind.

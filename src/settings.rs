@@ -235,6 +235,57 @@ mod tests {
     assert_eq!(how, Fidelity::Exact, "a round trip must still reproduce");
   }
 
+  /// **A fugue with a block asked for again survives being saved.**
+  ///
+  /// This is why the per-block nudge lives in [`compose::Layout`] and not beside
+  /// the seed. A reroll that was not written down would come back as a different
+  /// block on load, and the promise this whole module exists for — the same file
+  /// gives the same fugue — would be false for exactly the pieces somebody had
+  /// worked on hardest.
+  #[cfg(feature = "serde")]
+  #[test]
+  fn a_rerolled_block_survives_a_round_trip() {
+    let d = design();
+    let plain = compose::Layout::default();
+    let blocks = compose::derive(&d, &plain);
+    let id = compose::identities(&blocks)[3];
+
+    let mut l = plain.clone();
+    l.rerolls.push((id, 1));
+    let out = compose::fugue(&d, &l, Tier::Full.rules(), 0x5EED).expect("a fugue");
+
+    // it is a different fugue from the un-rerolled one, or there is nothing to save
+    let flat = compose::fugue(&d, &plain, Tier::Full.rules(), 0x5EED).expect("a fugue");
+    assert_ne!(fingerprint(&out.voices), fingerprint(&flat.voices), "the reroll changed nothing");
+
+    let text = Settings::of(&d, &l, Tier::Full, 0x5EED, &out).to_json().expect("json");
+    assert!(text.contains("rerolls"), "the layout did not carry the reroll into the file");
+    let back = Settings::from_json(&text).expect("parse");
+    assert_eq!(back.layout.rerolls, l.rerolls);
+    let (again, how) = back.reproduce().expect("a fugue");
+    assert_eq!(how, Fidelity::Exact, "{:?}", how.message());
+    assert_eq!(fingerprint(&again.voices), fingerprint(&out.voices));
+  }
+
+  /// And a file written before rerolls existed still opens, because the field
+  /// was added rather than given a new meaning — which is what `FORMAT` counts
+  /// and why it did not move.
+  #[cfg(feature = "serde")]
+  #[test]
+  fn a_file_without_rerolls_still_opens() {
+    let (d, l) = (design(), compose::Layout::default());
+    let out = compose::fugue(&d, &l, Tier::Full.rules(), 1).expect("a fugue");
+    let text = Settings::of(&d, &l, Tier::Full, 1, &out).to_json().expect("json");
+    // strip the field, as a file written by the build before it would not have
+    let mut doc: serde_json::Value = serde_json::from_str(&text).expect("json");
+    doc.get_mut("layout").and_then(|l| l.as_object_mut()).expect("a layout").remove("rerolls");
+    let older = doc.to_string();
+    assert!(!older.contains("rerolls"), "the field was not actually removed");
+    let back = Settings::from_json(&older).expect("an older file must still open");
+    assert!(back.layout.rerolls.is_empty());
+    assert_eq!(back.reproduce().expect("a fugue").1, Fidelity::Exact);
+  }
+
   /// A file from a newer format is refused rather than half-read.
   #[cfg(feature = "serde")]
   #[test]

@@ -158,7 +158,7 @@ nothing else is a parameter.
 | drag an episode's **right edge** | lengthen or shorten every episode | `episode_bars` |
 | drag the exposition link's edge | its length, or off at zero | `link` |
 | toggle the final block | close at home or stop after the last middle | `close_at_home` |
-| double-click a block | refill just that block with a new seed | `seed` for that block |
+| *write these bars again* on any block's menu | refill just that block with a new draw | `rerolls`, keyed on the block's identity |
 
 **Two classes of edit, and the interface must not blur them.** Which class an
 edit is in is `Edit::touches` in the code — a method the dispatch actually goes
@@ -574,7 +574,8 @@ readme §10.5's claim that no reported figure passes through a crate.
     "middles": [4, 5, 3],
     "episode_bars": 3,
     "link": [1, 1],
-    "close_at_home": true
+    "close_at_home": true,
+    "rerolls": [[11512035283069334625, 1]]
   },
   "tier": "full",
   "seed": 24301,
@@ -586,10 +587,19 @@ The subject is stored as **notes**, in the library's own units, so one imported
 from anywhere round-trips exactly and a file does not depend on the corpus being
 present to open.
 
+`rerolls` is 4.2's per-block reroll, and it is here for a reason worth stating:
+a block asked for again is **a parameter of the piece**, not a passing state of
+the interface. Left out of the file it would come back as a different block on
+load, and the promise this whole section exists for would be false for exactly
+the pieces somebody had worked on hardest. It is keyed on the block's identity —
+what it is, not where it sits — so it survives an edit that inserts something
+before it.
+
 `format` is the format's version, bumped when a field's meaning changes rather
 than when one is added: **unknown keys are ignored**, so an older build opens a
 newer file with the settings it understands. A `format` *newer* than the build
-reads is refused rather than half-read. Both are tested.
+reads is refused rather than half-read. Both are tested. `rerolls` was added and
+did not move it, and a test opens a file without the field to say so.
 
 ### 8.3 The fingerprint
 
@@ -640,13 +650,16 @@ Ordered by whether an interface can start without it.
 
 | # | change | why | size |
 |---|---|---|---|
-| 1 | Ghosting for a voice drag | 4.3 above, so the knock-on is visible | interface only |
+| 1 | Ghosting for a voice drag | 4.3 above, so the knock-on is visible | needs a voice to be settable at all — 12.2 |
 | 2 | A resumable `generate` | 7.3, so a fill can run a block per frame instead of blocking one | small |
-| 3 | A per-block seed | 4.2’s double-click reroll. One `seed` is stored, so a rerolled block is not reproducible from a settings file and the guarantee in 8 would break | format change |
-| 4 | A CDCL solver | four voices, and five | §9 |
+| 3 | A CDCL solver | four voices, and five | §9 |
 
 Everything else on this list is now done:
 
+- **`Layout::rerolls`** — a per-block nudge keyed on `compose::identities`, so
+  4.2's reroll changes one block and survives a save. It went in the layout
+  rather than beside the seed because it is a parameter of the piece; section 8
+  is the argument.
 - **No `&Path` required anywhere.** `kern::parse`, `refdata::parse`,
   `midi::encode` and `midi::encode_score` take and return bytes; the path forms
   are wrappers on them.
@@ -741,6 +754,7 @@ Status is one of **done**, **partial** — usable and honestly incomplete — or
 | 4.2 | Dragging an episode's edge, the link's edge, and the order of the returns | `an_edit_preserves_the_span_exactly_when_derive_says_it_does` |
 | 4.2 | A live preview of the plan a drag would commit to, with what moves drawn faded | `the_preview_and_the_commit_are_the_same_function` |
 | 3.2 | Choosing which voice of an imported file is the subject | `an_imported_subject_replaces_the_design` |
+| 4.2 | Asking for one block to be written again, and it surviving a save | `a_reroll_rewrites_one_block_and_no_others`, `a_rerolled_block_survives_a_round_trip` |
 | 3.2 | Importing a subject from a `**kern` file | `an_imported_subject_replaces_the_design` |
 | 5.2 | The score following the playhead while it plays | by inspection |
 
@@ -769,10 +783,9 @@ silence is, in samples.
 | 1 | 7.3 | Generating in a worker, so the sound survives the work | a worker build; 6.4 is the workaround until then |
 | 2 | 4.2 | Adding and removing a return from the strip, and toggling the close | a way to do it that is not one-way — see 12.3 |
 | 3 | 4.3 | A voice drag at all | there is no `Layout` field for it — see below |
-| 4 | 4.2 | The per-block reroll | a per-block seed in the library, 10 above |
-| 5 | 6.3 | System MIDI out, behind a feature | a `midir` dependency |
-| 6 | 3.3 | The compass as draggable ranges on a staff | nothing |
-| 7 | 5.1 | Beams, and clef glyphs from an embedded SMuFL subset | a font subset |
+| 4 | 6.3 | System MIDI out, behind a feature | a `midir` dependency, and a device to try it on |
+| 5 | 3.3 | The compass as draggable ranges on a staff | nothing |
+| 6 | 5.1 | Beams, and clef glyphs from an embedded SMuFL subset | a font subset |
 
 **Item 3 needs saying properly, because 4.3 assumed something that is not
 there.** That section says a voice drag should ghost its knock-on rather than
