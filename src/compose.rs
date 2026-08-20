@@ -670,7 +670,7 @@ impl Outcome {
 /// the full five writes 69, below Bach's own 112. A rule can be wrong as a
 /// description and right as a constraint.
 pub fn fugue(d: &Design, l: &Layout, tier: &[Rule], seed: u64) -> Result<Outcome, String> {
-  let t0 = std::time::Instant::now();
+  let t0 = crate::clock::Instant::now();
   let (blocks, voices, relaxed) = generate(d, l, tier, seed)?;
   Ok(judge(d, blocks, voices, relaxed, t0.elapsed().as_secs_f64()))
 }

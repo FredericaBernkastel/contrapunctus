@@ -41,6 +41,14 @@ clap = { version = "4.6", features = ["derive"] }
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
 
+# A clock, and only where there is not one. `std::time::Instant` compiles for
+# `wasm32-unknown-unknown` and panics when called, so a browser build needs
+# `web-time` in its place — and a native build does not compile this at all,
+# which is why §10.5's claim about §8's figures is untouched: the measurement
+# binary is never built for `wasm32`.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-time = "1"
+
 [profile.release]
 debug = false
 

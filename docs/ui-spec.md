@@ -417,13 +417,36 @@ verified is that it renders and runs**: there is no browser on this machine to
 put it in front of, and a page that builds, links, optimises and serves can still
 come up blank. That is the one claim left to somebody who opens it.
 
-**The `cargo build` is the test and it is worth running before the browser one.**
-It compiles the entire interface for a target with no filesystem, no threads and
-no environment, so anything reaching for those fails there and nowhere else. It
-also fails *usefully*: while the entry point was a stub it passed with 74
-dead-code warnings, which is what a vacuous check looks like. With a real entry
-it passes with none, and that is the difference between compiling the modules and
-reaching them.
+**The `cargo build` is worth running before the browser one, and it is not the
+test.** It compiles the entire interface for a target with no filesystem, no
+threads and no environment, so anything reaching for *those* fails there and
+nowhere else. It also fails usefully in one way already seen: while the entry
+point was a stub it passed with 74 dead-code warnings, which is what a vacuous
+check looks like, and with a real entry it passes with none.
+
+**What it does not catch is a clock, and that is how the page first came up.**
+
+```text
+panicked at library/std/src/sys/time/unsupported.rs:13:9:
+time not implemented on this platform
+```
+
+> **A compile check catches what does not compile, and time compiles.**
+> `std::time::Instant::now()` builds for `wasm32-unknown-unknown`, links,
+> survives `wasm-opt`, is served without complaint, and panics when it is called.
+> A path or a thread would have failed to build. The sentence in this document
+> claiming the check covered "anything of the kind" was therefore stronger than
+> the check underneath it, and the difference was found by somebody opening the
+> page — which is the same way the three listening tests found what no number was
+> looking at.
+
+So the rules this section states in prose are enforced in `tests/portable.rs`
+instead: the clock lives in `src/clock.rs` alone, the interface names no
+filesystem, environment or process, and a thread is spawned only behind a target
+check. Each was verified to fail on a deliberately broken copy. It is a lint over
+source text and not a proof — something reached indirectly through a dependency
+would slip past it — but it covers the way this fault actually arrived, which was
+somebody writing `std::time` in a file a browser compiles.
 
 Size, measured rather than guessed: **7.3 MB of wasm, 2.4 MB gzipped**, before
 `wasm-opt`. The corpus is 295 kB of that and the rest is the interface, the
@@ -432,9 +455,14 @@ search and their dependencies.
 ### 7.5 Nothing else OS-specific
 
 No paths in application state — a loaded subject is bytes plus a display name.
-No environment variables. No shelling out. No `std::time::Instant` in the audio
-path (the sample clock is the clock); `Instant` is fine for the generate timing
-that `Outcome::seconds` already reports, and works on wasm under `eframe`.
+No environment variables. No shelling out.
+
+And **no `std::time` anywhere**, which is a correction: this section used to say
+`Instant` "works on wasm under `eframe`", and it does not. `eframe` works on wasm
+because it uses `web-time`, not because `std` does. The generate timing that
+`Outcome::seconds` reports goes through `contrapunctus::clock`, which is `std`'s
+`Instant` on the desktop and `web-time`'s — `performance.now()` — in a browser.
+The audio path has no clock at all: the sample count is the clock, which is 6.1.
 
 ---
 
@@ -672,7 +700,7 @@ silence is, in samples.
 
 | # | section | what | blocked on |
 |---|---|---|---|
-| 1 | 7 | Opening the page in a browser, and `wasm32` in CI | a browser; everything up to serving is done |
+| 1 | 7 | Confirming the page runs after the clock fix | a browser; the build, the serve and the bindings are checked |
 | 2 | 4.2 | Span-changing edits: fade what is about to move, rather than only recomposing | nothing |
 | 3 | 4.3 | Ghosting the knock-on of a voice drag | 2 above |
 | 4 | 4.2 | The per-block reroll | a per-block seed in the library, 10 above |
@@ -700,6 +728,18 @@ Stated rather than left to be discovered:
   weaker kind than the three that corrected.
 - **No metronome, and one tempo for the whole piece.** Neither has been asked
   for by anything yet.
+- **The browser build has been opened once, and it panicked** — `std::time` on a
+  target that has no clock, fixed and now linted for. It has not been opened
+  since the fix. What is known: it compiles, links, optimises, serves, and the
+  generated bindings now call `performance.now()`, which is `web-time` doing the
+  job `std` cannot. What is not known is whether it draws.
+- **One string in the built wasm is unexplained.** `time not implemented on this
+  platform` is still in the binary after the fix. It is not in a build of any
+  single dependency tried alone — not `std`, `std::fs`, `mpsc`, `Mutex`,
+  `parking_lot`, `eframe`, `cpal`, `rfd`, or this library — so something in the
+  combination still *references* the panic, and referencing is not calling. The
+  path it was reached by is gone; whether the string is reachable at all is
+  unknown, and saying so is better than reporting a clean binary.
 - **Generation blocks the frame** for about 0.6 s, where 7.3 calls for one block
   per frame. Doing it properly needs a resumable generate in the library —
   `compose::generate` fills every block in one call — so it is a library change,

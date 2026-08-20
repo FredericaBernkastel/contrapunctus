@@ -394,6 +394,7 @@ dependencies = [
  "clap",
  "serde",
  "serde_json",
+ "web-time",
 ]
 
 [[package]]
@@ -409,6 +410,7 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
+ "web-time",
 ]
 
 [[package]]

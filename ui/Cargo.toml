@@ -28,6 +28,10 @@ rfd = { version = "0.17", default-features = false, features = ["xdg-portal"] }
 # is the one that always works, and `cpal` targets WebAudio on wasm32 as well
 # as the desktop APIs, so it is one dependency and not two.
 cpal = "0.18"
+# A clock that exists on both targets. `std::time::Instant` compiles for wasm
+# and panics when called, which is how the browser build first came up as a
+# stack trace; `eframe` already depends on this, so it costs nothing.
+web-time = "1"
 
 # A future has to be driven by something, and that something is the one part of
 # this crate that cannot be written once: a browser has no threads.

@@ -75,6 +75,8 @@
 
 pub mod answer;
 pub mod automaton;
+/// Wall-clock time, in one place, because one target does not have it.
+mod clock;
 pub mod compose;
 pub mod corpus;
 #[cfg(feature = "embedded-corpus")]

@@ -147,7 +147,7 @@ impl App {
     let owned = compose::blocks_of_middle(&self.design, &l, k);
     let (Some(&first), Some(&last)) = (owned.first(), owned.last()) else { return };
 
-    let t0 = std::time::Instant::now();
+    let t0 = web_time::Instant::now();
     let next = match compose::refill_span(&self.design, &l, self.tier.rules(), self.seed, &prev, first, last) {
       Ok(o) => o,
       Err(why) => {
