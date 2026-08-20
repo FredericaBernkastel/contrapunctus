@@ -32,6 +32,11 @@ pub struct App {
   /// loaded from a file came from none, and saying so is better than pointing at
   /// whichever entry happens to be first.
   chosen: Option<usize>,
+  /// The file a subject was imported from, kept so that a different voice of it
+  /// can be chosen afterwards. A multi-voice file has to give up *one* line and
+  /// nothing in a bare `**kern` file says which — so the interface takes the
+  /// first, says so, and offers the others.
+  imported: Option<Imported>,
   design: Design,
   layout: Layout,
   tier: Tier,
@@ -86,6 +91,7 @@ impl Default for App {
     App {
       cat,
       chosen: Some(chosen),
+      imported: None,
       design,
       layout: Layout::default(),
       tier: Tier::Full,
@@ -125,51 +131,59 @@ impl App {
 
   /// Apply an edit from the plan strip.
   ///
-  /// **Span-preserving, and the interface must not blur that.** A key change
-  /// keeps the piece the same length, so `compose::refill` rewrites the two
-  /// blocks that middle owns — its episode and its entry, because changing where
-  /// a return goes changes both the journey and the arrival — and every other
-  /// note stays exactly where it was. If any part of it refuses, nothing is
-  /// applied: a half-edited piece is worse than an unedited one.
+  /// **The two classes must not be blurred, and here they are two branches.**
+  /// A key change keeps the piece the same length, so `compose::refill_span`
+  /// rewrites the blocks that return owns and every other note stays exactly
+  /// where it was. An episode length, a link, a reordering: everything after
+  /// moves in time, there is no sense in which those bars are unchanged, and
+  /// the piece is recomposed. The strip has been drawing the new plan, faded,
+  /// for the length of the drag, so the second is not a surprise by the time it
+  /// happens.
   fn apply(&mut self, e: strip::Edit) {
-    let strip::Edit::Key(k, deg) = e;
-    if self.layout.middles.get(k) == Some(&deg) {
+    let next = e.applied(&self.layout);
+    if next == self.layout {
       return;
     }
+    match e.touches() {
+      Some(range) => self.recolour(e, range, next),
+      None => self.rebuild(e, next),
+    }
+  }
+
+  /// A change of key, to one return or to several: local if it can be,
+  /// recomposed if it cannot, and it says which.
+  fn recolour(&mut self, e: strip::Edit, returns: std::ops::RangeInclusive<usize>, l: Layout) {
     let Some(prev) = self.out.take() else { return };
-    let mut l = self.layout.clone();
-    l.middles[k] = deg;
 
-    // The two blocks as one span, not one after the other. A middle owns its
-    // episode and its entry, and refilling them separately pins the seam between
-    // them to notes chosen for the key being edited away — which is usually
-    // unsatisfiable, so an ordinary edit came back refused.
-    let owned = compose::blocks_of_middle(&self.design, &l, k);
-    let (Some(&first), Some(&last)) = (owned.first(), owned.last()) else { return };
+    // The affected blocks as **one span**, not one after another. A return owns
+    // its episode and its entry, and refilling them separately pins the seam
+    // between them to notes chosen for the key being edited away.
+    let first = compose::blocks_of_middle(&self.design, &l, *returns.start()).first().copied();
+    let last = compose::blocks_of_middle(&self.design, &l, *returns.end()).last().copied();
+    let (Some(first), Some(last)) = (first, last) else {
+      self.out = Some(prev);
+      return;
+    };
 
+    let said = describe_edit(e, &l);
     let t0 = web_time::Instant::now();
     let next = match compose::refill_span(&self.design, &l, self.tier.rules(), self.seed, &prev, first, last) {
       Ok(o) => o,
       Err(why) => {
-        // A refusal here means the edit is not *local* — not that it is
-        // impossible. About a quarter of key changes come back this way, so
-        // stopping would refuse an ordinary request on a technicality. Recompose
-        // the whole piece instead and say which of the two happened, because the
-        // difference is exactly the promise the interface made: everything else
-        // stayed where it was, or it did not.
+        // Not *local* — not impossible. About a quarter of key changes come
+        // back this way, so stopping would refuse an ordinary request on a
+        // technicality. Recompose, and say which of the two happened: the
+        // difference is exactly the promise the interface made.
         match compose::fugue(&self.design, &l, self.tier.rules(), self.seed) {
           Ok(o) => {
-            self.status = Some(format!(
-              "return {} sent to {} — not reachable from where the piece was, so the whole                fugue was rewritten ({why})",
-              k + 1,
-              catalog::degree_name(deg)
-            ));
+            self.status =
+              Some(format!("{said} — not reachable from where the piece was, so the whole fugue was rewritten ({why})"));
             self.layout = l;
             self.out = Some(o);
             self.fidelity = None;
           }
           Err(e) => {
-            self.status = Some(format!("that key will not fill: {e}"));
+            self.status = Some(format!("that will not fill: {e}"));
             self.out = Some(prev);
           }
         }
@@ -177,15 +191,29 @@ impl App {
       }
     };
     let ms = t0.elapsed().as_secs_f64() * 1000.0;
-    self.status = Some(format!(
-      "return {} sent to {} — {} blocks rewritten in {ms:.0} ms, the rest untouched",
-      k + 1,
-      catalog::degree_name(deg),
-      last - first + 1,
-    ));
+    self.status =
+      Some(format!("{said} — {} blocks rewritten in {ms:.0} ms, the rest untouched", last - first + 1));
     self.layout = l;
     self.out = Some(next);
     self.fidelity = None;
+  }
+
+  /// A span-changing edit: the piece is a different length, so it is a
+  /// different piece.
+  fn rebuild(&mut self, e: strip::Edit, l: Layout) {
+    let t0 = web_time::Instant::now();
+    match compose::fugue(&self.design, &l, self.tier.rules(), self.seed) {
+      Ok(o) => {
+        let ms = t0.elapsed().as_secs_f64() * 1000.0;
+        let what = describe_edit(e, &l);
+        self.status =
+          Some(format!("{what} — every bar after it moves, so the piece was rewritten: {} bars in {ms:.0} ms", o.bars));
+        self.layout = l;
+        self.out = Some(o);
+        self.fidelity = None;
+      }
+      Err(why) => self.status = Some(format!("that will not fill: {why}")),
+    }
   }
 
   /// Open the sound card, once, when something first needs it.
@@ -323,47 +351,61 @@ impl App {
     if let Some(r) = self.importing.take() {
       match r {
         Ok(im) => {
-          let voice = im.piece.voices[im.took].clone();
-          let notes = voice.notes.iter().filter(|n| n.attack).count();
-          let ticks = voice.notes.iter().map(|n| n.onset + n.dur).max().unwrap_or(0);
-          let bars = ticks as f64 / im.piece.measure.max(1) as f64;
-
-          self.design = Design {
-            subject: voice,
-            voices: self.design.voices,
-            key: im.piece.key,
-            // The tonic as a letter of this file's own signature. Without a key
-            // interpretation there is nothing to answer *to*, so C is taken and
-            // the message says as much rather than the interface pretending.
-            tonic: im
-              .piece
-              .tonic
-              .and_then(|(pc, _)| contrapunctus::answer::tonic_letter(pc, &im.piece.key))
-              .unwrap_or(0),
-            measure: im.piece.measure,
-            beat: im.piece.beat,
-            compass: catalog::compass(self.design.voices),
-          };
-          self.chosen = None;
-
-          let mut said = format!("{}: {notes} notes over {bars:.1} bars", im.name);
-          if im.of > 1 {
-            said.push_str(&format!(" — the file has {} voices and the first was taken", im.of));
-          }
-          if bars > 8.0 {
-            said.push_str(" — that is long for a subject; the whole file is the subject here");
-          }
-          if im.piece.tonic.is_none() {
-            said.push_str(" — no key interpretation in the file, so the tonic was taken as C");
-          }
-          self.status = Some(said);
-          self.compose();
+          let took = im.took;
+          self.imported = Some(im);
+          self.take_voice(took);
         }
         Err(Note::Cancelled) => self.status = Some("nothing imported".into()),
         Err(Note::Failed(e)) => self.status = Some(format!("could not import: {e}")),
         Err(Note::Saved(_)) => {}
       }
     }
+  }
+
+  /// Take voice `v` of the imported file as the subject.
+  ///
+  /// Everything the design needs comes from the file: the key signature, the
+  /// metre, and the tonic as a **letter of that file's own signature** rather
+  /// than as a pitch class, because §2.1's whole argument is that those are
+  /// different things. What the file cannot supply, the message names.
+  fn take_voice(&mut self, v: usize) {
+    let Some(im) = self.imported.as_ref() else { return };
+    let Some(voice) = im.piece.voices.get(v).cloned() else { return };
+    let notes = voice.notes.iter().filter(|n| n.attack).count();
+    let ticks = voice.notes.iter().map(|n| n.onset + n.dur).max().unwrap_or(0);
+    let bars = ticks as f64 / im.piece.measure.max(1) as f64;
+    let (name, of, no_key) = (im.name.clone(), im.of, im.piece.tonic.is_none());
+
+    self.design = Design {
+      subject: voice,
+      voices: self.design.voices,
+      key: im.piece.key,
+      tonic: im
+        .piece
+        .tonic
+        .and_then(|(pc, _)| contrapunctus::answer::tonic_letter(pc, &im.piece.key))
+        .unwrap_or(0),
+      measure: im.piece.measure,
+      beat: im.piece.beat,
+      compass: catalog::compass(self.design.voices),
+    };
+    self.chosen = None;
+    if let Some(im) = self.imported.as_mut() {
+      im.took = v;
+    }
+
+    let mut said = format!("{name}: {notes} notes over {bars:.1} bars");
+    if of > 1 {
+      said.push_str(&format!(" — voice {} of {of}", v + 1));
+    }
+    if bars > 8.0 {
+      said.push_str(" — that is long for a subject; the whole line is the subject here");
+    }
+    if no_key {
+      said.push_str(" — no key interpretation in the file, so the tonic was taken as C");
+    }
+    self.status = Some(said);
+    self.compose();
   }
 }
 
@@ -501,7 +543,6 @@ impl App {
 
       let Some(out) = &self.out else { return };
       let measure = self.design.measure;
-      let origins = compose::origins(&self.design, &self.layout);
 
       ui.add_space(4.0);
       ui.horizontal(|ui| {
@@ -527,7 +568,7 @@ impl App {
         }
       });
       let head = self.playhead();
-      let (_, asked) = strip::show(ui, out, self.design.voices, measure, &origins, head);
+      let asked = strip::Strip { out, design: &self.design, layout: &self.layout, playhead: head }.show(ui);
       edit = asked.edit;
       seek = asked.seek;
 
@@ -603,6 +644,7 @@ impl App {
     });
     if let Some(i) = pick {
       self.chosen = Some(i);
+      self.imported = None;
       self.design = self.cat.subjects[i].design(self.design.voices);
       changed = true;
     }
@@ -625,6 +667,32 @@ impl App {
       .clicked()
     {
       files::import_subject(self.importing.clone());
+    }
+    // Which line of a multi-voice file is the subject. Nothing in a bare
+    // `**kern` file says, so the first is taken and the rest are offered rather
+    // than the choice being made silently and permanently.
+    let voices_in_file = self.imported.as_ref().map(|im| (im.of, im.took));
+    if let Some((of, took)) = voices_in_file.filter(|(of, _)| *of > 1) {
+      let mut want = None;
+      ui.horizontal(|ui| {
+        ui.label(RichText::new("from voice").weak().small());
+        for v in 0..of {
+          let empty = self.imported.as_ref().is_some_and(|im| im.piece.voices[v].notes.is_empty());
+          let clicked = if empty {
+            ui.add_enabled(false, egui::Button::new(format!("{}", v + 1)))
+              .on_disabled_hover_text("this line has no notes in it");
+            false
+          } else {
+            ui.selectable_label(v == took, format!("{}", v + 1)).clicked()
+          };
+          if clicked {
+            want = Some(v);
+          }
+        }
+      });
+      if let Some(v) = want {
+        self.take_voice(v);
+      }
     }
 
     ui.add_space(12.0);
@@ -818,6 +886,20 @@ impl App {
   }
 }
 
+/// What an edit did, in the words the plan strip uses for the same things.
+fn describe_edit(e: strip::Edit, l: &Layout) -> String {
+  let order = || l.middles.iter().map(|d| catalog::degree_name(*d)).collect::<Vec<_>>().join(" · ");
+  match e {
+    strip::Edit::Key(k, deg) => format!("return {} sent to {}", k + 1, catalog::degree_name(deg)),
+    strip::Edit::MoveMiddle(..) => format!("returns reordered to {}", order()),
+    strip::Edit::EpisodeBars(_) => format!("episodes of {} bars", l.episode_bars),
+    strip::Edit::LinkBars(_) => match l.link {
+      Some((_, n)) => format!("a link of {n} bars"),
+      None => "no link in the exposition".to_string(),
+    },
+  }
+}
+
 /// A group heading, in the mono voice the sketch uses for structure.
 fn group(ui: &mut Ui, title: &str) {
   ui.label(RichText::new(title).monospace().small().weak());
@@ -1007,9 +1089,18 @@ mod tests {
     assert!(app.chosen.is_none(), "an imported subject is not a catalogue entry");
     assert_ne!(app.design.key, before, "the key did not come from the imported file");
     assert!(!app.design.subject.notes.is_empty(), "the subject is empty");
-    assert!(app.status.as_deref().unwrap_or("").contains("voices"), "{:?}", app.status);
+    // it names which line of how many it took, rather than choosing silently
+    assert!(app.status.as_deref().unwrap_or("").contains("voice 1 of"), "{:?}", app.status);
     // and it says the file is long, because a whole fugue is not a subject
     assert!(app.status.as_deref().unwrap_or("").contains("long for a subject"), "{:?}", app.status);
+
+    // and another line of the same file can be taken afterwards
+    let first = contrapunctus::settings::fingerprint(std::slice::from_ref(&app.design.subject));
+    app.take_voice(1);
+    let second = contrapunctus::settings::fingerprint(std::slice::from_ref(&app.design.subject));
+    assert_ne!(first, second, "taking a different voice gave the same subject");
+    assert!(app.status.as_deref().unwrap_or("").contains("voice 2 of"), "{:?}", app.status);
+    assert!(app.out.is_some(), "the second voice did not compose: {:?}", app.refused);
   }
 
   /// The presets are the ones spec 3.2 names, and `Journey::of` recognises each

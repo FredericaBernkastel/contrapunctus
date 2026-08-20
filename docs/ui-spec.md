@@ -160,7 +160,14 @@ nothing else is a parameter.
 | toggle the final block | close at home or stop after the last middle | `close_at_home` |
 | double-click a block | refill just that block with a new seed | `seed` for that block |
 
-**Two classes of edit, and the interface must not blur them.**
+**Two classes of edit, and the interface must not blur them.** Which class an
+edit is in is `Edit::touches` in the code — a method the dispatch actually goes
+through — and a test checks its answer against what `compose::derive` does
+rather than against the claim. That test earned its place immediately:
+**reordering the returns was written down here as span-changing and is not.**
+`derive` gives every return an episode and an entry of the same lengths whatever
+degree it carries, so shuffling the order changes keys and moves not one bar. It
+goes down the fast path.
 
 *Span-preserving* — a key change, a voice change, a per-block reroll. The piece
 stays the same length, `compose::refill_span` rewrites the blocks that edit owns,
@@ -181,11 +188,21 @@ promise is the whole value of the fast path, and an interface that quietly
 recomposed while claiming locality would be worth less than one that never
 claimed it.
 
-*Span-changing* — episode length, adding or removing a middle, toggling the
-close. Everything after moves in time. `compose::refill` refuses these by
-design; the interface re-runs `compose::fugue`. Blocks after the edit are drawn
-faded during the recompute, because they really are about to change and pretending
-otherwise is a lie the user will notice.
+*Span-changing* — episode length, the link's length, adding or removing a middle,
+toggling the close. Everything after moves in time. `compose::refill_span`
+refuses these by design; the interface re-runs `compose::fugue`.
+
+**And the fading turned out to be worth more than fading.** `compose::derive` is
+pure and costs nothing — it produces the plan without searching for a note — so
+a drag shows *the exact plan it would commit to*, live, with the blocks that are
+about to move drawn faded behind it. Not a hint that something will change: the
+thing it will change into. One function, `Edit::applied`, produces both the
+preview and the commit, so the picture cannot promise what the commit does not
+do.
+
+The horizontal scale stays pinned to the committed piece for the length of a
+drag. Rescaling to the preview would move the edge out from under the pointer
+dragging it, which is a feedback loop rather than an interface.
 
 ### 4.3 A limit worth stating
 
@@ -721,6 +738,9 @@ Status is one of **done**, **partial** — usable and honestly incomplete — or
 | 6.2 | Silencing a voice while listening, which is how anyone learns to follow one | `a_muted_voice_goes_quiet_and_the_rest_do_not` |
 | 7 | The browser entry, and the whole interface building for `wasm32` | `cargo build --target wasm32-unknown-unknown` links, with no warnings |
 | 6.4 | Rebuilding the audio stream around anything that stalls the frame | nothing — see below |
+| 4.2 | Dragging an episode's edge, the link's edge, and the order of the returns | `an_edit_preserves_the_span_exactly_when_derive_says_it_does` |
+| 4.2 | A live preview of the plan a drag would commit to, with what moves drawn faded | `the_preview_and_the_commit_are_the_same_function` |
+| 3.2 | Choosing which voice of an imported file is the subject | `an_imported_subject_replaces_the_design` |
 | 3.2 | Importing a subject from a `**kern` file | `an_imported_subject_replaces_the_design` |
 | 5.2 | The score following the playhead while it plays | by inspection |
 
@@ -746,15 +766,22 @@ silence is, in samples.
 
 | # | section | what | blocked on |
 |---|---|---|---|
-| 1 | 7 | Confirming the page runs after the clock and stream fixes | a browser |
-| 2 | 7.3 | Generating in a worker, so the sound survives the work | a worker build; 6.4 is the workaround until then |
-| 3 | 4.2 | Span-changing edits: fade what is about to move, rather than only recomposing | nothing |
-| 4 | 4.3 | Ghosting the knock-on of a voice drag | 3 above |
-| 5 | 4.2 | The per-block reroll | a per-block seed in the library, 10 above |
-| 6 | 6.3 | System MIDI out, behind a feature | a `midir` dependency |
-| 7 | 3.3 | The compass as draggable ranges on a staff | nothing |
-| 8 | 5.1 | Beams, and clef glyphs from an embedded SMuFL subset | a font subset |
-| 9 | 3.2 | Choosing *which* voice an imported multi-voice file supplies | nothing; the first is taken and said so |
+| 1 | 7.3 | Generating in a worker, so the sound survives the work | a worker build; 6.4 is the workaround until then |
+| 2 | 4.2 | Adding and removing a return from the strip, and toggling the close | a way to do it that is not one-way — see 12.3 |
+| 3 | 4.3 | A voice drag at all | there is no `Layout` field for it — see below |
+| 4 | 4.2 | The per-block reroll | a per-block seed in the library, 10 above |
+| 5 | 6.3 | System MIDI out, behind a feature | a `midir` dependency |
+| 6 | 3.3 | The compass as draggable ranges on a staff | nothing |
+| 7 | 5.1 | Beams, and clef glyphs from an embedded SMuFL subset | a font subset |
+
+**Item 3 needs saying properly, because 4.3 assumed something that is not
+there.** That section says a voice drag should ghost its knock-on rather than
+fake independence — but there is nothing to drag. `derive` assigns every voice
+by a chain from the first entry, and `Layout` has no field that changes it, so a
+block's lane is not a parameter at all and dragging one cannot mean anything
+yet. Ghosting is the *presentation* of a feature that does not exist. Making it
+exist is a change to how the library assigns voices, which 4.3 itself calls a §9
+decision. The row is honest about that now; it used to read as interface work.
 
 ### 12.3 Known gaps in what is built
 
@@ -794,8 +821,13 @@ Stated rather than left to be discovered:
   unknown, and saying so is better than reporting a clean binary.
 - **Generation blocks the frame** for about 0.6 s, where 7.3 calls for one block
   per frame. Doing it properly needs a resumable generate in the library —
-  `compose::generate` fills every block in one call — so it is a library change,
-  not an interface one.
+  `compose::generate` fills every block in one call — and on the web it needs a
+  worker as well, because one block is of the same order as the whole audio
+  budget. 6.4 is what stands in for both until then.
+- **A drag previews the plan and not the notes.** `derive` is free and the search
+  is not, so what a drag shows is exactly right about where every bar will be and
+  says nothing about what will be in them. That is the honest half to show; the
+  other half costs half a second.
 - **The plan strip does not scroll, and the two views are deliberately not
   locked.** 5.2 asked for a locked scroll; building it made the reason against
   clear. The strip's whole job is to show the shape of the piece at once, and an
@@ -804,12 +836,13 @@ Stated rather than left to be discovered:
   get cramped and that is a different problem from this one.
 - **Nothing is persisted between runs.** 8.4's interface state wants `eframe`'s
   persistence feature, which is not enabled. The *music* is persisted, through 8.
-- **Only one plan-strip gesture is wired** — the key of a return. The rest of
-  4.2's table is items 2 to 4 above, and the two classes of edit are kept apart
-  in the code rather than in a comment.
-- **An imported file with several voices gives up its first**, and the status
-  line says which and how many there were. Choosing is item 8; guessing quietly
-  would have been worse than either.
+- **Adding and removing a return, and the close, are panel controls only.** Both
+  were tried as strip gestures and both come out **one-way**: clicking the final
+  block to turn the close off removes the block there was to click, and there is
+  then nothing to click to bring it back. A gesture whose undo is somewhere else
+  is worse than a checkbox, so they stayed checkboxes. Item 2 is a way to do it
+  that is not one-way, not the gesture itself.
 - **A key change that is not local recomposes**, which is right, but the blocks
-  about to change are not faded while it happens. It is fast enough at three
-  voices that nothing is seen; at five it would be.
+  about to change are not faded while it happens — the fading is on the drag,
+  where there is time to see it, and a recompose at three voices is over before
+  there is. At five voices it would not be.
