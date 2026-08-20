@@ -204,7 +204,7 @@ impl Strip<'_> {
         h.clone().on_hover_ui(|ui| {
           ui.label(egui::RichText::new(what).strong());
           ui.label(format!("bar {} to {}, in {}", at / measure + 1, (at + len) / measure + 1, degree_name(key_of)));
-          ui.label(egui::RichText::new("Click to send it somewhere else; drag to move it in the order.").weak().small());
+          ui.label(egui::RichText::new("Click to send it somewhere else, or to have it written again; drag to move it in the order.").weak().small());
           if cold {
             ui.colored_label(
               theme::warn(ui.visuals().dark_mode),
@@ -227,7 +227,7 @@ impl Strip<'_> {
             }
           }
         } else {
-          egui::Popup::menu(&h).show(|ui| {
+          opened(&h).show(|ui| {
             ui.label(egui::RichText::new("send this return to").weak().small());
             for deg in 0..7i16 {
               if ui.selectable_label(deg == key_of, degree_name(deg)).clicked() {
@@ -256,6 +256,9 @@ impl Strip<'_> {
         h.clone().on_hover_ui(|ui| {
           ui.label(egui::RichText::new(what).strong());
           ui.label(format!("bar {} to {}, in {}", at / measure + 1, (at + len) / measure + 1, degree_name(key_of)));
+          // Otherwise the reroll is a menu nobody knows is there. The plan of
+          // these bars is fixed; the notes in them are one draw of many.
+          ui.label(egui::RichText::new("Click to have these bars written again.").weak().small());
           if cold {
             ui.colored_label(
               theme::warn(ui.visuals().dark_mode),
@@ -263,7 +266,7 @@ impl Strip<'_> {
             );
           }
         });
-        egui::Popup::menu(&h).show(|ui| {
+        opened(&h).show(|ui| {
           if ui.button("write these bars again").clicked() {
             asked.edit = Some(Edit::Reroll { block: i, id: ids[i] });
             ui.close();
@@ -383,6 +386,17 @@ impl Strip<'_> {
 
     asked
   }
+}
+
+/// A block's menu, opened by **either** mouse button.
+///
+/// `Popup::menu` opens on the primary button and `Popup::context_menu` on the
+/// secondary, and a block that answers only one of them has a dead spot under
+/// the other. Which button a person reaches for is a habit, not a decision, and
+/// there is nothing here for the two to mean differently — so both open it.
+fn opened(on: &egui::Response) -> egui::Popup<'static> {
+  egui::Popup::menu(on)
+    .open_memory((on.clicked() || on.secondary_clicked()).then_some(egui::SetOpenCommand::Toggle))
 }
 
 fn block_rect(b: &Block, v: usize, x_of: &impl Fn(i64) -> f32, lane_top: &impl Fn(usize) -> f32) -> Rect {

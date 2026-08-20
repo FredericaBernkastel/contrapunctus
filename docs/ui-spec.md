@@ -153,12 +153,18 @@ nothing else is a parameter.
 | gesture | effect | `Layout` |
 |---|---|---|
 | drag a block **vertically** to another lane | that entry or episode changes voice | *see 4.3 below* |
-| drag a middle-entry block **horizontally** past a neighbour | reorder the journey | `middles` reordered |
-| click a block's key chip | choose the degree | `middles[k]` |
+| drag a return **horizontally** past a neighbour | reorder the journey | `middles` reordered |
+| click a return, and choose a degree | where that return goes | `middles[k]` |
 | drag an episode's **right edge** | lengthen or shorten every episode | `episode_bars` |
 | drag the exposition link's edge | its length, or off at zero | `link` |
 | toggle the final block | close at home or stop after the last middle | `close_at_home` |
-| *write these bars again* on any block's menu | refill just that block with a new draw | `rerolls`, keyed on the block's identity |
+| click a block, and choose *write these bars again* | refill just that block with a new draw | `rerolls`, keyed on the block's identity |
+
+**Every block's menu opens on either mouse button.** Which one a person reaches
+for is a habit rather than a decision, there is nothing here for the two to mean
+differently, and a block that answered only one of them would have a dead spot
+under the other. `Popup::menu` alone gives the primary button; the secondary is
+added explicitly.
 
 **Two classes of edit, and the interface must not blur them.** Which class an
 edit is in is `Edit::touches` in the code — a method the dispatch actually goes
