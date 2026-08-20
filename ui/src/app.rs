@@ -120,7 +120,7 @@ impl App {
     }
     self.stale = false;
     self.fidelity = None;
-    self.reload_sound();
+    self.resound();
   }
 
   /// Apply an edit from the plan strip.
@@ -223,6 +223,49 @@ impl App {
     self.sound = Some(score);
   }
 
+  /// Put the sound back after something blocked the frame.
+  ///
+  /// **On the web the stream does not survive a stall, and cannot recover by
+  /// itself.** `cpal`'s WebAudio backend schedules each buffer from an `onended`
+  /// callback on the main thread, and its cursor synchronises with the context
+  /// clock **only for the first buffer** — after that it just advances by one
+  /// buffer step. Block the main thread for longer than what is already queued
+  /// and every later buffer is scheduled at a time that has passed. The sound
+  /// chops, and it chops for ever, because nothing ever re-synchronises. Only
+  /// reloading the page fixed it, which is a fair description of a bug.
+  ///
+  /// A generate is half a second, so it stalls the frame by design (7.3), and
+  /// the stream is therefore rebuilt around it. Dropping `cpal::Stream` closes
+  /// the `AudioContext`, so this does not accumulate contexts against the
+  /// browser's per-page limit — which is the thing that would have made this
+  /// cure worse than the disease.
+  ///
+  /// Native audio runs on its own thread and none of this applies, so it keeps
+  /// its stream and its continuity. That is one of the very few places this
+  /// program does something different by target, and 7.5 asks for a reason
+  /// rather than for uniformity.
+  fn resound(&mut self) {
+    let was = self.player.as_ref().map(|p| (p.is_playing(), p.position()));
+
+    #[cfg(target_arch = "wasm32")]
+    if was.is_some() {
+      self.player = None; // Drop closes the AudioContext
+      self.sound = None;
+    }
+
+    if was.is_some() && self.player.is_none() {
+      self.wake(); // rebuilds the stream, and loads the current music into it
+    } else {
+      self.reload_sound();
+    }
+
+    if let (Some((playing, at)), Some(p), Some(sc)) = (was, self.player.as_ref(), self.sound.as_ref()) {
+      // Clamp, because the music may have got shorter while we were away.
+      p.seek(at.min(sc.samples));
+      p.set_playing(playing);
+    }
+  }
+
   /// Where the ear is, in ticks. `None` when nothing has ever played.
   fn playhead(&self) -> Option<i64> {
     let p = self.player.as_ref()?;
@@ -268,7 +311,9 @@ impl App {
           self.out = Some(l.outcome);
           self.refused = None;
           self.stale = false;
-          self.reload_sound();
+          // `Settings::reproduce` ran the search, and on the web that ran on
+          // this thread — `spawn_local` is not another one.
+          self.resound();
         }
         Err(Note::Cancelled) => self.status = Some("nothing opened".into()),
         Err(Note::Failed(e)) => self.status = Some(format!("could not open: {e}")),
@@ -521,7 +566,7 @@ impl App {
     // outcome it is drawing, and an edit replaces that outcome.
     if let Some(e) = edit {
       self.apply(e);
-      self.reload_sound();
+      self.resound();
     }
     if let Some(t) = seek {
       self.seek(t);

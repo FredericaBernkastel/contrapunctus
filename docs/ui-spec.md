@@ -320,7 +320,45 @@ that passed a tempo the score was not built at would get a playhead that drifted
   failure.**
 - Behind a cargo feature so a build without it has no dependency.
 
-### 6.4 Export
+### 6.4 The stream does not survive a stall, and is rebuilt
+
+Found by pressing Play and then Compose: the new music played, chopped, and
+stayed chopped until the page was reloaded. Web only.
+
+`cpal`'s WebAudio backend schedules each buffer from an `onended` callback **on
+the main thread**, and its cursor synchronises with the context clock only for
+the *first* buffer — after that it advances by one buffer step and never looks at
+the clock again:
+
+```rust
+if *time_at_start_of_buffer > 0.0 { *time_at_start_of_buffer }   // every buffer after the first
+else { now + base_latency_secs + buffer_time_step_secs }         // only the first
+```
+
+So blocking the main thread past the ~85 ms already queued leaves every later
+buffer scheduled at a time that has passed. The browser plays them immediately,
+the two workers overlap, and **nothing ever re-synchronises** — which is exactly
+why only a reload helped.
+
+> **A stall on the main thread is not a hiccup where the audio clock is also on
+> the main thread.** It is permanent damage, because the thing that would notice
+> and correct it is the thing that was blocked.
+
+The fix is to rebuild the stream after anything that stalls the frame: a
+generate, an edit, a settings load. Dropping `cpal::Stream` closes the
+`AudioContext`, so this does not accumulate contexts against the browser's
+per-page limit — which is the thing that would have made the cure worse than the
+disease. The position and the play state are carried across, so a rebuild costs
+a moment of silence and nothing else.
+
+Native audio has its own thread, nothing breaks, and it keeps its stream. That
+is one of the few places this program behaves differently by target, and 7.5
+asks for a reason rather than for uniformity.
+
+**None of this is tested.** It lives in the one file no test here can reach, and
+it was found by a person pressing two buttons in a browser.
+
+### 6.5 Export
 
 MIDI file, by `midi::write_score`, which already orders tracks top voice first
 and names each with its range and role.
@@ -369,9 +407,16 @@ keep the previous `Outcome` on screen until the new one is complete. Twelve
 blocks at 60 fps is a fifth of a second of animation, and the plan strip can fill
 in block by block as it goes, which is a better progress indicator than a bar.
 
-This needs no threads, so it works identically on both targets. Reach for a
-worker only if a five-voice block ever exceeds a frame by enough to matter, and
-then reach for it on both platforms at once.
+**And on the web it would not be enough, which was learned the hard way.** This
+section used to end by saying the approach needs no threads and therefore works
+identically on both targets, reaching for a worker only if a five-voice block
+ever mattered. The arithmetic says otherwise. `cpal`'s WebAudio backend queues
+two buffers of 2048 frames — about **85 ms** at 48 kHz — and one block of this
+generator is tens of milliseconds native and more in a browser. Smaller units
+help and they do not clear the bar; a **worker** does, and is the honest answer
+for the web whenever the sound has to survive the work.
+
+Until there is one, the stream is rebuilt around anything long — 6.4.
 
 ### 7.4 Built, and how
 
@@ -667,7 +712,7 @@ Status is one of **done**, **partial** — usable and honestly incomplete — or
 | 9 | Four voices present and disabled, with the reason on hover | by inspection |
 | 11 | Every number with its yardstick; the reroll framed as exploration | by inspection |
 | 8 | Save and load, as JSON, with the fingerprint checked and a banner when it does not match | `Fidelity` is shown, not swallowed |
-| 6.4 | Export MIDI, through `compose::encode` | by inspection |
+| 6.5 | Export MIDI, through `compose::encode` | by inspection |
 | 4.2 | The plan strip's key edit — click a middle, choose where it goes | `a_local_key_change_leaves_every_other_note_alone` |
 | 7.2 | One code path for files: `rfd`'s async API, on both targets | `ui/src/files.rs` mentions no `Path` |
 | 6.1 | The scheduler — ticks to samples, ties merged, both directions | `the_clock_runs_both_ways`, `the_piece_lasts_what_the_tempo_says` |
@@ -675,6 +720,7 @@ Status is one of **done**, **partial** — usable and honestly incomplete — or
 | 4.1, 5.2 | The playhead in both views, and a click to listen from there | the position is the callback's own sample count |
 | 6.2 | Silencing a voice while listening, which is how anyone learns to follow one | `a_muted_voice_goes_quiet_and_the_rest_do_not` |
 | 7 | The browser entry, and the whole interface building for `wasm32` | `cargo build --target wasm32-unknown-unknown` links, with no warnings |
+| 6.4 | Rebuilding the audio stream around anything that stalls the frame | nothing — see below |
 | 3.2 | Importing a subject from a `**kern` file | `an_imported_subject_replaces_the_design` |
 | 5.2 | The score following the playhead while it plays | by inspection |
 
@@ -700,14 +746,15 @@ silence is, in samples.
 
 | # | section | what | blocked on |
 |---|---|---|---|
-| 1 | 7 | Confirming the page runs after the clock fix | a browser; the build, the serve and the bindings are checked |
-| 2 | 4.2 | Span-changing edits: fade what is about to move, rather than only recomposing | nothing |
-| 3 | 4.3 | Ghosting the knock-on of a voice drag | 2 above |
-| 4 | 4.2 | The per-block reroll | a per-block seed in the library, 10 above |
-| 5 | 6.3 | System MIDI out, behind a feature | a `midir` dependency |
-| 6 | 3.3 | The compass as draggable ranges on a staff | nothing |
-| 7 | 5.1 | Beams, and clef glyphs from an embedded SMuFL subset | a font subset |
-| 8 | 3.2 | Choosing *which* voice an imported multi-voice file supplies | nothing; the first is taken and said so |
+| 1 | 7 | Confirming the page runs after the clock and stream fixes | a browser |
+| 2 | 7.3 | Generating in a worker, so the sound survives the work | a worker build; 6.4 is the workaround until then |
+| 3 | 4.2 | Span-changing edits: fade what is about to move, rather than only recomposing | nothing |
+| 4 | 4.3 | Ghosting the knock-on of a voice drag | 3 above |
+| 5 | 4.2 | The per-block reroll | a per-block seed in the library, 10 above |
+| 6 | 6.3 | System MIDI out, behind a feature | a `midir` dependency |
+| 7 | 3.3 | The compass as draggable ranges on a staff | nothing |
+| 8 | 5.1 | Beams, and clef glyphs from an embedded SMuFL subset | a font subset |
+| 9 | 3.2 | Choosing *which* voice an imported multi-voice file supplies | nothing; the first is taken and said so |
 
 ### 12.3 Known gaps in what is built
 
@@ -728,11 +775,16 @@ Stated rather than left to be discovered:
   weaker kind than the three that corrected.
 - **No metronome, and one tempo for the whole piece.** Neither has been asked
   for by anything yet.
-- **The browser build has been opened once, and it panicked** — `std::time` on a
-  target that has no clock, fixed and now linted for. It has not been opened
-  since the fix. What is known: it compiles, links, optimises, serves, and the
-  generated bindings now call `performance.now()`, which is `web-time` doing the
-  job `std` cannot. What is not known is whether it draws.
+- **Two faults have been found by opening the page, and none by a test.** A
+  clock that compiles and panics (7.4), and an audio stream that a stalled frame
+  destroys permanently (6.4). Both are in the layer no test here reaches — the
+  first was linted for afterwards, the second cannot be. That is the honest score
+  for the web target: everything mechanical passes, and the two real bugs came
+  from somebody pressing buttons.
+- **The audio stream is rebuilt on every compose, on the web.** It is a cure for
+  6.4 and not a design: a worker doing the generation would let the sound run
+  through it untouched, and 7.3 now says so. What this costs is a moment of
+  silence where there should be continuity.
 - **One string in the built wasm is unexplained.** `time not implemented on this
   platform` is still in the binary after the fix. It is not in a build of any
   single dependency tried alone — not `std`, `std::fs`, `mpsc`, `Mutex`,
