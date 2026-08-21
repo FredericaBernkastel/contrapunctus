@@ -1389,6 +1389,50 @@ being clumsy: four voices sounding at once **is** three free voices, which is th
 and the exact search can choose 2; rest one in this block.* A limit a caller can act on is a different thing from a
 dead end, and the difference is one sentence.
 
+## Drawing the texture, which invents no rule and does not work
+
+[`09ea4f0`](../../commit/09ea4f0)
+
+`Layout::drawn_texture`, and it is the third of §4.4's three candidates: let the **search** decide who rests.
+
+The shape is the only one that adds nothing to the rulebook. Every rest pattern a block could legally take is a
+search of its own; `realise::fill` counts each one's legal set exactly and returns a fill drawn uniformly from it;
+so a pattern taken with probability `n_i / Σn`, followed by that pattern's own sample, gives every fill in the union
+probability `1/Σn`. Texture out of the same mechanism the notes come from, and §8.10's argument for drawing over
+optimising covers it unextended.
+
+It reaches four voices with no pattern given at all, in 0.7 s against `rests_that_fit`'s 0.5.
+
+### And it returns the densest texture there is
+
+Twelve seeds, 156 blocks: **131 at the fullest texture the wall allows**, 25 thin ones that are the expositions, and
+**one** block that chose to be thinner than it had to be. Measured on a single block, at three voices: the full
+texture admits 12 719 151 fills and resting either other voice admits 4 744 and 2 894 — **99.94%** of the draw goes
+to the full texture. At four voices the three ways to rest one voice take 44.9%, 27.8% and 27.2%, and every way to
+rest two takes 0.03% between them.
+
+> **Drawing beats optimising, and applied to texture it returns the one thing texture is supposed to vary.** A
+> pattern with one more voice playing admits thousands of times more music, because more music is what another free
+> voice *is*. So a uniform draw over textures is a draw over densities weighted by density. §8.10's finding is
+> right about notes and the same argument, moved one level up, chooses against the feature it was borrowed for.
+
+At three voices the flag changes not one note, and the test says so: the first version of it asserted that setting
+the flag *changed* the music, which was asserting the opposite of what had just been measured.
+
+### What it does buy
+
+The choice among *equally dense* patterns. Where the wall forces one voice out, the ways to do that are within a
+factor of two of one another and the draw spreads over them — 24 / 9 / 31 / 36 across the four voices over those
+twelve seeds. That replaces `rests_that_fit`'s least-recently-heard heuristic with something that invents nothing,
+and on this subject the two agree in four blocks out of five. A correction rather than a different piece.
+
+It ships **off**, with a control to turn it on, and the measurement rather than caution is why.
+
+> **A negative result about a mechanism is worth more than a positive one about a preference.** What is left is a
+> texture that thins for a musical reason, and that needs something which *prefers* one density to another — a
+> positive criterion, which is the exact subject of §8.10 and its degenerate optima. The open problem is older than
+> this section and this section found its way back to it.
+
 ---
 
 ## Recurring pattern
