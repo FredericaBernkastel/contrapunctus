@@ -1238,6 +1238,57 @@ subject into another lane, and a placed subject ignores the compass — so an en
 of the voice now holding it. One subject's whole piece rotated by a lane hits §2.7's wall at bar 26. A hard search
 and an illegal layout are different things, and only the second is worth refusing in advance.
 
+## Step 7, §8.17 — silence, and a roadmap item that dissolved
+
+[`874892c`](../../commit/874892c)
+
+A reader asked why every voice sounds in every bar, with the *Art of the Fugue* in hand. It does, and the answer
+turned out to belong to a different question.
+
+`compose::fill_block` gives the held voice the subject and every other voice a tiled rhythm, and a voice with no
+notes was an error. So a three-voice fugue has three voices from bar one, and an exposition — whose entire identity
+is voices arriving one at a time — has no arrival in it.
+
+### What a resting voice costs, which is nothing
+
+`fill_block` now takes a `silent` list and `compose::block_cost` measures through it, so the question is asked in
+the one place that writes a block rather than beside it. Both callers pass nothing silent, so no output moved.
+
+One entry block, BWV 847's subject, `full(5)`, peak live states:
+
+| free voices | with the plan | without it |
+|---|---|---|
+| 1 | 68 | 158 |
+| 2 | **8 434** | refused |
+| 3 | refused | refused |
+
+Every voice count lands on one of those three rows and on nothing else. Four voices with one resting is 8 434
+states in 150 ms with nothing relaxed — three voices' figures exactly. Five voices with two resting, likewise.
+
+> **A parameter that looked like a consequence.** [§2.7](../readme.md) put the wall at `24^(V−e)` and
+> [§8.6](../readme.md) corrected the multiplier to the obligation set. Both were about `V − e`, and neither noticed
+> that `V − e` is something a piece *chooses* rather than something `V` determines. Four voices was never out of
+> reach; four voices **all sounding at once** is, and no fugue does that for long. §9's four-voice item was a
+> solver item because nobody had asked what a rest costs.
+
+### And the plan is worth exactly one free voice
+
+The second column was not what the run was for. **Without the harmonic plan, two free voices is already past the
+wall** — the three-voice case the generator writes every day refuses outright. §8.16 chose to drop the join before
+the plan on the argument that the plan "is also what keeps the search tractable"; that is now a number. It is worth
+the difference between two free voices and three, which is the difference between a fugue and a refusal.
+
+> **The relaxation ladder's order is not a preference.** Dropping the plan first does not make a block likelier to
+> fill, it makes it impossible — and the one measurement that would have said so was a column added to a table
+> asked for something else.
+
+### What is not measured
+
+A whole piece. Which voice rests where is a `Layout` decision that does not exist, and a resting voice has no
+`Problem::prior` to re-enter from, so every re-entry is a cold start — which `fill_block` already does once, before
+an entry, for §8.16's leap-of-an-eleventh reason, and has never done anywhere else. This says the search can afford
+four voices. It says nothing about whether the counterpoint would be worth hearing.
+
 ---
 
 ## Recurring pattern
