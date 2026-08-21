@@ -2918,18 +2918,16 @@ pub fn texture() {
     let l = compose::Layout::default();
     let blocks = compose::derive(&d, &l);
     let origins = compose::origins(&d, &l);
-    let mut entered = vec![false; voices];
-    let row: Vec<String> = blocks
+    // Through `compose::resting`, which is the rule the generator now runs, so
+    // this table cannot disagree with what the program does. Counting it here
+    // instead got the link wrong: `derive` hands the link's motive to the voice
+    // that is *about* to enter, and the held voice always sounds.
+    let quiet = compose::resting(&blocks, voices);
+    let row: Vec<String> = quiet
       .iter()
       .enumerate()
-      .map(|(i, b)| {
-        let held = match &b.kind {
-          compose::Kind::Entry { voice, .. } | compose::Kind::Episode { voice, .. } => *voice,
-        };
-        if matches!(b.kind, compose::Kind::Entry { .. }) {
-          entered[held] = true;
-        }
-        let free = entered.iter().filter(|e| **e).count().max(1) - 1;
+      .map(|(i, row)| {
+        let free = voices - 1 - row.iter().filter(|q| **q).count();
         let tag = match origins.get(i) {
           Some(compose::Origin::Exposition(_)) => 'E',
           Some(compose::Origin::Link) => 'L',

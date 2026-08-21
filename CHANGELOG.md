@@ -1306,6 +1306,49 @@ A whole piece. Which voice rests where is a `Layout` decision that does not exis
 an entry, for §8.16's leap-of-an-eleventh reason, and has never done anywhere else. This says the search can afford
 four voices. It says nothing about whether the counterpoint would be worth hearing.
 
+## An exposition with arrivals in it
+
+A voice now says nothing until it has stated the subject. `compose::resting` is that rule and takes no parameter:
+the derivation already says who enters when, so there was never anything for a caller to choose. A three-voice
+fugue opens with one voice, then two, then three, which it has never done — until now every voice sounded from bar
+one, and an exposition whose entire identity is voices arriving one at a time had no arrival in it.
+
+Three things fell out of building it.
+
+**A block with nothing free is already written.** The first block of an exposition is one voice alone, and
+`realise::fill` refuses a problem with no free voice in it — rightly, since there is nothing to search. `fill_block`
+now answers that case directly instead. A single line needs no counterpoint, and the search was never the thing that
+knew it.
+
+**The link is two free voices, not one.** `derive` hands the link's motive to the voice that is *about* to enter, so
+that voice sounds there before it has stated anything. The held voice is never silent — a block is a line placed in
+a voice — and the first version of §8.17's per-block table counted the link as though its holder had entered. The
+table is read off `resting` now rather than recomputed beside it, which is the only reason the two agree.
+
+> **A figure computed twice is a figure that will disagree with itself.** The table said `L1` and the generator
+> would have written `L2`, and nothing would have caught it: the conclusion the table supports — that four voices
+> still refuses — is true either way, so the error was invisible from the direction anybody was reading.
+
+**And a test that had been measuring more than it claimed.** `the_texture_never_falls_silent` counted from tick
+zero, and this subject begins on an upbeat — so a fugue that opens with one voice stating it has nothing sounding
+before the first note, and the test called that a gap. It is an anacrusis, and Bach's own fugues on upbeat subjects
+would fail the same check. The listening report behind that test heard the texture drop out *inside* the piece every
+three to six seconds; the test measures from the first note now.
+
+> **A property that has never been violated has never been tested at its edge.** Every voice sounding from bar one
+> filled the anacrusis with tiled rhythm, so the over-broad half of this check could not fire. It took a change that
+> made the opening correct to reveal that the check was not.
+
+**It changes the music, which is what `Fidelity` is for.** A settings file written before this reproduces `Differs`
+rather than `Exact`, because voices that used to play through the exposition now rest.
+
+**What it does not do is reach four voices**, and §8.17 is exact about where it stops: by the fourth entry every
+voice has entered and none may rest again, so a four-voice fugue refuses at the block completing its own
+exposition. A rest *after* a voice has entered is a choice rather than a rule, and the two ways to supply it —
+a `Layout` field, or the rest patterns in the legal set drawn from uniformly — are on `docs/ui-spec.md`'s roadmap.
+The second ships switched off with a control to turn it on, for `--gen-tier`'s reason: a change that alters what is
+generated and has not been measured against the book does not get to be the default.
+
 ---
 
 ## Recurring pattern

@@ -676,6 +676,30 @@ fn fill_block(
     return Err(format!("block {bi} leaves a voice with no notes to place"));
   }
   let free: Vec<bool> = (0..d.voices).map(|v| v != held && !quiet_voice(v)).collect();
+
+  // The prior for whatever follows: each voice's last pitch, except where the
+  // voice is meant to arrive cold. Written once because both the ordinary path
+  // and the one below need it and they must not drift.
+  let joins = |written: &[Voice]| -> Vec<Option<Pitch>> {
+    (0..d.voices)
+      .map(|v| {
+        // a voice that rested before entering enters cold, which is the point —
+        // and one that said nothing at all has nothing to join to
+        if (Some(v) == next && quiet > 0) || quiet_voice(v) {
+          return None;
+        }
+        written.get(v).and_then(|f: &Voice| f.notes.iter().max_by_key(|n| n.onset)).map(|n| n.pitch)
+      })
+      .collect()
+  };
+
+  // **A block with nothing free is already written.** The exposition's first
+  // block is one voice alone, and a single line needs no counterpoint —
+  // `realise::fill` refuses a problem with no free voice in it, and is right to.
+  if !free.iter().any(|f| *f) {
+    let after = joins(&voices);
+    return Ok((voices, after, 0, 0));
+  }
   let here: Vec<harmony::Segment> = plan
     .iter()
     .filter(|s| s.start >= b.at && s.start < b.at + b.len)
@@ -732,18 +756,41 @@ fn fill_block(
   };
 
   let chosen = sol.chosen();
-  let mut after: Vec<Option<Pitch>> = vec![None; d.voices];
-  for (v, filled) in chosen.iter().enumerate() {
-    if let Some(last) = filled.notes.iter().max_by_key(|n| n.onset) {
-      after[v] = Some(last.pitch);
-    }
-    // a voice that rested before entering enters cold, which is the point — and
-    // one that said nothing at all has nothing for the next block to join to
-    if (Some(v) == next && quiet > 0) || quiet_voice(v) {
-      after[v] = None;
-    }
-  }
+  let after = joins(chosen);
   Ok((chosen.to_vec(), after, attempt, sol.peak_states))
+}
+
+/// Which voices say nothing in each block: **a voice is silent until it has
+/// stated the subject.**
+///
+/// The grammar's own rule, and the reason it is a rule rather than a parameter is
+/// that the derivation already says who enters when — there is nothing here for
+/// anybody to choose. Without it a three-voice fugue has three voices from bar
+/// one, and an exposition, whose entire identity is voices arriving one at a
+/// time, has no arrival in it.
+///
+/// **The held voice is never silent**, whatever else is true of it, which is not
+/// a special case so much as the definition: a block is a line placed in a voice.
+/// It matters at the link, whose motive `derive` hands to the voice that is
+/// *about* to enter — so that voice sounds there before it has stated anything,
+/// and the rule must not silence the one line the block exists to carry.
+///
+/// One entry per voice in the exposition means every voice has entered by the end
+/// of it, so this empties itself: after the exposition nobody is resting and the
+/// texture is as full as it ever was. Which is exactly as far as a rule can get,
+/// and readme §8.17 measures where that leaves the voice count.
+pub fn resting(blocks: &[Block], voices: usize) -> Vec<Vec<bool>> {
+  let mut entered = vec![false; voices];
+  blocks
+    .iter()
+    .map(|b| {
+      let held = held_of(Some(b));
+      if matches!(b.kind, Kind::Entry { .. }) && held < voices {
+        entered[held] = true;
+      }
+      (0..voices).map(|v| v != held && !entered[v]).collect()
+    })
+    .collect()
 }
 
 /// **What one block costs**, at this voice count, with `silent` voices absent —
@@ -827,6 +874,9 @@ pub struct Run<'a> {
   blocks: Vec<Block>,
   plan: Vec<harmony::Segment>,
   seeds: Vec<u64>,
+  /// Who says nothing in each block — [`resting`], computed once with the plan
+  /// because it is a property of the derivation and not of the fill.
+  resting: Vec<Vec<bool>>,
   voices: Vec<Voice>,
   prior: Vec<Option<Pitch>>,
   relaxed: Relaxed,
@@ -850,12 +900,14 @@ impl<'a> Run<'a> {
     let blocks = derive(d, l);
     let plan = plan(d, &blocks);
     let seeds = seeds(d, l, seed);
+    let resting = resting(&blocks, d.voices);
     Ok(Run {
       d: d.clone(),
       tier,
       blocks,
       plan,
       seeds,
+      resting,
       voices: vec![Voice { notes: vec![] }; d.voices],
       prior: vec![None; d.voices],
       relaxed: Relaxed::default(),
@@ -899,7 +951,7 @@ impl<'a> Run<'a> {
     let t0 = crate::clock::Instant::now();
     let bi = self.next;
     let (filled, after, attempt, _) =
-      fill_block(&self.d, &self.blocks, bi, &self.plan, self.tier, self.seeds[bi], &self.prior, &[], &[])?;
+      fill_block(&self.d, &self.blocks, bi, &self.plan, self.tier, self.seeds[bi], &self.prior, &[], &self.resting[bi])?;
     self.relaxed.blocks += (attempt > 0) as usize;
     self.relaxed.without_prior += (attempt >= 1) as usize;
     self.relaxed.without_plan += (attempt >= 2) as usize;
@@ -1146,6 +1198,7 @@ pub fn refill_span(
 
   let full = plan(d, &blocks);
   let seeds = seeds(d, l, seed);
+  let quiet = resting(&blocks, d.voices);
   // The running result. Each block's prior comes off *this*, so a block sees
   // what the one before it in the span actually wrote.
   let mut out = prev.voices.clone();
@@ -1172,7 +1225,7 @@ pub fn refill_span(
     };
 
     let (filled, after, _, _) =
-      fill_block(d, &blocks, bi, &full, tier, seeds[bi], &prior, &terminal, &[]).map_err(|e| e.to_string())?;
+      fill_block(d, &blocks, bi, &full, tier, seeds[bi], &prior, &terminal, &quiet[bi]).map_err(|e| e.to_string())?;
     prior = after;
 
     // splice: the block's own bars replaced, everything else untouched
@@ -1907,7 +1960,14 @@ mod tests {
     let step = d.beat / 4;
     let mut worst = 0i64;
     let mut run = 0i64;
-    let mut t = 0;
+    // **From the first note, not from tick zero.** This subject begins on an
+    // upbeat, so a fugue that states it alone — which is what an exposition is,
+    // and what `resting` now writes — has nothing sounding before it. That is an
+    // anacrusis and not a gap; Bach's own fugues on upbeat subjects would fail a
+    // check that counted it. What the listening report behind this test heard was
+    // the whole texture dropping out *inside* the piece, every three to six
+    // seconds, and that is what is measured here.
+    let mut t = voices.iter().filter_map(|v| v.notes.iter().map(|n| n.onset).min()).min().unwrap_or(0);
     while t < end {
       let sounding = voices
         .iter()
@@ -1928,15 +1988,62 @@ mod tests {
   #[test]
   fn every_voice_sounds_in_every_block() {
     let d = design();
-    let (blocks, voices, _) = generate(&d, &Layout::default(), CONFIRMED, 0x5EED).expect("a fugue");
-    for b in &blocks {
+    let l = Layout::default();
+    let (blocks, voices, _) = generate(&d, &l, CONFIRMED, 0x5EED).expect("a fugue");
+    let quiet = resting(&blocks, d.voices);
+    for (bi, b) in blocks.iter().enumerate() {
       for (i, v) in voices.iter().enumerate() {
-        assert!(
-          v.notes.iter().any(|n| n.onset >= b.at && n.onset < b.at + b.len),
-          "voice {i} is silent through the block at bar {}",
-          b.at / d.measure + 1
+        let sounds = v.notes.iter().any(|n| n.onset >= b.at && n.onset < b.at + b.len);
+        assert_eq!(
+          sounds,
+          !quiet[bi][i],
+          "voice {i} at bar {}: sounding = {sounds}, and `resting` says it should be {}",
+          b.at / d.measure + 1,
+          !quiet[bi][i]
         );
       }
+    }
+  }
+
+  /// **A voice says nothing until it has entered, and everything after.**
+  ///
+  /// The exposition of a fugue is voices arriving one at a time, and until this
+  /// rule there were no arrivals: `fill_block` gave every voice that was not
+  /// holding the subject a tiled rhythm, so a three-voice fugue had three voices
+  /// from bar one. readme §8.17 is the measurement and this is the property.
+  #[test]
+  fn a_voice_is_silent_until_it_has_entered() {
+    let d = design();
+    let l = Layout::default();
+    let blocks = derive(&d, &l);
+    let quiet = resting(&blocks, d.voices);
+
+    // the first block is one voice alone, which is what an exposition opens with
+    assert_eq!(quiet[0].iter().filter(|q| **q).count(), d.voices - 1, "the piece does not open with one voice");
+
+    let mut entered = vec![None; d.voices];
+    for (bi, b) in blocks.iter().enumerate() {
+      let held = match &b.kind {
+        Kind::Entry { voice, .. } | Kind::Episode { voice, .. } => *voice,
+      };
+      assert!(!quiet[bi][held], "block {bi} silences the voice holding it");
+      if matches!(b.kind, Kind::Entry { .. }) && entered[held].is_none() {
+        entered[held] = Some(bi);
+      }
+      // and nobody who has entered is ever silenced again
+      for v in 0..d.voices {
+        if let Some(at) = entered[v] {
+          assert!(!quiet[bi][v], "voice {v} entered at block {at} and is silent again at {bi}");
+        }
+      }
+    }
+    assert!(entered.iter().all(|e| e.is_some()), "some voice never entered: {entered:?}");
+
+    // the rule empties itself: once every voice has entered nobody rests, so the
+    // texture after the exposition is exactly as full as it was before
+    let last_entry = entered.iter().flatten().max().copied().expect("an entry");
+    for (bi, row) in quiet.iter().enumerate().skip(last_entry) {
+      assert!(row.iter().all(|q| !q), "block {bi} still rests somebody after the exposition");
     }
   }
 
