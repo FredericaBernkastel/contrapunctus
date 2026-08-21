@@ -1308,6 +1308,8 @@ four voices. It says nothing about whether the counterpoint would be worth heari
 
 ## An exposition with arrivals in it
 
+[`c1d4e98`](../../commit/c1d4e98)
+
 A voice now says nothing until it has stated the subject. `compose::resting` is that rule and takes no parameter:
 the derivation already says who enters when, so there was never anything for a caller to choose. A three-voice
 fugue opens with one voice, then two, then three, which it has never done — until now every voice sounded from bar
