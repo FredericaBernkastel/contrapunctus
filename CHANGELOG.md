@@ -1282,6 +1282,23 @@ the difference between two free voices and three, which is the difference betwee
 > fill, it makes it impossible — and the one measurement that would have said so was a column added to a table
 > asked for something else.
 
+### And the cheapest rule is not enough, which is worth being exact about
+
+The rule that costs nothing is the grammar's own: a voice says nothing until it has entered. It fixes the
+exposition — one voice, then two, then three — for no parameter and no gesture. It does **not** reach four voices,
+and it fails at the most pointed block available: free voices per block at V=4 run `E0 E1 L1 E2 E3 m3 …`, so the
+fourth entry is already three free and so is everything after it. A four-voice fugue under that rule alone refuses
+at the block that completes its own exposition.
+
+Four voices therefore needs a voice silent *after* it has entered, and the grammar does not say which one. That is
+a parameter or a larger legal set to draw from, not a rule — and the second invents nothing, since drawing from the
+legal set is what §8.10 already endorses.
+
+> **Free and sufficient are different claims.** The first draft of this said the grammar rule "fixes the
+> exposition, which is where the fault is most visible", and left a reader to assume it was a step toward the
+> voice count. It is not a step toward it at all: it stops one block before the exposition ends. Reading the free
+> count off the derivation costs nothing and was not done until somebody asked what each option would give them.
+
 ### What is not measured
 
 A whole piece. Which voice rests where is a `Layout` decision that does not exist, and a resting voice has no

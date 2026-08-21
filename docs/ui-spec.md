@@ -343,12 +343,85 @@ grid, and the exposition finally looks like one. The gesture is a click on a
 block's lane to silence that voice there, and the ghost 4.2 already draws shows
 what the rest of the piece does about it.
 
-**What is undecided, and it is a §9 question rather than an interface one.** Where
-the pattern comes from. Three candidates, in increasing order of ambition: the
-grammar supplies it (an exposition rests every voice that has not entered, which
-is a rule and not a choice); `Layout` carries it per block; or the search chooses
-it. The first is free and fixes the exposition, which is where the fault is most
-visible. The last is the interesting one and nothing here has measured it.
+#### Where the pattern comes from, and what each answer gives somebody using this
+
+Three candidates. They are not alternatives — each is a layer on the one before,
+and each is worth having on its own. What follows is what each *delivers*, and
+readme §8.17 now measures the first one's limit rather than assuming it.
+
+**1. The grammar supplies it: a voice says nothing until it has entered.**
+
+No parameter, no gesture, no settings field. The exposition already says who
+enters when, so this is a rule and not a choice.
+
+What it gives: the opening finally sounds and looks like a fugue. One voice
+alone, then two, then three, and the plan strip shows lanes filling up rather
+than a full grid from bar one. That is the single most recognisable event in the
+form and it is currently absent — this is a **correction, not a feature**, and it
+should happen whatever else does.
+
+What it does not give, and the measurement is exact about it:
+
+| | free voices per block | worst |
+|---|---|---|
+| 3 voices | `E0 E1 L1 E2 m2 m2 … c2` | 2 — fills |
+| 4 voices | `E0 E1 L1 E2 **E3** m3 … c3` | 3 — §2.7's wall |
+
+**It does not buy four voices.** At four, the fourth entry is already three free
+voices, and so is every block after the exposition, so the piece refuses at the
+block that completes its own exposition. It also does nothing for texture after
+the exposition: from bar five onward every voice still plays continuously. What
+it does buy beyond the opening is speed — the first blocks drop to one and two
+free, 68 states where there were 8 434.
+
+**2. `Layout` carries it, per block.**
+
+A field keyed on `identities_of` like the rerolls and the turns, and a gesture:
+click a block's lane to silence that voice there. The furniture exists.
+
+What it gives: **four voices**, and the first thing in this program that lets
+somebody *shape* a piece rather than pick from presets. Thinning the texture
+before a big entry, dropping the bass under an episode, bringing all four in for
+the close — that is fugal craft, and none of it is expressible today. It saves
+and reloads with the piece, so a texture is part of what a settings file
+reproduces.
+
+What it costs: **the constraint is invisible until it is violated.** Four voices
+with nobody resting refuses, and a refusal a person cannot diagnose is worse than
+a control that is missing. §9's disabled four-voice button already sets the
+precedent for how to handle that — offer it with the condition stated — and the
+interface should maintain a legal pattern by default rather than leave somebody to
+discover the rule by hitting it.
+
+**3. The search chooses it.**
+
+What it gives: four voices that simply work, with nothing to learn and no
+constraint to respect. And *Try a different one* becomes a much larger musical
+difference than it is now — a different draw would change who is playing, not
+only what they play.
+
+The cost argument is in its favour rather than against. Resting **shrinks** the
+problem: choosing one of three voices to rest and then filling two free is three
+subproblems of 8 434 states, about 25 000 in total, against refusing outright at
+three free. The choice pays for itself immediately.
+
+The objection is this project's founding constraint. Something has to decide
+*which* voice rests, and no treatise says. A heuristic — rest whoever has played
+longest — is exactly the hand-rolled rule §1 forbids.
+
+There is a formulation that invents nothing: **make the rest patterns part of the
+legal set and draw uniformly from it**, which is what
+[§8.10](../readme.md) already established beats optimising. No new rule, the same
+mechanism over a larger domain. The unmeasured risk is that uniform draws give
+*incoherent* texture — a voice appearing and vanishing block by block, where real
+fugal texture has shape. Repairing that is where an invented rule would creep back
+in, and it is the reason this one is called the interesting candidate rather than
+the recommended one.
+
+**Build order.** 1 is a bug fix and should go in regardless. 2 is what delivers
+four voices and the compositional control, and 1 becomes the default it starts
+from. 3 fills in whatever 2 leaves unset, and is a §9 question rather than an
+interface one.
 
 **And one thing the measurement does not cover.** A voice has to leave and
 re-enter, and `Problem::prior` carries one pitch per voice — a resting voice has
@@ -934,8 +1007,16 @@ resting costs 8 434 peak states, which is what three voices costs to the state,
 and fills in the same 150 ms with nothing relaxed. So the same field that fixes
 the texture also buys the voice count that readme §9 had assigned to a solver.
 `compose::fill_block` already takes a `silent` argument and `compose::block_cost`
-is the measurement's way in; what is missing is where the pattern comes from and
-what the interface does with it.
+is the measurement's way in.
+
+**And the free half is not the whole of it**, which 4.4 sets out and §8.17 now
+measures per block. Resting a voice until it has entered costs no parameter and
+fixes the exposition, and it is *not* enough for four voices: the fourth entry is
+already three free voices and so is every block after it, so a four-voice fugue
+under that rule alone refuses at the block completing its own exposition. Four
+voices needs a voice to rest **after** it has entered, and nothing in the grammar
+says which — so it is a `Layout` field or a search, and 4.4 argues for both in
+that order.
 
 Everything else on this list is now done:
 
@@ -1110,9 +1191,14 @@ arrivals in it — and readme §8.17 measured that fixing it also buys four voic
 which §9 had assigned to a CDCL solver. Four voices with one resting costs 8 434
 peak states, exactly what three voices costs. The library half is done as far as
 one block: `fill_block` takes a `silent` argument and `block_cost` measures
-through it. What is missing is where the pattern comes from — 4.4 lists three
-candidates and prefers the cheapest, which is the grammar supplying the
-exposition's rests for nothing.
+through it.
+
+It is really two shipments. **The grammar's own rule** — a voice says nothing
+until it has entered — costs no parameter, no gesture and no settings field, and
+fixes the exposition, which is where the fault is most visible; it should go in
+whatever else does. It does **not** reach four voices, and §8.17 says exactly
+where it stops. **A `Layout` field** is what reaches four voices and what lets
+somebody shape a texture at all; 4.4 has what each gives and what each costs.
 
 **Item 2 is mostly interface work on machinery that exists**, and 4.5 argues the
 one design point that matters: the palette should let an illegal plan be built

@@ -2274,6 +2274,27 @@ insurance as §8.16 put it when it chose which constraint to relax first: it is 
 which is the difference between two voices and three. The relaxation ladder drops the join first and the plan last,
 and this says that ordering is not a preference but the only survivable one.
 
+#### The cheapest rule, and exactly where it stops
+
+The rule that costs nothing is the grammar's own: **a voice says nothing until it has entered**. The exposition
+already says who enters when, so this is a rule and not a parameter. Free voices per block under it, `E` exposition,
+`L` link, `m` middle, `c` close:
+
+| | | worst |
+|---|---|---|
+| 3 voices | `E0 E1 L1 E2 m2 m2 m2 m2 m2 m2 c2 c2` | 2 — fills |
+| 4 voices | `E0 E1 L1 E2 `**`E3`**` m3 m3 m3 m3 m3 m3 c3 c3` | 3 — refused |
+| 5 voices | `E0 E1 L1 E2 E3 E4 m4 …` | 4 — refused |
+
+**It is not enough for four voices, and it fails in the most pointed place available.** At four the fourth entry is
+already three free voices, and so is every block after the exposition — so a four-voice fugue under this rule alone
+refuses at the block that completes its own exposition. What it does buy is the opening, at three voices, for
+nothing: the first blocks drop to one and two free, 68 states where there were 8 434.
+
+So four voices needs a voice to rest **after** it has entered, and nothing in the grammar says which one. That is a
+parameter or a search, not a rule — and it is where this stops being a correction and starts being a design
+decision. `docs/ui-spec.md` section 4.4 sets out what each answer gives somebody using the program.
+
 **What this does not measure.** A whole piece. Which voice rests in which block is a `Layout` decision that does
 not exist, and a voice has to leave and re-enter in a way the join has never been asked about — `Problem::prior`
 carries one pitch per voice and a resting voice has none, so a re-entry is a cold start every time, which is what
@@ -2367,6 +2388,12 @@ order.
    fugue sounds all four for long. So four voices is a **texture** feature and not a solver one, and the solver's
    real remaining job is the stretto packing below and five voices all sounding, which nothing in this repertoire
    asks for.
+
+   **It is not free, and §8.17 is exact about the part that is.** Resting a voice until it has entered costs no
+   parameter at all and fixes the exposition — but a four-voice fugue under that rule alone still refuses at the
+   fourth entry, because by then three voices have entered and none of them may rest again. Four voices needs a
+   voice silent *after* it has entered, and the grammar does not say which one, so it is a `Layout` field or a
+   larger legal set to draw from. The second invents no rule and is the open question.
 
    That does not make the solver wrong to want. It makes the ordering wrong: rests are cheap and buy the voice
    count, and conflict learning is expensive and buys the cases rests cannot reach.

@@ -2894,10 +2894,68 @@ pub fn texture() {
   println!("   Read down the *free* column, not the voices column: the cost is the same wherever");
   println!("   the free count is the same, and it does not depend on how many voices are sounding");
   println!("   around them. Four voices with one resting costs exactly what three voices cost.\n");
-  println!("   What this does not measure: a whole piece. Choosing *which* voice rests in each");
-  println!("   block is a `Layout` decision that does not exist yet, and a rest has to be entered");
-  println!("   and left in a way §8.16's join has never been asked about. This says the search can");
-  println!("   afford it, not that the counterpoint is good.");
+
+  // ---- and what the cheapest rule would actually buy, block by block
+  //
+  // The obvious rule is the grammar's own: a voice says nothing until it has
+  // stated the subject. It costs no parameter and no gesture, and the question
+  // is whether it is enough — which is a property of the derivation and can be
+  // read off it without filling a note.
+  println!("   -- and what the grammar's own rule would buy, per block --\n");
+  println!("   A voice says nothing until it has entered. No parameter, no gesture: the exposition");
+  println!("   already says who enters when. Free voices per block, E exposition, L link, m middle,");
+  println!("   c close:\n");
+  for voices in 3..=5usize {
+    let d = compose::Design {
+      subject: subject.clone(),
+      voices,
+      key: p.key,
+      tonic,
+      measure: p.measure,
+      beat: p.beat,
+      compass: (0..voices).map(|v| { let top = 45 - 5 * v as i16; (top - 12, top) }).collect(),
+    };
+    let l = compose::Layout::default();
+    let blocks = compose::derive(&d, &l);
+    let origins = compose::origins(&d, &l);
+    let mut entered = vec![false; voices];
+    let row: Vec<String> = blocks
+      .iter()
+      .enumerate()
+      .map(|(i, b)| {
+        let held = match &b.kind {
+          compose::Kind::Entry { voice, .. } | compose::Kind::Episode { voice, .. } => *voice,
+        };
+        if matches!(b.kind, compose::Kind::Entry { .. }) {
+          entered[held] = true;
+        }
+        let free = entered.iter().filter(|e| **e).count().max(1) - 1;
+        let tag = match origins.get(i) {
+          Some(compose::Origin::Exposition(_)) => 'E',
+          Some(compose::Origin::Link) => 'L',
+          Some(compose::Origin::Middle(_)) => 'm',
+          _ => 'c',
+        };
+        format!("{tag}{free}")
+      })
+      .collect();
+    let worst = row.iter().filter_map(|r| r[1..].parse::<usize>().ok()).max().unwrap_or(0);
+    println!("   V={voices}  {}   worst {worst} free — {}", row.join(" "), if worst <= 2 { "fills" } else { "§2.7's wall" });
+  }
+  println!();
+  println!("   **The cheap rule is not enough for four voices, and it is worth being exact about");
+  println!("   where it stops.** At V=4 the fourth entry is already three free voices, and so is");
+  println!("   every block after the exposition — so a four-voice fugue under this rule alone");
+  println!("   refuses at the block that completes its own exposition. What the rule buys is the");
+  println!("   texture of the opening, at three voices, for nothing: the first blocks drop to one");
+  println!("   and two free, which is 68 states where there were 8 434.\n");
+  println!("   Four voices needs a voice to rest **after** it has entered, and nothing in the");
+  println!("   grammar says which one. That is a parameter or a search, not a rule.\n");
+
+  println!("   What this does not measure: a whole piece. A rest has to be entered and left in a");
+  println!("   way §8.16's join has never been asked about — `Problem::prior` carries one pitch per");
+  println!("   voice and a resting voice has none, so every re-entry is cold. This says the search");
+  println!("   can afford it, not that the counterpoint is good.");
 }
 
 pub fn fugue() {
