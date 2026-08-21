@@ -1351,6 +1351,44 @@ a `Layout` field, or the rest patterns in the legal set drawn from uniformly —
 The second ships switched off with a control to turn it on, for `--gen-tier`'s reason: a change that alters what is
 generated and has not been measured against the book does not get to be the default.
 
+## Four voices, and the item that was two items
+
+[`a110c54`](../../commit/a110c54)
+
+`Layout::rests` is the field the grammar's rule could not supply: a voice silent again *after* it has been heard.
+Keyed on `identities_of` like the rerolls and the turns, refused where it names the voice a block exists to carry.
+With it, **a four-voice fugue composes** — 29 bars, thirteen blocks, all four of §8.15's checks passing, the subject
+stated in all four voices, zero parallel perfects and zero direct-to-perfect on a downbeat over 991 slices.
+
+`compose::rests_that_fit` supplies the pattern, resting whichever voice has gone longest since holding anything
+wherever a block would otherwise have three free. It is documented as a **feasibility helper and not a rule**: it
+claims the voice count is reachable, not that this is the texture anybody would write, and §1's constraint is the
+reason that distinction is laboured rather than assumed.
+
+### The cost §8.17 could not price
+
+A resting voice has no `Problem::prior`, so every re-entry is a cold start, and §8.17 said plainly that nothing had
+asked what a piece does about that. **Three of thirteen blocks lost the join**, against one of twelve for the
+three-voice piece. That is what being cold that often costs — a relaxation the `Relaxed` log already reports, not a
+hidden one.
+
+### And the item was two items
+
+Sounding voices per bar run `1 1 2 2 3 3 3 …`. The texture never reaches four, and that is not the rest pattern
+being clumsy: four voices sounding at once **is** three free voices, which is the wall itself.
+
+> **Two different things were being called "four voices", and only one of them was ever a solver problem.** Four
+> *entries* is a texture decision and costs a `Layout` field. Four *parts sounding together* is three free voices
+> and cannot be moved by any arrangement of rests. §9 wanted a CDCL solver for "four voices" and will now get it for
+> density, which is a smaller and much better defined thing to want. The item was never wrong; it was two items with
+> one name, and the cheap half went unbuilt for as long as the name held them together.
+
+### A refusal that names its own cure
+
+`fill_block` reports the free count and the remedy when the free count is what refused it — *N voices are free here
+and the exact search can choose 2; rest one in this block.* A limit a caller can act on is a different thing from a
+dead end, and the difference is one sentence.
+
 ---
 
 ## Recurring pattern
