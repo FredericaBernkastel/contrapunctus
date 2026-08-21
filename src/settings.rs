@@ -256,8 +256,7 @@ mod tests {
   fn a_rerolled_block_survives_a_round_trip() {
     let d = design();
     let plain = compose::Layout::default();
-    let blocks = compose::derive(&d, &plain);
-    let id = compose::identities(&blocks)[3];
+    let id = compose::identities_of(&d, &plain)[3];
 
     let mut l = plain.clone();
     l.rerolls.push((id, 1));

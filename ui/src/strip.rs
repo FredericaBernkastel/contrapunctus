@@ -75,6 +75,13 @@ pub enum Edit {
   /// This block is written again — 4.2's per-block reroll. `id` is what
   /// `Layout::rerolls` is keyed on and `block` is where it is now.
   Reroll { block: usize, id: u64 },
+  /// This block moves `by` lanes, **and every block after it moves with it** —
+  /// 4.3's voice drag, and the only shape it can honestly take.
+  ///
+  /// `derive` gives each block the lane after its predecessor's, so a lane is
+  /// not a per-block parameter and never was; what is settable is where the
+  /// chain is rotated. `id` keys `Layout::turns` and `block` is where it is now.
+  Turn { block: usize, id: u64, by: i16 },
 }
 
 impl Edit {
@@ -99,6 +106,20 @@ impl Edit {
         owns(lo).zip(owns(hi)).map(|((a, _), (_, b))| a..=b)
       }
       Edit::Reroll { block, .. } => Some(block..=block),
+      // Span-preserving: a turn changes which lane a block is in and moves not
+      // one bar, so `refill_span` can rewrite it in place.
+      //
+      // **From the block before it**, which is not an off-by-one. `fill_block`
+      // asks which voice holds the next block and rests that voice for a bar at
+      // the end of this one, so it does not enter by a leap. Turn a block and
+      // its predecessor is told a different voice is coming, and really does
+      // change — `a_turned_plan_still_composes_and_to_something_else` asserts
+      // both halves. Refilling from the turn itself would leave one block
+      // stale, and fading from the turn itself would show less than moves.
+      Edit::Turn { block, .. } => {
+        let last = compose::origins(d, l).len().checked_sub(1)?;
+        Some(block.saturating_sub(1)..=last)
+      }
       // All of these change how many blocks there are, so every bar after them
       // moves and there is nothing local about it.
       Edit::EpisodeBars(_)
@@ -132,6 +153,16 @@ impl Edit {
         Some((_, n)) => *n = n.wrapping_add(1),
         None => out.rerolls.push((id, 1)),
       },
+      // Turns at one place add up, and one that adds up to nothing is taken out
+      // rather than left as a rotation of zero. Otherwise dragging a block down
+      // and back up would leave a settings file that says something happened.
+      Edit::Turn { id, by, .. } => {
+        match out.turns.iter_mut().find(|(k, _)| *k == id) {
+          Some((_, n)) => *n += by,
+          None => out.turns.push((id, by)),
+        }
+        out.turns.retain(|(_, n)| *n != 0);
+      }
       Edit::AddMiddle { at, degree } => out.middles.insert(at.min(out.middles.len()), degree),
       Edit::RemoveMiddle(k) => {
         if k < out.middles.len() {
@@ -144,6 +175,20 @@ impl Edit {
     }
     out
   }
+}
+
+/// The turn that would put block `bi` in lane `to`, if it may have one.
+///
+/// `None` where the library refuses — inside the exposition, whose entries are
+/// one per voice by construction, so rotating part of that run would state the
+/// subject twice in one voice and never in another. `compose::turnable` is the
+/// authority and this asks it rather than reimplementing the reason, so a drag
+/// can never propose a layout `compose::fugue` would then refuse.
+fn turn_to(d: &Design, l: &Layout, bi: usize, from: usize, to: usize, ids: &[u64]) -> Option<Edit> {
+  if to == from || compose::turnable(d, l, bi).is_err() {
+    return None;
+  }
+  Some(Edit::Turn { block: bi, id: *ids.get(bi)?, by: to as i16 - from as i16 })
 }
 
 /// Everything one frame of the strip asks the application to do.
@@ -162,6 +207,15 @@ pub struct Strip<'a> {
   pub design: &'a Design,
   pub layout: &'a Layout,
   pub playhead: Option<i64>,
+  /// A generate in progress: the plan being written, and how many blocks of it
+  /// are done — spec 7.3.
+  ///
+  /// The strip draws that plan with the unwritten tail faded, which is the
+  /// progress indicator 7.3 asks for and a better one than a bar because it is
+  /// the thing itself: you watch the fugue arrive block by block. It also takes
+  /// no gestures while this is set, because there is nothing to edit until the
+  /// piece exists.
+  pub writing: Option<(&'a [Block], usize)>,
   /// What part of the piece the score is showing, as fractions of the whole.
   ///
   /// The strip fits the whole piece and the score does not, so once the score is
@@ -182,21 +236,32 @@ impl Strip<'_> {
     let faint = ui.visuals().weak_text_color();
 
     // Pinned to the committed piece for the whole of a drag — see the module
-    // note. Everything below measures against this and nothing else.
-    let total = compose::length(&self.out.blocks).max(1);
+    // note. Everything below measures against this and nothing else, except
+    // while a generate is running, when the plan being written is the only one
+    // worth showing and no drag is in flight to be kept still.
+    let base: &[Block] = match self.writing {
+      Some((bs, _)) => bs,
+      None => &self.out.blocks,
+    };
+    let total = compose::length(base).max(1);
     let x_of = |t: i64| area.left() + area.width() * (t as f32 / total as f32);
     let per_bar = area.width() * measure as f32 / total as f32;
     let lane_top = |v: usize| area.top() + RULER + v as f32 * (LANE + GAP);
+    // Which lane a height is in — `lane_top`'s inverse, and what makes a drag
+    // out of a block's own lane mean the lane it was dragged into.
+    let lane_at = |y: f32| {
+      (((y - area.top() - RULER) / (LANE + GAP)).floor().max(0.0) as usize).min(voices.saturating_sub(1))
+    };
 
     let origins = compose::origins(self.design, self.layout);
     // What each block is, for naming one in a reroll. An index would move under
     // the next insertion; this does not.
-    let ids = compose::identities(&self.out.blocks);
+    let ids = compose::identities_of(self.design, self.layout);
     let mut asked = Asked::default();
 
     // ---- the gestures, before drawing, because what is drawn depends on them
     let mut proposed: Option<(Edit, Layout)> = None;
-    for (i, b) in self.out.blocks.iter().enumerate() {
+    for (i, b) in self.out.blocks.iter().enumerate().take_while(|_| self.writing.is_none()) {
       let Some(v) = voice_of(&b.kind).filter(|v| *v < voices) else { continue };
       let r = block_rect(b, v, &x_of, &lane_top);
       let of = origins.get(i).copied();
@@ -245,14 +310,22 @@ impl Strip<'_> {
 
         if h.dragged() || h.drag_stopped() {
           if let Some(pos) = h.interact_pointer_pos() {
-            if let Some(to) = middle_under(pos.x, self.design, self.layout, &x_of) {
-              if to != k {
-                let e = Edit::MoveMiddle(k, to);
-                if h.drag_stopped() {
-                  asked.edit = Some(e);
-                } else {
-                  proposed = Some((e, e.applied(self.layout)));
-                }
+            // **Which gesture this is, decided by where the pointer went.** Out
+            // of the block's own lane is a voice drag; along it is a reorder.
+            // No modifier, no mode: the two edits move in different directions
+            // and the pointer has already said which one it meant.
+            let e = if lane_at(pos.y) != v {
+              turn_to(self.design, self.layout, i, v, lane_at(pos.y), &ids)
+            } else {
+              middle_under(pos.x, self.design, self.layout, &x_of)
+                .filter(|to| *to != k)
+                .map(|to| Edit::MoveMiddle(k, to))
+            };
+            if let Some(e) = e {
+              if h.drag_stopped() {
+                asked.edit = Some(e);
+              } else {
+                proposed = Some((e, e.applied(self.layout)));
               }
             }
           }
@@ -284,7 +357,18 @@ impl Strip<'_> {
         // A menu rather than 4.2's double-click. A double click that means
         // something no single click does is a gesture nobody discovers, and the
         // menu it would replace has to exist anyway for the returns.
-        let h = ui.interact(r, ui.id().with(("block", i)), Sense::click());
+        let h = ui.interact(r, ui.id().with(("block", i)), Sense::click_and_drag());
+        if h.dragged() || h.drag_stopped() {
+          if let Some(pos) = h.interact_pointer_pos().filter(|pos| lane_at(pos.y) != v) {
+            if let Some(e) = turn_to(self.design, self.layout, i, v, lane_at(pos.y), &ids) {
+              if h.drag_stopped() {
+                asked.edit = Some(e);
+              } else {
+                proposed = Some((e, e.applied(self.layout)));
+              }
+            }
+          }
+        }
         let (at, len, key_of, what) = (b.at, b.len, b.key_of, describe(b));
         let cold = self.out.relaxed.cold.contains(&i);
         h.clone().on_hover_ui(|ui| {
@@ -317,19 +401,33 @@ impl Strip<'_> {
     }
 
     // ---- what to draw: the proposal if one is being dragged, else the piece
-    let showing: Vec<Block> = match &proposed {
-      Some((_, l)) => compose::derive(self.design, l),
-      None => self.out.blocks.clone(),
+    let showing: Vec<Block> = match (&proposed, self.writing) {
+      (Some((_, l)), _) => compose::derive(self.design, l),
+      (None, Some((bs, _))) => bs.to_vec(),
+      (None, None) => self.out.blocks.clone(),
     };
     // Which blocks are about to move, so they can be faded. Everything from the
     // first block whose position or identity differs.
-    let settled = match &proposed {
-      Some(_) => showing
+    let settled = match (&proposed, self.writing) {
+      (Some(_), _) => showing
         .iter()
         .zip(&self.out.blocks)
         .position(|(a, b)| a.at != b.at || a.len != b.len || a.key_of != b.key_of || a.kind != b.kind)
         .unwrap_or(showing.len()),
-      None => showing.len(),
+      // Written is solid, not yet written is faded. The same fade a drag uses,
+      // and it means the same thing in both: this part is not settled yet.
+      (None, Some((_, done))) => done,
+      (None, None) => showing.len(),
+    };
+
+    // **A turn fades one block further back than its plan changed.** The lanes
+    // move from the turn onward, but the block before it changes too: it is the
+    // one that rests the voice about to enter, and after a turn a different
+    // voice is entering. `Edit::touches` refills from there for the same reason,
+    // and the library asserts that it really does change.
+    let settled = match &proposed {
+      Some((Edit::Turn { .. }, _)) => settled.saturating_sub(1),
+      _ => settled,
     };
 
     // The ruler: a bar number every four bars, dense enough to locate a block
@@ -353,7 +451,8 @@ impl Strip<'_> {
       let Some(v) = voice_of(&b.kind).filter(|v| *v < voices) else { continue };
       let r = block_rect(b, v, &x_of, &lane_top);
       let fading = i >= settled;
-      draw_block(&clip, ui, b, v, r, dark, fading, self.out.relaxed.cold.contains(&i) && proposed.is_none());
+      let cold = self.out.relaxed.cold.contains(&i) && proposed.is_none() && self.writing.is_none();
+      draw_block(&clip, ui, b, v, r, dark, fading, cold);
     }
 
     // The key ribbon, adjacent equal degrees merged — otherwise a plan that
@@ -456,6 +555,13 @@ impl Strip<'_> {
         },
         Edit::MoveMiddle(..) => {
           format!("{} — {bars} bars in all", l.middles.iter().map(|d| degree_name(*d)).collect::<Vec<_>>().join(" · "))
+        }
+        Edit::Turn { block, .. } => {
+          let lane = compose::derive(self.design, l)
+            .get(*block)
+            .and_then(|b| voice_of(&b.kind))
+            .map_or(0, |v| v + 1);
+          format!("into voice {lane}, and every block after it moves with it")
         }
         // None of these is ever dragged, so none is ever previewed.
         Edit::Key(..)
@@ -677,6 +783,12 @@ mod tests {
       Edit::RemoveMiddle(0),
       Edit::RemoveMiddle(2),
       Edit::CloseAtHome(false),
+      // A turn moves not one bar, so it belongs on the span-preserving side —
+      // which this test will say for itself, against `derive`, rather than on
+      // my word. `MoveMiddle` was on the wrong side once for exactly this
+      // reason and this is what found it.
+      Edit::Turn { block: 5, id: compose::identities_of(&d, &base_layout)[5], by: 1 },
+      Edit::Turn { block: 9, id: compose::identities_of(&d, &base_layout)[9], by: -1 },
     ];
     for e in cases {
       let l = e.applied(&base_layout);
@@ -712,10 +824,110 @@ mod tests {
 
     // A reroll changes no block's *plan* at all — only the notes drawn into one
     // — so it claims exactly its own block and derive sees nothing.
-    let e = Edit::Reroll { block: 6, id: compose::identities(&before)[6] };
+    let e = Edit::Reroll { block: 6, id: compose::identities_of(&d, &l0)[6] };
     let l = e.applied(&l0);
     assert_eq!(e.touches(&d, &l), Some(6..=6));
     assert_eq!(compose::derive(&d, &l).len(), before.len(), "a reroll must not change the plan");
+  }
+
+  /// **A turn claims the block before it, and it is right to.**
+  ///
+  /// The lanes move from the turn onward, so `derive` sees the change starting
+  /// there — but `fill_block` rests the voice that holds the *next* block, so
+  /// the predecessor is told a different voice is coming and its notes change
+  /// too. The range therefore starts one earlier than the plan difference, which
+  /// looks like an off-by-one and is the opposite of one: refilling from the
+  /// turn itself would leave a stale block, and fading from it would show less
+  /// than moves.
+  #[test]
+  fn a_turn_reaches_the_block_before_it() {
+    let d = design();
+    let l0 = Layout::default();
+    let before = compose::derive(&d, &l0);
+    let ids = compose::identities_of(&d, &l0);
+    let at = compose::origins(&d, &l0)
+      .iter()
+      .position(|o| matches!(o, compose::Origin::Middle(_)))
+      .expect("a middle");
+
+    let e = Edit::Turn { block: at, id: ids[at], by: 1 };
+    let l = e.applied(&l0);
+    let range = e.touches(&d, &l).expect("a turn is span-preserving");
+    assert_eq!(*range.start(), at - 1, "a turn must claim the block before it");
+    assert_eq!(*range.end(), before.len() - 1, "a turn reaches the end of the piece");
+
+    // and the plan really does change from `at` on, and not before it
+    let after = compose::derive(&d, &l);
+    assert_eq!(after.len(), before.len(), "a turn changed the number of blocks");
+    for i in 0..before.len() {
+      assert_eq!(before[i].at, after[i].at, "block {i} moved in time");
+      assert_eq!(before[i].kind != after[i].kind, i >= at, "block {i} changed lane when it should not have");
+    }
+  }
+
+  /// A turn that adds up to nothing leaves nothing behind — dragging a block
+  /// down a lane and back up must not write a rotation of zero into the
+  /// settings file, or a saved fugue would record something that did not happen.
+  #[test]
+  fn a_turn_and_its_opposite_cancel() {
+    let d = design();
+    let l0 = Layout::default();
+    let ids = compose::identities_of(&d, &l0);
+    let at = compose::origins(&d, &l0)
+      .iter()
+      .position(|o| matches!(o, compose::Origin::Middle(_)))
+      .expect("a middle");
+
+    let down = Edit::Turn { block: at, id: ids[at], by: 1 }.applied(&l0);
+    assert_eq!(down.turns, vec![(ids[at], 1)]);
+    let up = Edit::Turn { block: at, id: ids[at], by: -1 }.applied(&down);
+    assert!(up.turns.is_empty(), "a turn and its opposite left {:?} behind", up.turns);
+    assert_eq!(up, l0, "a turn undone is not the layout it started from");
+  }
+
+  /// **A drag never proposes a layout the library rejects as a layout.**
+  ///
+  /// `turn_to` asks `compose::turnable` rather than reimplementing the reason
+  /// the exposition cannot be turned in part, so the two cannot drift — which is
+  /// the failure this rules out.
+  ///
+  /// What it deliberately does **not** assert is that every offered turn
+  /// composes. It does not, and the first version of this test said it should:
+  /// rotating this subject's whole piece by one lane hits §2.7's state wall at
+  /// bar 26. That is not an illegal layout, it is a hard search, and the two are
+  /// different in a way worth keeping separate — the interface's job with the
+  /// first is to not offer it, and with the second to report it, which
+  /// `recolour` does. The reason it is hard is the interesting part: a turn
+  /// moves a *placed* subject into another lane, and a placed subject ignores
+  /// the compass, so the entry can land far outside the compass of the voice now
+  /// holding it and leave the free voices an awkward job.
+  #[test]
+  fn a_turn_is_never_offered_where_the_library_refuses_one() {
+    let d = design();
+    let l = Layout::default();
+    let blocks = compose::derive(&d, &l);
+    let ids = compose::identities_of(&d, &l);
+    let mut offered = 0;
+    for (bi, block) in blocks.iter().enumerate() {
+      let from = voice_of(&block.kind).expect("a lane");
+      for to in 0..d.voices {
+        let Some(e) = turn_to(&d, &l, bi, from, to, &ids) else {
+          // refused, and only ever for the one reason there is
+          assert!(to == from || compose::turnable(&d, &l, bi).is_err(), "block {bi} refused lane {to} for no reason");
+          continue;
+        };
+        offered += 1;
+        let after = e.applied(&l);
+        // The layout is one the library accepts *as a layout*. `Run::new` is
+        // exactly that question — it derives the plan and validates the turns
+        // and fills nothing — so this asks it rather than composing 24 fugues to
+        // learn what a plan already knows.
+        if let Err(why) = compose::Run::new(&d, &after, contrapunctus::automaton::CONFIRMED, 0x5EED) {
+          panic!("block {bi} offered a turn to lane {to} the library calls illegal: {why}");
+        }
+      }
+    }
+    assert!(offered > 0, "no turn was offered anywhere, so this test checked nothing");
   }
 
   /// A drag says the same thing the commit does, because both go through

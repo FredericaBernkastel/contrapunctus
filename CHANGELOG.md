@@ -1167,6 +1167,77 @@ round it.
 > **A picture of a specification is a document, and goes stale like one.** The sketch was exempt from the checker
 > for the same reason it was persuasive: it did not look like prose.
 
+## What the interface asked the library for
+
+[`ea81ff0`](../../commit/ea81ff0) — and the rest below, which landed together.
+
+Three library changes, all of them found by building an interface against the library rather than by reading it.
+None is an interface change; those are not recorded here.
+
+### A compass the wrong way round took the process down
+
+`realise::domain` sized its vector from `high − low + 1`. On an inverted compass that goes negative, and `as usize`
+turns a negative `i16` into a request for nine million million pitches — a capacity overflow, in a function whose
+loop would have produced nothing at all. `Design::compass` is read from a settings file a person can edit, so the
+input was reachable without writing any code.
+
+`fill` now names it beside the check on the voice count, and the capacity saturates as a second line.
+
+> **The values a caller is about to be stopped from producing are worth looking at before the stop is built.** This
+> was found by asking what a drag should be prevented from doing, and then asking what the library did to the
+> answers on the far side of that line. Neither a test nor a session at the keyboard would have reached it: the
+> interface clamps the range, and nothing else was constructing one by hand.
+
+And a claim withdrawn in the same breath. The first version of the clamp said a compass too narrow for the subject
+would make the search refuse. It does not — the compass bounds the **free** voices, and a stated subject is placed
+rather than searched, so it sounds where its entry puts it whether the compass admits those notes or not. Every
+arrangement the drag can produce composes, including three voices squeezed into one octave and the bass sitting
+above the soprano. The minimum span is a floor on usefulness, not on legality.
+
+### A resumable `generate`
+
+`compose::Run` fills one block per `step`. `generate` and `fugue` are both that loop run to completion, which is
+the code and not a description of it — the same reason `fill_block` exists, since there were once two places that
+wrote a block and they drifted apart in four ways. A resumable path with its own copy of the loop would have been
+the third, and the bug it eventually produced would have been a piece that came out differently depending on how
+fast the machine drawing it was. `stepping_a_run_writes_what_generating_it_would_have` compares the two note for
+note anyway, because the reason `fill_block` exists is that trusting the fix is how the drift started.
+
+`Run::finish` refuses while blocks remain. Every figure in an `Outcome` is about a whole piece, and the grammar
+verdict most of all: a parse of four blocks out of twelve is not a partial verdict but a wrong one.
+
+### `Layout::turns`, and a stated invariant that was not one
+
+`docs/ui-spec.md` section 4.3 said `derive` chains the lanes **so that no two consecutive blocks are placed in the same
+voice**. That is false, and false in the default layout every published figure uses: it derives as
+`0E 1E 2L 2E 0m 1m 2m …`, and the link and the entry after it are both voice 2. The exposition's entries are
+written one per voice top-down rather than chained, and the link takes the lane after the entry it follows. The
+chain's actual purpose is §8.16's: a voice that ends an entry and then starts the next motive leaps whatever
+separates them.
+
+So the parameter a voice drag wants is not a lane but a **rotation** — `Layout::turns`, each entry rotating its own
+block and every block after it, which leaves the chain intact because every step after a turn is still one lane on
+from the last. Refused inside the exposition, where the entries are one per voice by construction and rotating a
+tail of them would state the subject twice in one voice and never in another.
+
+Two things it taught, one about the generator and one about how it is keyed.
+
+> **A block changes when its successor's lane changes.** `fill_block` asks which voice holds the *next* block and
+> rests that voice for a bar at the end of this one, so it does not enter by a leap. Turn a block and its
+> predecessor is told a different voice is coming — so a turn reaches one block further back than its plan
+> difference does. Refilling from the turn itself leaves a stale block; fading from it shows less than moves.
+
+> **A question that can be asked wrongly should not be askable.** `identities` took blocks, and a caller holding an
+> `Outcome` would naturally pass its blocks — which, once a turn exists, gives answers that move whenever a lane
+> does, reseeding a whole tail for nothing. It is private now and `identities_of(design, layout)` takes its place,
+> reading the chain before any turn is applied. Making it private caught one real call site the moment it compiled,
+> and the seeds are unchanged: a settings file written before this still reproduces `Exact`.
+
+A legal turn can still fail to compose, and the reason joins this to the compass above: a turn moves a *placed*
+subject into another lane, and a placed subject ignores the compass — so an entry can land far outside the compass
+of the voice now holding it. One subject's whole piece rotated by a lane hits §2.7's wall at bar 26. A hard search
+and an illegal layout are different things, and only the second is worth refusing in advance.
+
 ---
 
 ## Recurring pattern

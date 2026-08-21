@@ -265,24 +265,51 @@ The horizontal scale stays pinned to the committed piece for the length of a
 drag. Rescaling to the preview would move the edge out from under the pointer
 dragging it, which is a feedback loop rather than an interface.
 
-### 4.3 A limit worth stating
+### 4.3 A limit worth stating, and what it turned out to be
 
-`compose::derive` gives each block the voice **after its predecessor's**, so that
-no two consecutive blocks are placed in the same voice — the rule that stopped a
-voice leaping an eleventh between its own entry and the next episode's motive
-(§8.16).
+`compose::derive` chains the lanes: after the exposition, each block takes the
+voice **after its predecessor's**. So a block's lane is not independently
+settable, and dragging one to another lane rotates the ones after it.
 
-The consequence is that **a block's voice is not independently settable**:
-dragging one block to another lane rotates the ones after it. Two honest ways to
-present that:
+**This section used to give the reason as "so that no two consecutive blocks are
+placed in the same voice", and that is false.** The default layout — the one
+every published figure uses — derives as `0E 1E 2L 2E 0m 1m 2m …`: the link and
+the entry after it are both in voice 2, because the exposition's entries are
+written one per voice top-down rather than chained, and the link takes the lane
+after the entry it follows. There is no such invariant to protect. What the
+chain is actually for is §8.16's finding: a voice that ends an entry and then
+starts the next episode's motive leaps whatever separates them, and handing the
+motive on costs nothing.
 
-1. **Show it.** On drag, ghost the downstream blocks in their new lanes so the
-   knock-on is visible before the drop. Recommended.
-2. **Change the library.** Assign voices per block with a local adjacency fix-up
-   instead of a chain. This changes the generated music and is a decision for
-   §9, not for the interface.
+So the honest parameter is not a lane but a **rotation**, and that is
+`Layout::turns` — keyed on `compose::identities_of`, each entry rotating its own
+block and every block after it. Dragging a block down a lane sets one. The chain
+survives intact: after the turn every step is still one lane on from the last.
 
-Do (1) now. Do not fake independence.
+Three things fell out of building it, and all three are the interesting part.
+
+- **A turn reaches one block further back than it looks.** `fill_block` asks
+  which voice holds the *next* block and rests that voice for a bar at the end of
+  this one, so it does not enter by a leap. Turn a block and its predecessor is
+  told a different voice is coming — so it changes too. `Edit::touches` refills
+  from there and the ghost fades from there. Refilling from the turn itself would
+  leave one block stale; fading from it would show less than moves.
+- **The exposition cannot be turned in part.** Its entries are one per voice by
+  construction, so a rotation of a tail of them states the subject twice in one
+  voice and never in another. `compose::turnable` says so, `Run::new` refuses a
+  layout that does it, and the drag never offers one. Turning at the very first
+  block rotates the whole run together and is fine.
+- **A legal turn can still fail to compose**, and for a reason that connects to
+  3.3. A turn moves a *placed* subject into another lane, and a placed subject
+  ignores the compass — so an entry can land far outside the compass of the voice
+  now holding it, leaving the free voices an awkward job. Rotating one subject's
+  whole piece by a lane hits §2.7's wall at bar 26. That is a hard search and not
+  an illegal layout, and the two are kept apart: the interface does not offer the
+  second and does report the first.
+
+The ghosting 4.2 already does is what shows all of this: the drag draws the plan
+it would commit to, with everything from the turn's predecessor onward faded. No
+gesture fakes independence, because none is offered.
 
 ---
 
@@ -818,11 +845,26 @@ Ordered by whether an interface can start without it.
 
 | # | change | why | size |
 |---|---|---|---|
-| 1 | Ghosting for a voice drag | 4.3 above, so the knock-on is visible | needs a voice to be settable at all — 12.2 |
-| 2 | A resumable `generate` | 7.3, so a fill can run a block per frame instead of blocking one | small |
-| 3 | A CDCL solver | four voices, and five | §9 |
+| 1 | A CDCL solver | four voices, and five | §9 |
 
 Everything else on this list is now done:
+
+- **`Layout::turns`** — a rotation of the voice chain from one block on, which is
+  what 4.3's voice drag turned out to be a parameter *for*. That section had said
+  ghosting needed "a voice to be settable at all"; it does, and what is settable
+  is the rotation rather than the lane, because the lane is derived. Keyed on
+  `identities_of`, refused inside the exposition, and the ghost fades from the
+  turn's predecessor because that is how far it really reaches.
+- **`compose::Run`** — a resumable generate, one block per `step`. `generate` and
+  `fugue` are both this loop run to completion, and that is the code rather than
+  a promise: `stepping_a_run_writes_what_generating_it_would_have` compares them
+  note for note. The interface fills what fits in six milliseconds of each frame
+  and draws the plan filling in as it goes.
+- **`identities_of`** replaced the public `identities`, which took blocks. A
+  caller holding an `Outcome` would naturally pass its blocks and would get
+  answers that moved whenever a lane did — so the question that can be asked
+  wrongly is no longer askable. Making it private caught one real call site in
+  the plan strip the moment it compiled.
 
 - **`Layout::rerolls`** — a per-block nudge keyed on `compose::identities`, so
   4.2's reroll changes one block and survives a save. It went in the layout
@@ -941,8 +983,10 @@ Status is one of **done**, **partial** — usable and honestly incomplete — or
 | 5.2 | The score following the playhead while it plays | by inspection |
 | 3.3 | Each voice's compass, as bars dragged on a grand staff — ends, and the whole range | `a_drag_on_a_handle_moves_that_bound`, `an_end_stops_where_it_has_to` |
 | 3.3 | And every arrangement a drag can reach still composing | `any_compass_the_drag_can_reach_still_composes` |
+| 4.3 | A voice drag, as the rotation it really is, with the knock-on ghosted | `a_turn_rotates_its_block_and_the_tail_behind_it`, `a_turn_reaches_the_block_before_it` |
+| 7.3 | A block a frame instead of a frame a piece, with the plan filling in as it goes | `stepping_a_run_writes_what_generating_it_would_have` |
 
-Forty-one tests, all headless. The interesting one is
+Forty-four tests, all headless. The interesting one is
 `every_offered_subject_composes`: each of the 24 subjects is composed on the
 shortest layout that is still a fugue, because a picker whose entries have not
 been tried is a picker that wastes the one click a beginner is sure to make. It
@@ -965,17 +1009,15 @@ silence is, in samples.
 | # | section | what | blocked on |
 |---|---|---|---|
 | 1 | 7.3 | Generating in a worker, so the sound survives the work | a worker build; 6.4 is the workaround until then |
-| 2 | 4.3 | A voice drag at all | there is no `Layout` field for it — see below |
-| 3 | 6.3 | System MIDI out, behind a feature | a `midir` dependency, and a device to try it on |
+| 2 | 6.3 | System MIDI out, behind a feature | a `midir` dependency, and a device to try it on |
 
-**Item 2 needs saying properly, because 4.3 assumed something that is not
-there.** That section says a voice drag should ghost its knock-on rather than
-fake independence — but there is nothing to drag. `derive` assigns every voice
-by a chain from the first entry, and `Layout` has no field that changes it, so a
-block's lane is not a parameter at all and dragging one cannot mean anything
-yet. Ghosting is the *presentation* of a feature that does not exist. Making it
-exist is a change to how the library assigns voices, which 4.3 itself calls a §9
-decision. The row is honest about that now; it used to read as interface work.
+**The voice drag has come off this list, and not in the shape it was written
+in.** It said a voice needed to be settable and called that a §9 decision about
+how the library assigns lanes. It is not: what the drag wants is not a lane but a
+*rotation* of the chain from one block on, and that changes nothing about how
+`derive` assigns anything — every step after a turn is still one lane on from the
+last. `Layout::turns` is the field, 4.3 has the three things building it found,
+and the ghost was already there.
 
 ### 12.3 Known gaps in what is built
 
@@ -1013,11 +1055,14 @@ Stated rather than left to be discovered:
   combination still *references* the panic, and referencing is not calling. The
   path it was reached by is gone; whether the string is reachable at all is
   unknown, and saying so is better than reporting a clean binary.
-- **Generation blocks the frame** for about 0.6 s, where 7.3 calls for one block
-  per frame. Doing it properly needs a resumable generate in the library —
-  `compose::generate` fills every block in one call — and on the web it needs a
-  worker as well, because one block is of the same order as the whole audio
-  budget. 6.4 is what stands in for both until then.
+- **Generation no longer blocks the frame, and on the web that is still not
+  enough.** `compose::Run` fills a block at a time and the interface spends six
+  milliseconds of each frame on it, so the window stays answerable and the plan
+  strip fills in as it goes. What has not changed is the arithmetic 7.3 gives:
+  `cpal`'s WebAudio backend queues about 85 ms and one block is tens of
+  milliseconds, so the sound can still be crowded by the work. A worker is the
+  honest answer there and 6.4's stream rebuild is what stands in until there is
+  one.
 - **A drag previews the plan and not the notes.** `derive` is free and the search
   is not, so what a drag shows is exactly right about where every bar will be and
   says nothing about what will be in them. That is the honest half to show; the
@@ -1063,6 +1108,16 @@ Stated rather than left to be discovered:
   was neither a test nor a session at the keyboard: it was designing a
   constraint, and then asking what the library did to the values on the far side
   of it. That is a cheap question and it had not been asked before.
+- **A test can pass on the piece before the one it is about.** The import test
+  asserted that taking a second voice of a file composed, and it had never been
+  true: that file is a whole fugue, its lines span a sixteenth, and every one of
+  them hits §2.7's wall on the first block. What satisfied the assertion was the
+  piece the *previous* import left on screen, while `refused` held this one's
+  explosion — both true at once, and only one of them about the voice just taken.
+  Keeping the last piece and saying why is the right behaviour and the panel
+  shows the refusal in warning colour. The test was reading the wrong half of it,
+  and only noticed because the generate stopped being synchronous and the stale
+  piece stopped being there.
 - **The compass shows what is allowed and not what was used.** Nothing on the
   staff says where the voices actually went, so a compass three octaves wider
   than the music needs looks the same as one the music fills. `kern::compass`

@@ -53,6 +53,16 @@ pub struct App {
   stale: bool,
   /// Compose once on the first frame, so the window appears before the work.
   first: bool,
+  /// A generate in progress, a block per frame — spec 7.3.
+  ///
+  /// Six tenths of a second is rude on a desktop and freezes a browser tab, and
+  /// the blockwise fill already had the shape to be stopped between two blocks.
+  /// The previous piece stays on screen and stays playable while this runs; what
+  /// the strip draws is the *new* plan with the unwritten tail faded, which is a
+  /// better progress indicator than a bar because it is the thing itself.
+  ///
+  /// `'static` because `Tier::rules` is, and `compose::Run` owns its design.
+  work: Option<compose::Run<'static>>,
 
   /// What the last file operation or edit did, in one line.
   status: Option<String>,
@@ -118,6 +128,7 @@ impl Default for App {
       refused: None,
       stale: false,
       first: true,
+      work: None,
       status: None,
       fidelity: None,
       saving: Slot::default(),
@@ -135,17 +146,84 @@ impl Default for App {
 }
 
 impl App {
+  /// Start a generate. It runs a block per frame in [`App::grind`] and finishes
+  /// there; nothing here blocks.
   fn compose(&mut self) {
-    match compose::fugue(&self.design, &self.layout, self.tier.rules(), self.seed) {
-      Ok(o) => {
-        self.out = Some(o);
+    match compose::Run::new(&self.design, &self.layout, self.tier.rules(), self.seed) {
+      Ok(run) => {
+        self.work = Some(run);
         self.refused = None;
       }
-      Err(e) => self.refused = Some(e),
+      Err(e) => {
+        self.work = None;
+        self.refused = Some(e);
+      }
     }
     self.stale = false;
     self.fidelity = None;
-    self.resound();
+  }
+
+  /// Fill what fits in a frame, if a generate is running.
+  ///
+  /// **A time budget rather than a fixed block count**, because blocks are not
+  /// the same size: an episode of one bar and an entry of four are both one
+  /// call. Six milliseconds leaves the rest of a sixteen-millisecond frame for
+  /// drawing, and a block that runs long simply overruns — there is no way to
+  /// stop inside one, and pretending otherwise would mean a second place that
+  /// writes a block.
+  ///
+  /// **This is necessary and not sufficient on the web.** `cpal`'s WebAudio
+  /// backend queues about 85 ms and one block is tens of milliseconds, so the
+  /// sound can still be crowded; 7.3 wants a worker and 6.4's stream rebuild is
+  /// what stands in until there is one.
+  fn grind(&mut self, ctx: &egui::Context) {
+    if self.grind_for(0.006) {
+      ctx.request_repaint();
+    }
+  }
+
+  /// Run the generate to completion, blocking.
+  ///
+  /// What a caller wants when there is no frame to be polite to — a test, and
+  /// anything that must not proceed without a finished piece. It is the same
+  /// loop with the budget taken off, not a second way of generating.
+  #[allow(dead_code)] // used by the tests, which are the callers with no frame
+  pub fn settle(&mut self) {
+    while self.grind_for(f64::INFINITY) {}
+  }
+
+  /// Fill blocks until `budget` seconds are spent or the run ends. Returns
+  /// whether one is still going.
+  fn grind_for(&mut self, budget: f64) -> bool {
+    if self.work.is_none() {
+      return false;
+    }
+    let t0 = web_time::Instant::now();
+    loop {
+      let Some(run) = self.work.as_mut() else { return false };
+      match run.step() {
+        Err(e) => {
+          self.refused = Some(e);
+          self.work = None;
+          return false;
+        }
+        Ok(true) if t0.elapsed().as_secs_f64() < budget => continue,
+        Ok(true) => return true,
+        Ok(false) => break,
+      }
+    }
+    let Some(run) = self.work.take() else { return false };
+    let (_, all) = run.progress();
+    match run.finish() {
+      Ok(o) => {
+        self.status = Some(format!("{all} blocks written in {:.0} ms", o.seconds * 1000.0));
+        self.out = Some(o);
+        self.refused = None;
+        self.resound();
+      }
+      Err(e) => self.refused = Some(e),
+    }
+    false
   }
 
   /// Apply an edit from the plan strip.
@@ -441,6 +519,7 @@ impl App {
       self.first = false;
       self.compose();
     }
+    self.grind(ui.ctx());
     self.collect();
 
     let mut save = false;
@@ -559,6 +638,25 @@ impl App {
         ui.add_space(8.0);
       }
 
+      // What a generate looks like while it runs. The plan strip below fills in
+      // block by block from the same run, but on the very first one there is no
+      // previous piece and therefore no strip, so this line is the only thing
+      // saying anything is happening.
+      if let Some(run) = &self.work {
+        let (done, all) = run.progress();
+        ui.add_space(6.0);
+        ui.label(RichText::new(format!("Writing — block {done} of {all}")).strong());
+        ui.add(egui::ProgressBar::new(done as f32 / all.max(1) as f32).desired_height(6.0));
+        ui.label(
+          RichText::new(
+            "A few blocks a frame, so the window stays answerable while it works. Whatever              was here before is still on screen and still plays.",
+          )
+          .weak()
+          .small(),
+        );
+        ui.add_space(6.0);
+      }
+
       let Some(out) = &self.out else { return };
       let measure = self.design.measure;
 
@@ -609,8 +707,10 @@ impl App {
       });
       let head = self.playhead();
       let seen = self.seen.filter(|(a, b)| *b - *a < 0.999);
+      let writing = self.work.as_ref().map(|r| (r.blocks(), r.progress().0));
       let asked =
-        strip::Strip { out, design: &self.design, layout: &self.layout, playhead: head, window: seen }.show(ui);
+        strip::Strip { out, design: &self.design, layout: &self.layout, playhead: head, window: seen, writing }
+          .show(ui);
       edit = asked.edit;
       seek = asked.seek;
 
@@ -1050,6 +1150,13 @@ fn describe_edit(e: strip::Edit, l: &Layout) -> String {
       0 => "no returns at all, which §8.15 found in the book too".to_string(),
       _ => format!("a return taken out — now {}", order()),
     },
+    strip::Edit::Turn { id, .. } => {
+      let n = l.turns.iter().find(|(k, _)| *k == id).map_or(0, |(_, n)| *n);
+      match n {
+        0 => "the voices back where they were".to_string(),
+        n => format!("that block and the rest moved {} {}", n.abs(), if n.abs() == 1 { "voice" } else { "voices" }),
+      }
+    }
     strip::Edit::CloseAtHome(true) => "closing at home".to_string(),
     strip::Edit::CloseAtHome(false) => "stopping after the last return".to_string(),
   }
@@ -1109,6 +1216,10 @@ mod tests {
         })
         .drop_without_applying_deltas();
     }
+    // The generate runs a block per frame now, and this paints a handful of
+    // frames rather than however many the piece needs. `settle` is the same
+    // loop with the frame budget taken off.
+    app.settle();
     assert!(app.out.is_some(), "the default settings did not produce a fugue: {:?}", app.refused);
   }
 
@@ -1209,9 +1320,10 @@ mod tests {
   fn every_edit_keeps_the_past_and_stays_reproducible() {
     let mut app = App::default();
     app.compose();
+    app.settle();
     let start = app.out.clone().expect("a fugue");
     let l0 = app.layout.clone();
-    let ids = compose::identities(&start.blocks);
+    let ids = compose::identities_of(&app.design, &l0);
 
     let mut tried = 0;
     let mut edits: Vec<strip::Edit> = vec![strip::Edit::MoveMiddle(0, 2), strip::Edit::MoveMiddle(2, 0)];
@@ -1333,7 +1445,10 @@ mod tests {
       ]
     };
 
-    // one frame to lay out and find the score
+    // one frame to start the generate, then finish it, then a frame to lay the
+    // score out — there is no score to aim a wheel at until there is a piece
+    frame(&mut app, vec![]);
+    app.settle();
     frame(&mut app, vec![]);
     let page = app.page.expect("the score was drawn");
     assert!(page.width() > 100.0, "the score came out {page:?}");
@@ -1371,6 +1486,7 @@ mod tests {
   fn an_edit_is_all_or_nothing() {
     let mut app = App::default();
     app.compose();
+    app.settle();
     let start = app.out.clone().expect("a fugue");
     let l0 = app.layout.clone();
 
@@ -1427,7 +1543,24 @@ mod tests {
     let second = contrapunctus::settings::fingerprint(std::slice::from_ref(&app.design.subject));
     assert_ne!(first, second, "taking a different voice gave the same subject");
     assert!(app.status.as_deref().unwrap_or("").contains("voice 2 of"), "{:?}", app.status);
-    assert!(app.out.is_some(), "the second voice did not compose: {:?}", app.refused);
+    app.settle();
+    // **A piece or a stated reason, and never neither.**
+    //
+    // The assertion that used to be here was that `out` is `Some`, and it
+    // passed for the wrong reason: this file is a whole fugue, its lines span a
+    // sixteenth, and every one of them hits §2.7's wall on the first block. What
+    // `out` held was the piece the *previous* import left behind, while
+    // `refused` held this one's explosion — both true at once, and only one of
+    // them about the voice just taken. Keeping the old piece and saying why is
+    // the right behaviour and the panel shows the refusal in warning colour; the
+    // test was simply reading the wrong half of it.
+    assert!(
+      app.out.is_some() || app.refused.is_some(),
+      "taking a voice neither wrote a piece nor said why not"
+    );
+    if let Some(why) = &app.refused {
+      assert!(why.contains("§2.7") || why.contains("state explosion"), "refused for an unexpected reason: {why}");
+    }
   }
 
   /// The presets are the ones spec 3.2 names, and `Journey::of` recognises each

@@ -98,9 +98,20 @@ const DOMINANT_SEVENTH: usize = 4;
 /// that should have been local. Keyed on the block's own description instead,
 /// an untouched block keeps its notes when something before it grows.
 ///
-/// `nth` distinguishes blocks that are otherwise identical — two episodes for
-/// the same voice in the same key — and counts only among *those*, so it does
-/// not move when an unrelated block is inserted.
+/// `nth` distinguishes blocks that are otherwise identical — two episodes in
+/// the same key — and counts only among *those*, so it does not move when an
+/// unrelated block is inserted.
+///
+/// **Taken from the chain, before [`Layout::turns`] is applied** — which is what
+/// [`identities_of`] is for, and why it is the only way to ask.
+///
+/// A turn rotates the lanes of every block from one point on. The lane is part
+/// of a block's description, so if identity were read off the *derived* blocks a
+/// turn would move every identity behind it: the tail would reseed, and moving a
+/// block to another lane would rewrite its notes twice over — once because the
+/// lane really did change, and once for no reason anybody asked for. Reading it
+/// off the chain instead leaves the lane in the hash and takes the turn out of
+/// it, which keeps both properties and changes no seed that existed before.
 fn ident(b: &Block, nth: usize) -> u64 {
   let (tag, voice, shift, tonal) = match &b.kind {
     Kind::Entry { voice, shift, tonal } => (1u64, *voice as u64, *shift as i64 as u64, *tonal as u64),
@@ -114,12 +125,10 @@ fn ident(b: &Block, nth: usize) -> u64 {
   h
 }
 
-/// Each block's identity, one per block, in order.
-///
-/// The key a caller names a block by when it wants *that* block written again.
-/// An index would not do: it moves when anything before it is inserted, and an
-/// editor's whole business is inserting things.
-pub fn identities(blocks: &[Block]) -> Vec<u64> {
+/// Each block's identity, one per block, in order. Private, because the blocks a
+/// caller holds are the *derived* ones and asking with those would be wrong the
+/// moment a turn is set — [`identities_of`] is the way to ask.
+fn identities(blocks: &[Block]) -> Vec<u64> {
   let mut seen: std::collections::HashMap<u64, usize> = std::collections::HashMap::new();
   blocks
     .iter()
@@ -139,9 +148,31 @@ pub fn identities(blocks: &[Block]) -> Vec<u64> {
 /// identity. A block that has been asked for again draws differently and every
 /// other block draws exactly as before, which is what makes *this bar, again* a
 /// local operation rather than a new fugue.
-pub fn seeds(blocks: &[Block], base: u64, rerolls: &[(u64, u32)]) -> Vec<u64> {
-  identities(blocks)
-    .into_iter()
+/// Each block's identity, one per block, in order.
+///
+/// The key a caller names a block by when it wants *that* block written again.
+/// An index would not do: it moves when anything before it is inserted, and an
+/// editor's whole business is inserting things.
+///
+/// **Taken from a design and a layout rather than from blocks**, so that it is
+/// the chain's identities and not the turned ones — see [`ident`]. There is no
+/// way to ask the other question, which is the point: a caller holding an
+/// `Outcome` would naturally pass its blocks, and would get answers that moved
+/// whenever a lane did.
+pub fn identities_of(d: &Design, l: &Layout) -> Vec<u64> {
+  identities(&chain(d, l))
+}
+
+/// Each block's seed: the base, its identity, and how many times it has been
+/// asked for again.
+pub fn seeds(d: &Design, l: &Layout, base: u64) -> Vec<u64> {
+  seeds_from(&identities_of(d, l), base, &l.rerolls)
+}
+
+fn seeds_from(ids: &[u64], base: u64, rerolls: &[(u64, u32)]) -> Vec<u64> {
+  ids
+    .iter()
+    .copied()
     .map(|id| {
       let n = rerolls.iter().find(|(k, _)| *k == id).map_or(0, |(_, n)| *n);
       // The golden-ratio odd constant is only there to move the nudge into the
@@ -216,6 +247,31 @@ pub struct Layout {
   /// kept, cost nothing, and are what makes coming back work.
   #[cfg_attr(feature = "serde", serde(default))]
   pub rerolls: Vec<(u64, u32)>,
+  /// Rotations of the voice chain, each applied **from one block to the end**.
+  ///
+  /// The one thing about a block that `derive` decides and nothing could ask it
+  /// to decide differently, until this. `ui-spec.md` section 4.3 wanted a block
+  /// draggable to another lane and found there was no parameter for it — a
+  /// block's voice comes from its predecessor's, so it is not independently
+  /// settable and never will be without changing what the generator writes.
+  ///
+  /// A rotation is the honest thing that *is* settable. Dragging a block down a
+  /// lane rotates it and everything after it by the same amount, which is
+  /// exactly the knock-on 4.3 says to show rather than hide, and it leaves the
+  /// chain rule the derivation is built on entirely intact — every step after
+  /// the turn is still one lane on from the last.
+  ///
+  /// Keyed on [`identities`] like [`Layout::rerolls`], and for the same reason:
+  /// a turn belongs to a place in the journey, not to an index that moves when
+  /// something is inserted before it. Identity does not include the lane, so a
+  /// turn does not change the key it is looked up by — see [`ident`].
+  ///
+  /// Legal on the first block, where it rotates the whole piece, and on anything
+  /// after the exposition. Not inside the exposition, where the entries are
+  /// one per voice by construction and a rotation of part of them would state
+  /// the subject twice in one voice and never in another — [`turnable`].
+  #[cfg_attr(feature = "serde", serde(default))]
+  pub turns: Vec<(u64, i16)>,
 }
 
 impl Default for Layout {
@@ -230,12 +286,86 @@ impl Default for Layout {
       link: Some((1, 1)),
       close_at_home: true,
       rerolls: vec![],
+      turns: vec![],
     }
   }
 }
 
 /// Derive a plan from a design and a layout.
+///
+/// The chain [`chain`] builds, with [`Layout::turns`] applied to it. Splitting
+/// the two is what lets a turn move a block's lane without moving its identity:
+/// [`identities`] is the same either side of this, because the lane is not part
+/// of what a block is.
 pub fn derive(d: &Design, l: &Layout) -> Vec<Block> {
+  let mut out = chain(d, l);
+  if l.turns.is_empty() {
+    return out;
+  }
+  let ids = identities(&out);
+  let mut by = 0i16;
+  for (i, b) in out.iter_mut().enumerate() {
+    // A turn applies from its own block onward, so the rotations accumulate as
+    // the walk goes forward and two turns at the same place add up.
+    by += l.turns.iter().filter(|(k, _)| *k == ids[i]).map(|(_, t)| *t).sum::<i16>();
+    if by.rem_euclid(d.voices.max(1) as i16) == 0 {
+      continue;
+    }
+    let n = d.voices.max(1) as i16;
+    let moved = |v: &usize| (*v as i16 + by).rem_euclid(n) as usize;
+    b.kind = match &b.kind {
+      Kind::Entry { voice, shift, tonal } => Kind::Entry { voice: moved(voice), shift: *shift, tonal: *tonal },
+      Kind::Episode { voice, shift } => Kind::Episode { voice: moved(voice), shift: *shift },
+    };
+  }
+  out
+}
+
+/// Whether block `bi` may carry a turn, and why not when it may not.
+///
+/// The exposition states the subject **once in each voice**, top down, and those
+/// lanes are written by [`chain`] rather than chained from a predecessor. A
+/// rotation of part of that run is therefore not a rearrangement of it but a
+/// destruction: some voice gets two entries and some gets none. Turning at the
+/// very first block rotates the whole run together and is fine.
+///
+/// Everything after the exposition is chained, so a rotation of a tail of it is
+/// still a chain, one lane on at every step.
+pub fn turnable(d: &Design, l: &Layout, bi: usize) -> Result<(), String> {
+  if bi == 0 {
+    return Ok(());
+  }
+  match origins(d, l).get(bi) {
+    None => Err(format!("no block {bi}")),
+    Some(Origin::Exposition(_)) | Some(Origin::Link) => Err(
+      "the exposition states the subject once in each voice; turning part of it would state it        twice in one and never in another"
+        .into(),
+    ),
+    Some(_) => Ok(()),
+  }
+}
+
+/// Refuse a layout whose turns are attached where [`turnable`] says they cannot
+/// be. Checked once, where the plan is derived, rather than at every use.
+fn check_turns(d: &Design, l: &Layout) -> Result<(), String> {
+  if l.turns.is_empty() {
+    return Ok(());
+  }
+  let ids = identities_of(d, l);
+  for (k, by) in &l.turns {
+    let Some(bi) = ids.iter().position(|id| id == k) else {
+      // A turn whose block is gone is kept and costs nothing, exactly as a
+      // reroll's is — it is what makes an undone edit come back the same.
+      continue;
+    };
+    if *by != 0 {
+      turnable(d, l, bi).map_err(|e| format!("a turn on block {bi}: {e}"))?;
+    }
+  }
+  Ok(())
+}
+
+fn chain(d: &Design, l: &Layout) -> Vec<Block> {
   let sl = subject_bars(d);
   let ep = l.episode_bars.max(1) * d.measure;
   let mut out = vec![];
@@ -626,31 +756,152 @@ pub fn generate(
   tier: &[Rule],
   seed: u64,
 ) -> Result<(Vec<Block>, Vec<Voice>, Relaxed), String> {
-  let blocks = derive(d, l);
-  let plan = plan(d, &blocks);
-  let seeds = seeds(&blocks, seed, &l.rerolls);
-  let mut out: Vec<Voice> = vec![Voice { notes: vec![] }; d.voices];
-  let mut prior: Vec<Option<Pitch>> = vec![None; d.voices];
-  let mut relaxed = Relaxed::default();
+  let mut run = Run::new(d, l, tier, seed)?;
+  while run.step()? {}
+  Ok(run.parts())
+}
 
-  for bi in 0..blocks.len() {
-    let (filled, after, attempt) = fill_block(d, &blocks, bi, &plan, tier, seeds[bi], &prior, &[])?;
-    relaxed.blocks += (attempt > 0) as usize;
-    relaxed.without_prior += (attempt >= 1) as usize;
-    relaxed.without_plan += (attempt >= 2) as usize;
+/// A generate **in progress**: one block per [`Run::step`].
+///
+/// `ui-spec.md` section 7.3 wants a block per frame rather than a frame per
+/// piece — six tenths of a second is rude on a desktop and freezes a browser
+/// tab. The blockwise fill already had the right shape for it; what it did not
+/// have was a way to stop between two blocks and come back.
+///
+/// **[`generate`] is this, run to completion, and that is the code rather than a
+/// description of it.** The same reason `fill_block` exists: there were once two
+/// places that wrote a block and they drifted apart in four ways, and a piece
+/// generated all at once stopped agreeing with one refilled in part. A resumable
+/// path that duplicated the loop would be the third such place, and the bug it
+/// eventually produced would be a piece that came out differently depending on
+/// how fast the machine drawing it was.
+///
+/// What a caller gets between steps is [`Run::voices`] — every block written so
+/// far, in order, sorted. The plan strip fills in block by block from it, which
+/// is a better progress indicator than a bar because it is the thing itself.
+///
+/// **On the web this is necessary and not sufficient.** `cpal`'s WebAudio
+/// backend queues about 85 ms and one block is tens of milliseconds, so a block
+/// per frame still crowds the audio budget; 7.3 says a worker is the honest
+/// answer there and 6.4 is what stands in until there is one.
+pub struct Run<'a> {
+  /// Owned, not borrowed, so that a caller can keep a run across frames without
+  /// also having to keep the design still. It is a subject and six numbers; the
+  /// clone costs nothing beside one block of search.
+  d: Design,
+  tier: &'a [Rule],
+  blocks: Vec<Block>,
+  plan: Vec<harmony::Segment>,
+  seeds: Vec<u64>,
+  voices: Vec<Voice>,
+  prior: Vec<Option<Pitch>>,
+  relaxed: Relaxed,
+  /// The block [`Run::step`] will fill next, so `next == blocks.len()` is done.
+  next: usize,
+  /// Seconds spent **inside** `new` and `step`, and not the wall clock between
+  /// them. A run spread over twenty frames took the same work as one that
+  /// blocked, and reporting the frames as part of it would make `Outcome::seconds`
+  /// mean two different things depending on which path produced it.
+  spent: f64,
+}
+
+impl<'a> Run<'a> {
+  /// Derive the plan and prepare the fill. No block is written yet.
+  ///
+  /// Refuses here rather than part-way through, because a layout with a turn in
+  /// the exposition is not a piece that fills badly — it is not a piece.
+  pub fn new(d: &Design, l: &Layout, tier: &'a [Rule], seed: u64) -> Result<Run<'a>, String> {
+    let t0 = crate::clock::Instant::now();
+    check_turns(d, l)?;
+    let blocks = derive(d, l);
+    let plan = plan(d, &blocks);
+    let seeds = seeds(d, l, seed);
+    Ok(Run {
+      d: d.clone(),
+      tier,
+      blocks,
+      plan,
+      seeds,
+      voices: vec![Voice { notes: vec![] }; d.voices],
+      prior: vec![None; d.voices],
+      relaxed: Relaxed::default(),
+      next: 0,
+      spent: t0.elapsed().as_secs_f64(),
+    })
+  }
+
+  /// The derivation, in full and from the start — a plan view can draw the whole
+  /// shape before a note of it exists.
+  pub fn blocks(&self) -> &[Block] {
+    &self.blocks
+  }
+
+  /// How many blocks are written, and how many there are.
+  pub fn progress(&self) -> (usize, usize) {
+    (self.next, self.blocks.len())
+  }
+
+  pub fn done(&self) -> bool {
+    self.next >= self.blocks.len()
+  }
+
+  /// Every note written so far, sorted, one voice per part.
+  ///
+  /// Sorted **per block as it lands** rather than once at the end, which is the
+  /// same sequence: a block's onsets all fall inside its own span, the spans
+  /// ascend and do not overlap, so sorted runs concatenated are already in
+  /// order. Doing it this way means what a caller draws mid-run is in the same
+  /// order as what it draws at the end, and a beam grouping — which reads the
+  /// notes in sequence — does not need to know whether the piece is finished.
+  pub fn voices(&self) -> &[Voice] {
+    &self.voices
+  }
+
+  /// Fill the next block. `Ok(true)` while there is more to do.
+  pub fn step(&mut self) -> Result<bool, String> {
+    if self.done() {
+      return Ok(false);
+    }
+    let t0 = crate::clock::Instant::now();
+    let bi = self.next;
+    let (filled, after, attempt) =
+      fill_block(&self.d, &self.blocks, bi, &self.plan, self.tier, self.seeds[bi], &self.prior, &[])?;
+    self.relaxed.blocks += (attempt > 0) as usize;
+    self.relaxed.without_prior += (attempt >= 1) as usize;
+    self.relaxed.without_plan += (attempt >= 2) as usize;
     if attempt >= 1 {
-      relaxed.cold.push(bi);
+      self.relaxed.cold.push(bi);
     }
-    let at = blocks[bi].at;
+    let at = self.blocks[bi].at;
     for (v, notes) in filled.iter().enumerate() {
-      out[v].notes.extend(notes.notes.iter().map(|n| Note { onset: n.onset + at, ..*n }));
+      let from = self.voices[v].notes.len();
+      self.voices[v].notes.extend(notes.notes.iter().map(|n| Note { onset: n.onset + at, ..*n }));
+      self.voices[v].notes[from..].sort_by_key(|n| n.onset);
     }
-    prior = after;
+    self.prior = after;
+    self.next += 1;
+    self.spent += t0.elapsed().as_secs_f64();
+    Ok(!self.done())
   }
-  for v in out.iter_mut() {
-    v.notes.sort_by_key(|n| n.onset);
+
+  /// The three things [`generate`] returns. Whatever is written so far, so a run
+  /// abandoned part-way gives back the part that exists rather than nothing.
+  pub fn parts(self) -> (Vec<Block>, Vec<Voice>, Relaxed) {
+    (self.blocks, self.voices, self.relaxed)
   }
-  Ok((blocks, out, relaxed))
+
+  /// Judge it, as [`fugue`] does. Refuses while blocks remain, because every
+  /// figure in an [`Outcome`] is about a whole piece and a verdict on four
+  /// blocks of twelve is not a smaller truth but a wrong one.
+  pub fn finish(self) -> Result<Outcome, String> {
+    if !self.done() {
+      let (done, all) = self.progress();
+      return Err(format!("{done} of {all} blocks written; a piece cannot be judged in part"));
+    }
+    let (d, spent) = (self.d.clone(), self.spent);
+    let (blocks, voices, relaxed) = self.parts();
+    Ok(judge(&d, blocks, voices, relaxed, spent))
+  }
 }
 
 /// The derivation as §8.15's parser sees it, so that a generated fugue can be
@@ -737,9 +988,11 @@ impl Outcome {
 /// the full five writes 69, below Bach's own 112. A rule can be wrong as a
 /// description and right as a constraint.
 pub fn fugue(d: &Design, l: &Layout, tier: &[Rule], seed: u64) -> Result<Outcome, String> {
-  let t0 = crate::clock::Instant::now();
-  let (blocks, voices, relaxed) = generate(d, l, tier, seed)?;
-  Ok(judge(d, blocks, voices, relaxed, t0.elapsed().as_secs_f64()))
+  // Through [`Run`], so that the blocking path and the resumable one are the
+  // same code and not merely meant to agree.
+  let mut run = Run::new(d, l, tier, seed)?;
+  while run.step()? {}
+  run.finish()
 }
 
 /// Every check §8 can make, over a finished piece.
@@ -845,6 +1098,7 @@ pub fn refill_span(
   from: usize,
   to: usize,
 ) -> Result<Outcome, String> {
+  check_turns(d, l)?;
   let blocks = derive(d, l);
   if blocks.len() != prev.blocks.len() {
     return Err("the layout changed the number of blocks; refill is span-preserving".into());
@@ -857,7 +1111,7 @@ pub fn refill_span(
   }
 
   let full = plan(d, &blocks);
-  let seeds = seeds(&blocks, seed, &l.rerolls);
+  let seeds = seeds(d, l, seed);
   // The running result. Each block's prior comes off *this*, so a block sees
   // what the one before it in the span actually wrote.
   let mut out = prev.voices.clone();
@@ -1007,6 +1261,237 @@ mod tests {
     }
   }
 
+  fn lanes(bs: &[Block]) -> Vec<usize> {
+    bs.iter()
+      .map(|b| match &b.kind {
+        Kind::Entry { voice, .. } | Kind::Episode { voice, .. } => *voice,
+      })
+      .collect()
+  }
+
+  /// **A turn moves its block and everything after it, and nothing before it.**
+  ///
+  /// Which is the whole of what `ui-spec.md` section 4.3 calls the knock-on: a
+  /// block's lane is not independently settable, so a drag rotates the tail, and
+  /// the interface's job is to show that rather than pretend otherwise.
+  #[test]
+  fn a_turn_rotates_its_block_and_the_tail_behind_it() {
+    let d = design();
+    let plain = Layout { middles: vec![4, 5], episode_bars: 2, ..Layout::default() };
+    let before = lanes(&derive(&d, &plain));
+    let ids = identities_of(&d, &plain);
+
+    // the first block after the exposition
+    let at = origins(&d, &plain).iter().position(|o| matches!(o, Origin::Middle(_))).expect("a middle");
+    for by in [1i16, 2, -1] {
+      let turned = Layout { turns: vec![(ids[at], by)], ..plain.clone() };
+      let after = lanes(&derive(&d, &turned));
+      assert_eq!(after.len(), before.len(), "a turn changed the number of blocks");
+      assert_eq!(&after[..at], &before[..at], "a turn by {by} moved something before it");
+      for i in at..after.len() {
+        let want = (before[i] as i16 + by).rem_euclid(d.voices as i16) as usize;
+        assert_eq!(after[i], want, "block {i} under a turn of {by}");
+      }
+      // the chain rule the derivation is built on survives it: after the turn
+      // point every step is still one lane on from the last
+      for i in at + 1..after.len() {
+        assert_eq!(after[i], (after[i - 1] + 1) % d.voices, "the chain broke at block {i}");
+      }
+    }
+    // a whole rotation is no rotation
+    let round = Layout { turns: vec![(ids[at], d.voices as i16)], ..plain.clone() };
+    assert_eq!(lanes(&derive(&d, &round)), before, "turning by the voice count moved something");
+  }
+
+  /// **A turn does not change what a block is**, so a reroll and the turn itself
+  /// are still looked up by the same key afterwards.
+  ///
+  /// This is why `ident` does not hash the lane. If it did, rotating a tail would
+  /// reseed every block in it — the notes would change because the lane changed
+  /// *and* because the seed did, and a turn undone would not come back.
+  #[test]
+  fn a_turn_leaves_every_identity_where_it_was() {
+    let d = design();
+    let plain = Layout { middles: vec![4, 5, 3], episode_bars: 2, ..Layout::default() };
+    let ids = identities_of(&d, &plain);
+    let seeds_before = seeds(&d, &plain, 0x5EED);
+    let at = origins(&d, &plain).iter().position(|o| matches!(o, Origin::Middle(_))).expect("a middle");
+
+    let turned = Layout { turns: vec![(ids[at], 1)], ..plain.clone() };
+    assert_eq!(identities_of(&d, &turned), ids, "a turn moved the identities");
+    assert_eq!(seeds(&d, &turned, 0x5EED), seeds_before, "a turn reseeded a block");
+
+    // and the turn is still found by its own key after it has been applied
+    assert!(lanes(&derive(&d, &turned)) != lanes(&derive(&d, &plain)), "the turn did nothing");
+  }
+
+  /// **The exposition cannot be turned in part.** Its entries are one per voice
+  /// by construction rather than chained, so rotating a tail of them states the
+  /// subject twice in one voice and never in another. Turning at the very first
+  /// block rotates the whole run together and is allowed.
+  #[test]
+  fn the_exposition_refuses_a_turn_inside_it() {
+    let d = design();
+    let l = Layout { middles: vec![4], episode_bars: 2, ..Layout::default() };
+    let ids = identities_of(&d, &l);
+    let os = origins(&d, &l);
+
+    for (bi, o) in os.iter().enumerate() {
+      let inside = bi > 0 && matches!(o, Origin::Exposition(_) | Origin::Link);
+      assert_eq!(turnable(&d, &l, bi).is_err(), inside, "block {bi} is {o:?}");
+      let attempt = Layout { turns: vec![(ids[bi], 1)], ..l.clone() };
+      match (inside, fugue(&d, &attempt, CONFIRMED, 0x5EED)) {
+        (true, Err(e)) => assert!(e.contains("exposition"), "refused for another reason: {e}"),
+        (true, Ok(_)) => panic!("block {bi} took a turn inside the exposition"),
+        (false, Err(e)) => panic!("a legal turn at block {bi} was refused: {e}"),
+        (false, Ok(_)) => {}
+      }
+    }
+
+    // turning at block 0 rotates the whole piece, and the exposition is still
+    // one entry per voice — a permutation of the lanes, not a subset of them
+    let all = Layout { turns: vec![(ids[0], 1)], ..l.clone() };
+    let mut expo: Vec<usize> = lanes(&derive(&d, &all)).into_iter().take(d.voices).collect();
+    expo.sort();
+    assert_eq!(expo, (0..d.voices).collect::<Vec<_>>(), "the rotated exposition is not one entry per voice");
+  }
+
+  /// A turned layout composes, and to something different from the untuned one.
+  /// The lane a line is in decides its compass and its neighbours, so the notes
+  /// must move; if they did not, the parameter would not be one.
+  #[test]
+  fn a_turned_plan_still_composes_and_to_something_else() {
+    let d = design();
+    let plain = Layout { middles: vec![4, 5], episode_bars: 2, ..Layout::default() };
+    let ids = identities_of(&d, &plain);
+    let at = origins(&d, &plain).iter().position(|o| matches!(o, Origin::Middle(_))).expect("a middle");
+    let turned = Layout { turns: vec![(ids[at], 1)], ..plain.clone() };
+
+    let a = fugue(&d, &plain, CONFIRMED, 0x5EED).expect("the plain one composed");
+    let b = fugue(&d, &turned, CONFIRMED, 0x5EED).expect("the turned one composed");
+    assert_eq!(a.bars, b.bars, "a turn changed the length of the piece");
+    assert_ne!(notes(&a.voices), notes(&b.voices), "a turn left every note where it was");
+    // **A turn reaches one block further back than it looks.** `fill_block` asks
+    // which voice holds the *next* block, and gives that voice a bar of rest at
+    // the end of this one so it does not enter by a leap from wherever its
+    // accompanying line happened to end. Turn a block and its predecessor is
+    // told a different voice is coming, so the predecessor changes too.
+    //
+    // Which is a fact the interface needs: the ghost in section 4.3 must fade
+    // from the block *before* the drop, or it will fade less than really moves.
+    let notes_before = |o: &Outcome, t: i64| {
+      o.voices.iter().map(|v| v.notes.iter().filter(|n| n.onset < t).count()).collect::<Vec<_>>()
+    };
+    assert_eq!(
+      notes_before(&a, a.blocks[at - 1].at),
+      notes_before(&b, b.blocks[at - 1].at),
+      "a turn changed the piece more than one block before it"
+    );
+    assert_ne!(
+      notes_before(&a, a.blocks[at].at),
+      notes_before(&b, b.blocks[at].at),
+      "the block before the turn did not change, so the look-ahead has gone"
+    );
+  }
+
+  /// `Block` and `Voice` carry no `PartialEq` and this file is not the place to
+  /// give them one, so the two comparisons below are on projections that hold
+  /// everything either type is: what a block is and where, and every field of
+  /// every note including its spelling — §2.1's step *and* alteration, so two
+  /// pieces that sound alike and are written differently do not compare equal.
+  fn shape(bs: &[Block]) -> Vec<(i64, i64, i16, &Kind)> {
+    bs.iter().map(|b| (b.at, b.len, b.key_of, &b.kind)).collect()
+  }
+  /// Onset, duration, step, alteration, attack — every field a note has.
+  type Written = (i64, i64, i16, i8, bool);
+  fn notes(vs: &[Voice]) -> Vec<Vec<Written>> {
+    vs.iter()
+      .map(|v| v.notes.iter().map(|n| (n.onset, n.dur, n.pitch.step, n.pitch.alter, n.attack)).collect())
+      .collect()
+  }
+
+  /// **A run stepped block by block is the piece generated in one call.**
+  ///
+  /// The whole point of `Run`: the interface stops between blocks so the frame
+  /// keeps up, and what it ends with must be the piece a driver would have got
+  /// by blocking. Note for note, and the same relaxation log, on layouts of
+  /// three blocks and of eleven.
+  ///
+  /// `generate` and `fugue` both run this loop rather than owning a copy of it,
+  /// which is what makes the assertion cheap to keep true — but a test still
+  /// says so, because the reason `fill_block` exists is that two places wrote a
+  /// block and drifted, and the fix for that is not to trust the fix.
+  #[test]
+  fn stepping_a_run_writes_what_generating_it_would_have() {
+    let d = design();
+    for middles in [vec![], vec![4], vec![4, 5, 3, 6, 1]] {
+      let l = Layout { middles, episode_bars: 2, ..Layout::default() };
+      let (blocks, voices, relaxed) = generate(&d, &l, CONFIRMED, 0x5EED).expect("generated");
+
+      let mut run = Run::new(&d, &l, CONFIRMED, 0x5EED).expect("a plan");
+      assert_eq!(shape(run.blocks()), shape(&blocks), "the plan differs before a note is written");
+      assert_eq!(run.progress(), (0, blocks.len()));
+      let mut steps = 0;
+      while run.step().expect("stepped") {
+        steps += 1;
+        assert!(steps <= blocks.len(), "step never said it was done");
+      }
+      assert!(run.done());
+      assert_eq!(run.progress(), (blocks.len(), blocks.len()));
+
+      let (b2, v2, r2) = run.parts();
+      assert_eq!(shape(&b2), shape(&blocks), "the blocks differ");
+      assert_eq!(notes(&v2), notes(&voices), "the notes differ");
+      assert_eq!(r2.blocks, relaxed.blocks, "the relaxation count differs");
+      assert_eq!(r2.cold, relaxed.cold, "a different set of blocks came out cold");
+    }
+  }
+
+  /// What a caller draws mid-run: every block written so far and nothing else,
+  /// each voice in onset order.
+  ///
+  /// The order is the half worth asserting. `generate` sorted once at the end
+  /// and `Run` sorts each block as it lands; they agree because a block's onsets
+  /// all fall inside its own span and the spans ascend. If that ever stopped
+  /// being true the notes would still all be present, and only a beam grouping —
+  /// which reads them in sequence — would show it.
+  #[test]
+  fn a_run_in_progress_holds_the_blocks_it_has_finished() {
+    let d = design();
+    let l = Layout { middles: vec![4, 5], episode_bars: 2, ..Layout::default() };
+    let mut run = Run::new(&d, &l, CONFIRMED, 0x5EED).expect("a plan");
+    let blocks = run.blocks().to_vec();
+
+    let mut last = 0usize;
+    for (bi, block) in blocks.iter().enumerate() {
+      run.step().expect("stepped");
+      let end = block.at + block.len;
+      let here: usize = run.voices().iter().map(|v| v.notes.len()).sum();
+      assert!(here > last, "block {bi} wrote nothing");
+      last = here;
+      for (v, voice) in run.voices().iter().enumerate() {
+        assert!(voice.notes.windows(2).all(|w| w[0].onset <= w[1].onset), "voice {v} is out of order after block {bi}");
+        assert!(voice.notes.iter().all(|n| n.onset < end), "voice {v} has a note past block {bi}");
+      }
+    }
+  }
+
+  /// **A piece is judged whole or not at all.** Every figure in an `Outcome` is
+  /// about a complete piece — the grammar verdict most of all, since a parse of
+  /// four blocks out of twelve is not a partial verdict but a wrong one.
+  #[test]
+  fn a_half_written_run_refuses_to_be_judged() {
+    let d = design();
+    let l = Layout { middles: vec![4, 5], episode_bars: 2, ..Layout::default() };
+    let mut run = Run::new(&d, &l, CONFIRMED, 0x5EED).expect("a plan");
+    run.step().expect("stepped");
+    run.step().expect("stepped");
+    match run.finish() {
+      Ok(_) => panic!("a run judged itself half-written"),
+      Err(e) => assert!(e.contains("cannot be judged in part"), "refused for another reason: {e}"),
+    }
+  }
+
   /// `origins` walks the same shape `derive` does, and nothing keeps them in
   /// step but this. One entry per block, in order, over every layout an
   /// interface can produce — because the failure this prevents is silent: an
@@ -1018,7 +1503,7 @@ mod tests {
     for middles in [vec![4], vec![4, 5, 3], vec![4, 5, 1, 3, 6]] {
       for link in [None, Some((0, 1)), Some((1, 2)), Some((5, 1))] {
         for close in [true, false] {
-          let l = Layout { middles: middles.clone(), episode_bars: 2, link, close_at_home: close, rerolls: vec![] };
+          let l = Layout { middles: middles.clone(), episode_bars: 2, link, close_at_home: close, ..Layout::default() };
           let blocks = derive(&d, &l);
           let os = origins(&d, &l);
           assert_eq!(blocks.len(), os.len(), "{l:?}");
@@ -1233,10 +1718,10 @@ mod tests {
   #[test]
   fn changing_a_late_block_does_not_reseed_the_early_ones() {
     let d = design();
-    let before = seeds(&derive(&d, &Layout::default()), 0x5EED, &[]);
+    let before = seeds(&d, &Layout::default(), 0x5EED);
     let mut edited = Layout::default();
     *edited.middles.last_mut().unwrap() = 1; // the last middle goes elsewhere
-    let after = seeds(&derive(&d, &edited), 0x5EED, &[]);
+    let after = seeds(&d, &edited, 0x5EED);
 
     assert_eq!(before.len(), after.len(), "a key change must not change the block count");
     let same = before.iter().zip(&after).take_while(|(a, b)| a == b).count();
@@ -1252,7 +1737,7 @@ mod tests {
     // three middles in the same key, so the blocks are otherwise identical
     let l = Layout { middles: vec![4, 4, 4], ..Layout::default() };
     let blocks = derive(&d, &l);
-    let s = seeds(&blocks, 0x5EED, &[]);
+    let s = seeds_from(&identities(&blocks), 0x5EED, &[]);
     let mut uniq = s.clone();
     uniq.sort_unstable();
     uniq.dedup();
@@ -1320,10 +1805,10 @@ mod tests {
     let l = Layout::default();
     let blocks = derive(&d, &l);
     let ids = identities(&blocks);
-    let plain = seeds(&blocks, 0x5EED, &[]);
+    let plain = seeds_from(&ids, 0x5EED, &[]);
 
     let target = 5usize;
-    let once = seeds(&blocks, 0x5EED, &[(ids[target], 1)]);
+    let once = seeds_from(&ids, 0x5EED, &[(ids[target], 1)]);
     for i in 0..blocks.len() {
       if i == target {
         assert_ne!(plain[i], once[i], "the rerolled block kept its seed");
@@ -1332,7 +1817,7 @@ mod tests {
       }
     }
     // and asking again is a third thing, not a toggle back to the first
-    let twice = seeds(&blocks, 0x5EED, &[(ids[target], 2)]);
+    let twice = seeds_from(&ids, 0x5EED, &[(ids[target], 2)]);
     assert_ne!(twice[target], once[target]);
     assert_ne!(twice[target], plain[target]);
   }
@@ -1356,17 +1841,17 @@ mod tests {
     // the last block, and a change to the *first* middle — a different return
     let target = blocks.len() - 1;
     let mine = vec![(ids[target], 1)];
-    let before = seeds(&blocks, 0x5EED, &mine)[target];
+    let before = seeds_from(&ids, 0x5EED, &mine)[target];
 
     let mut edited = l.clone();
     edited.middles[0] = 1;
     let after_blocks = derive(&d, &edited);
     let after_ids = identities(&after_blocks);
     assert_eq!(after_ids[target], ids[target], "the last block changed identity under an edit to the first middle");
-    assert_eq!(before, seeds(&after_blocks, 0x5EED, &mine)[target], "the reroll did not follow its block");
+    assert_eq!(before, seeds_from(&after_ids, 0x5EED, &mine)[target], "the reroll did not follow its block");
 
     // and it is still a reroll: without the nudge that block draws differently
-    assert_ne!(before, seeds(&after_blocks, 0x5EED, &[])[target]);
+    assert_ne!(before, seeds_from(&after_ids, 0x5EED, &[])[target]);
   }
 
   /// **The whole texture must never fall silent.** A listener heard this before
