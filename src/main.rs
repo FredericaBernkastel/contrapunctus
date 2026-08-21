@@ -77,6 +77,7 @@ fn main() {
     Cmd::Key => step5::key_test(),
     Cmd::Form => step5::form_test(),
     Cmd::Fugue => step5::fugue(),
+    Cmd::Texture => step5::texture(),
     Cmd::Realise => step5::run(),
     Cmd::Exp => { exp_density(); exp_pareto(); exp_renaissance(); exp_chromatic(); exp_harmony(); }
     Cmd::Harmony => { harmony_run(); harmony_design(); harmony_corpus(); }

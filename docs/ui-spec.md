@@ -311,6 +311,84 @@ The ghosting 4.2 already does is what shows all of this: the drag draws the plan
 it would commit to, with everything from the turn's predecessor onward faded. No
 gesture fakes independence, because none is offered.
 
+### 4.4 Which voices are sounding — not built, and measured
+
+Every voice sounds in every bar. `compose::fill_block` gives the held voice the
+subject and every other voice a tiled rhythm, and a voice with no notes is an
+error — so a three-voice fugue has three voices from bar one, and an exposition,
+whose whole identity is voices arriving one at a time, has no arrival in it.
+
+That was noticed by a reader with the *Art of the Fugue* in hand, and it is the
+plainest musical fault the interface currently displays. It is also, unexpectedly,
+the same question readme §9 asks about four voices.
+
+**readme §8.17 measures it.** The exact search's wall moves with the number of
+voices it must *choose*, not with the number sounding:
+
+| free voices | peak states | with four voices sounding |
+|---|---|---|
+| 1 | 68 | 4 voices, 2 resting |
+| 2 | 8 434 | 4 voices, 1 resting |
+| 3 | refused | 4 voices, none resting |
+
+Four voices with one resting costs what three voices costs, to the state, in the
+same 150 ms with nothing relaxed. So the field that fixes the texture is also the
+one that buys the voice count — and §9's four-voice item stops being a solver
+problem.
+
+**What the interface would show.** A lane already exists per voice, and a resting
+voice is a lane with nothing drawn in it for those bars, which needs no new
+vocabulary: the strip becomes a picture of the texture rather than of a full
+grid, and the exposition finally looks like one. The gesture is a click on a
+block's lane to silence that voice there, and the ghost 4.2 already draws shows
+what the rest of the piece does about it.
+
+**What is undecided, and it is a §9 question rather than an interface one.** Where
+the pattern comes from. Three candidates, in increasing order of ambition: the
+grammar supplies it (an exposition rests every voice that has not entered, which
+is a rule and not a choice); `Layout` carries it per block; or the search chooses
+it. The first is free and fixes the exposition, which is where the fault is most
+visible. The last is the interesting one and nothing here has measured it.
+
+**And one thing the measurement does not cover.** A voice has to leave and
+re-enter, and `Problem::prior` carries one pitch per voice — a resting voice has
+none, so every re-entry is a cold start. `fill_block` already does that
+deliberately before an entry, for §8.16's leap-of-an-eleventh reason, and has
+never done it anywhere else. Whether the counterpoint survives being cold that
+often is not something §8.17 asked.
+
+### 4.5 Building a plan rather than choosing one — not built
+
+`Layout` is a **plan generator**: six parameters, and `derive` expands them. The
+alternative a reader asks for once they understand the strip is a **palette** —
+blocks dragged onto the lanes, and the plan authored rather than derived.
+
+It is possible, and the interesting part is what `derive` currently supplies for
+free:
+
+- **Blocks tile time.** `Block::at` accumulates, so gaps and overlaps are not
+  expressible. Authored blocks make both expressible and the strip would have to
+  close them itself.
+- **`origins` names what a block came from.** Every edit in 4.2 is phrased over
+  `Origin::Middle(k)` — *this return goes to the dominant*. A hand-built plan has
+  no returns to index, so those edits need a second vocabulary at the block level.
+- **`identities_of` keys the rerolls and the turns**, off the chain a layout
+  derives. Authored blocks need identities that are theirs.
+
+**The grammar is already the safety net, and this is the argument for doing it.**
+`form::parse` judges *any* plan against §2.4's grammar and returns five
+independent verdicts — the exposition covers the voices, alternates tonic and
+dominant, runs unbroken, there is a middle, it ends at home. That is what the
+generated fugues are scored against already; nothing new is needed to score an
+authored one.
+
+So the palette should **not** refuse an illegal drop. It should let the plan be
+built and let the verdict say which of the five things it is missing. That is
+1's two-user problem exactly: presets for somebody who wants a fugue, and a
+palette plus a live verdict for somebody who wants to know what a fugue is. A
+palette that only permits legal plans teaches nothing, because everything it
+allows is already legal.
+
 ---
 
 ## 5. The score
@@ -845,7 +923,19 @@ Ordered by whether an interface can start without it.
 
 | # | change | why | size |
 |---|---|---|---|
-| 1 | A CDCL solver | four voices, and five | §9 |
+| 1 | A `Layout` field for which voices rest where | 4.4 below — texture, and four voices with it | medium |
+| 2 | Blocks addressable one at a time, for 4.5's palette | so a plan can be built rather than derived | medium |
+| 3 | A CDCL solver | five voices all sounding, and stretto packing | §9 |
+
+**Item 1 is measured and it is larger than it looks.** readme §8.17 asked what a
+resting voice costs and found that the search's wall moves with the number of
+voices it must *choose*, not with the number sounding: four voices with one
+resting costs 8 434 peak states, which is what three voices costs to the state,
+and fills in the same 150 ms with nothing relaxed. So the same field that fixes
+the texture also buys the voice count that readme §9 had assigned to a solver.
+`compose::fill_block` already takes a `silent` argument and `compose::block_cost`
+is the measurement's way in; what is missing is where the pattern comes from and
+what the interface does with it.
 
 Everything else on this list is now done:
 
@@ -1009,8 +1099,25 @@ silence is, in samples.
 
 | # | section | what | blocked on |
 |---|---|---|---|
-| 1 | 7.3 | Generating in a worker, so the sound survives the work | a worker build; 6.4 is the workaround until then |
-| 2 | 6.3 | System MIDI out, behind a feature | a `midir` dependency, and a device to try it on |
+| 1 | 4.4 | Which voices are sounding, and four voices with it | a `Layout` field — and readme §8.17 says it is worth it |
+| 2 | 4.5 | A block palette, judged by the grammar rather than gated by it | blocks addressable one at a time |
+| 3 | 7.3 | Generating in a worker, so the sound survives the work | a worker build; 6.4 is the workaround until then |
+| 4 | 6.3 | System MIDI out, behind a feature | a `midir` dependency, and a device to try it on |
+
+**Item 1 is first because it is two things at once.** Every voice sounding in
+every bar is the plainest musical fault on the screen — an exposition with no
+arrivals in it — and readme §8.17 measured that fixing it also buys four voices,
+which §9 had assigned to a CDCL solver. Four voices with one resting costs 8 434
+peak states, exactly what three voices costs. The library half is done as far as
+one block: `fill_block` takes a `silent` argument and `block_cost` measures
+through it. What is missing is where the pattern comes from — 4.4 lists three
+candidates and prefers the cheapest, which is the grammar supplying the
+exposition's rests for nothing.
+
+**Item 2 is mostly interface work on machinery that exists**, and 4.5 argues the
+one design point that matters: the palette should let an illegal plan be built
+and let `form::parse`'s five verdicts say what is wrong with it, rather than
+refusing the drop. A palette that permits only legal plans teaches nothing.
 
 **The voice drag has come off this list, and not in the shape it was written
 in.** It said a voice needed to be settable and called that a §9 decision about

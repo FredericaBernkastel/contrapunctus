@@ -615,9 +615,10 @@ pub struct Relaxed {
 /// Generating a piece and refilling part of one then disagreed about what a
 /// block *is*, which is how a saved fugue stopped reproducing.
 ///
-/// The block's notes at tick zero, the prior for whatever follows, and which
-/// attempt succeeded — nought if nothing had to be relaxed.
-type Written = (Vec<Voice>, Vec<Option<Pitch>>, usize);
+/// The block's notes at tick zero, the prior for whatever follows, which attempt
+/// succeeded — nought if nothing had to be relaxed — and the peak live states
+/// the search reached, which is what §8.17 measures the voice count against.
+type Written = (Vec<Voice>, Vec<Option<Pitch>>, usize, usize);
 
 /// Returns [`Written`].
 #[allow(clippy::too_many_arguments)]
@@ -630,6 +631,7 @@ fn fill_block(
   seed: u64,
   prior: &[Option<Pitch>],
   terminal: &[Option<Pitch>],
+  silent: &[bool],
 ) -> Result<Written, String> {
   let b = &blocks[bi];
   let held = held_of(Some(b));
@@ -650,10 +652,19 @@ fn fill_block(
   };
   // every voice gets notes: the held one its placed line, the rest the
   // subject's rhythm, whose pitches the search discards
+  // A voice `silent` names says nothing for the whole block. It is not free and
+  // it is not fixed-with-notes: it is absent, and `realise::fill` returns it
+  // unchanged, which for an empty voice is empty.
+  //
+  // The held voice can never be one of them — a block whose subject nobody
+  // states is not a block.
+  let quiet_voice = |v: usize| v != held && silent.get(v).copied().unwrap_or(false);
   let voices: Vec<Voice> = (0..d.voices)
     .map(|v| {
       if v == held {
         line.clone()
+      } else if quiet_voice(v) {
+        Voice { notes: vec![] }
       } else if Some(v) == next && quiet > 0 {
         Voice { notes: rhythm(d, 0, b.len - quiet, v) }
       } else {
@@ -661,10 +672,10 @@ fn fill_block(
       }
     })
     .collect();
-  if voices.iter().any(|v| v.notes.is_empty()) {
+  if voices.iter().enumerate().any(|(v, x)| x.notes.is_empty() && !quiet_voice(v)) {
     return Err(format!("block {bi} leaves a voice with no notes to place"));
   }
-  let free: Vec<bool> = (0..d.voices).map(|v| v != held).collect();
+  let free: Vec<bool> = (0..d.voices).map(|v| v != held && !quiet_voice(v)).collect();
   let here: Vec<harmony::Segment> = plan
     .iter()
     .filter(|s| s.start >= b.at && s.start < b.at + b.len)
@@ -726,12 +737,35 @@ fn fill_block(
     if let Some(last) = filled.notes.iter().max_by_key(|n| n.onset) {
       after[v] = Some(last.pitch);
     }
-    // a voice that rested before entering enters cold, which is the point
-    if Some(v) == next && quiet > 0 {
+    // a voice that rested before entering enters cold, which is the point — and
+    // one that said nothing at all has nothing for the next block to join to
+    if (Some(v) == next && quiet > 0) || quiet_voice(v) {
       after[v] = None;
     }
   }
-  Ok((chosen.to_vec(), after, attempt))
+  Ok((chosen.to_vec(), after, attempt, sol.peak_states))
+}
+
+/// **What one block costs**, at this voice count, with `silent` voices absent —
+/// readme §8.17's measurement.
+///
+/// The wall §2.7 argues about and §8.6 measured is on the number of voices the
+/// search must *choose*, not on the number sounding: one voice holds the subject
+/// and the rest are free, so a piece in `V` voices asks the search for `V − 1` at
+/// once. A voice that rests is neither held nor free, and takes its whole domain
+/// out of the product.
+///
+/// This exists so that the question can be asked through [`fill_block`] — the one
+/// place a block is written — rather than by an experiment building its own
+/// problem beside it. Two such places is how this file's history begins.
+///
+/// Returns the peak live states and the slice count, or the refusal.
+pub fn block_cost(d: &Design, tier: &[Rule], silent: &[bool], with_plan: bool) -> Result<(usize, usize), String> {
+  let blocks =
+    vec![Block { at: 0, len: subject_bars(d), kind: Kind::Entry { voice: 0, shift: 0, tonal: false }, key_of: 0 }];
+  let segments = if with_plan { plan(d, &blocks) } else { vec![] };
+  let (_, _, attempt, peak) = fill_block(d, &blocks, 0, &segments, tier, 0x5EED, &[], &[], silent)?;
+  Ok((peak, attempt))
 }
 
 /// Generate: derive a plan, then fill it **block by block**.
@@ -864,8 +898,8 @@ impl<'a> Run<'a> {
     }
     let t0 = crate::clock::Instant::now();
     let bi = self.next;
-    let (filled, after, attempt) =
-      fill_block(&self.d, &self.blocks, bi, &self.plan, self.tier, self.seeds[bi], &self.prior, &[])?;
+    let (filled, after, attempt, _) =
+      fill_block(&self.d, &self.blocks, bi, &self.plan, self.tier, self.seeds[bi], &self.prior, &[], &[])?;
     self.relaxed.blocks += (attempt > 0) as usize;
     self.relaxed.without_prior += (attempt >= 1) as usize;
     self.relaxed.without_plan += (attempt >= 2) as usize;
@@ -1137,8 +1171,8 @@ pub fn refill_span(
       vec![]
     };
 
-    let (filled, after, _) =
-      fill_block(d, &blocks, bi, &full, tier, seeds[bi], &prior, &terminal).map_err(|e| e.to_string())?;
+    let (filled, after, _, _) =
+      fill_block(d, &blocks, bi, &full, tier, seeds[bi], &prior, &terminal, &[]).map_err(|e| e.to_string())?;
     prior = after;
 
     // splice: the block's own bars replaced, everything else untouched

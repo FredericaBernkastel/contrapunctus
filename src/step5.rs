@@ -2816,6 +2816,90 @@ pub fn form_test() {
 /// Three voices, because §8.6 measured the exact search's wall at two free ones.
 /// Half the book is out of reach until a solver replaces the DP, and this says
 /// so rather than beaming.
+/// §8.17: what a resting voice buys.
+///
+/// The question a listener asks first — real fugues do not sound every voice all
+/// the time — turns out to be the same question §9 asks about four voices, and
+/// this measures whether they have the same answer.
+pub fn texture() {
+  println!("\n== step 7: silence, and what the voice count really costs ==");
+  println!("  Every voice sounds in every bar of what §8.16 generates: `fill_block` gives the held");
+  println!("  voice the subject and every other voice a tiled rhythm, and a voice with no notes is");
+  println!("  an error. Real fugues rest voices constantly — it is most of what an exposition *is*.\n");
+  println!("  §2.7 put the wall at the voice count and §8.6 measured it at **two free voices**. A");
+  println!("  voice that rests is neither held nor free, so the question is whether resting one");
+  println!("  moves a piece back under the wall — which would make four voices a texture decision");
+  println!("  rather than §9's solver.\n");
+
+  let dir = kern_dir();
+  let Ok(p) = kern::read(&dir.join("wtc1f02.krn")) else {
+    return println!("  (corpus missing)");
+  };
+  let specs = refdata::read(
+    std::path::Path::new("corpus/algomus-data/fugues/fugues.ref"),
+    &|id| if id == "wtc-i-02" { Some(p.measure) } else { None },
+  )
+  .unwrap_or_default();
+  let Some(spec) = specs.iter().find(|s| s.id == "wtc-i-02") else {
+    return println!("  (ground truth missing)");
+  };
+  let Some((pc, _)) = p.tonic else { return println!("  (no key interpretation)") };
+  let Some(tonic) = answer::tonic_letter(pc, &p.key) else { return println!("  (no tonic)") };
+  let (letter, at) = spec.entries[0];
+  let subject = clip(&p.voices[voice_of(&p, letter)], at, at + spec.len);
+  if subject.notes.is_empty() {
+    return println!("  (subject not found)");
+  }
+
+  let tier = cli::params().gen_tier.rules();
+  println!("   BWV 847's subject, {} notes, one entry block, tier {}\n",
+    subject.notes.iter().filter(|n| n.attack).count(), cli::params().gen_tier.label());
+
+  for with_plan in [true, false] {
+    println!("   -- {} --\n", if with_plan { "with §8.9's harmonic plan, as the generator runs" } else { "with no plan at all, which is the third relaxation" });
+    println!("   voices  resting  free   peak states   relaxed   time      result");
+    for voices in 2..=5usize {
+      for resting in 0..voices - 1 {
+        // one voice holds the subject; the lowest `resting` voices say nothing
+        let silent: Vec<bool> = (0..voices).map(|v| v >= voices - resting).collect();
+        let free = voices - 1 - resting;
+        let d = compose::Design {
+          subject: subject.clone(),
+          voices,
+          key: p.key,
+          tonic,
+          measure: p.measure,
+          beat: p.beat,
+          // the same spacing §8.16 uses, extended: a twelfth per voice, each a
+          // fifth below the last, so no two voices are obliged to sit together
+          compass: (0..voices).map(|v| { let top = 45 - 5 * v as i16; (top - 12, top) }).collect(),
+        };
+        let t0 = std::time::Instant::now();
+        let out = compose::block_cost(&d, tier, &silent, with_plan);
+        let ms = t0.elapsed().as_secs_f64() * 1000.0;
+        match out {
+          Ok((peak, relaxed)) => println!(
+            "   {voices:>6}  {resting:>7}  {free:>4}   {peak:>11}   {relaxed:>7}   {ms:>6.0}ms   filled"
+          ),
+          Err(e) => {
+            let why = if e.contains("state explosion") { "§2.7's wall" } else { "refused" };
+            println!("   {voices:>6}  {resting:>7}  {free:>4}   {:>11}   {:>7}   {ms:>6.0}ms   {why}", "\u{2014}", "\u{2014}");
+          }
+        }
+      }
+    }
+    println!();
+  }
+
+  println!("   Read down the *free* column, not the voices column: the cost is the same wherever");
+  println!("   the free count is the same, and it does not depend on how many voices are sounding");
+  println!("   around them. Four voices with one resting costs exactly what three voices cost.\n");
+  println!("   What this does not measure: a whole piece. Choosing *which* voice rests in each");
+  println!("   block is a `Layout` decision that does not exist yet, and a rest has to be entered");
+  println!("   and left in a way §8.16's join has never been asked about. This says the search can");
+  println!("   afford it, not that the counterpoint is good.");
+}
+
 pub fn fugue() {
   println!("\n== step 7: a fugue, from a subject ==");
   println!("  The first output here in which nothing but the subject is Bach's. §8.6 reconstructed");

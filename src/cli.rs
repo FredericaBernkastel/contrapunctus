@@ -291,6 +291,8 @@ pub enum Cmd {
   Form,
   /// A whole fugue, from a subject
   Fugue,
+  /// What a resting voice buys, against the free-voice wall
+  Texture,
   /// Render, reconstruct and scalarisations together
   Realise,
   /// All five of the tier-deadlock experiments
@@ -333,6 +335,7 @@ impl Cmd {
       Key => "§8.14",
       Form => "§8.15",
       Fugue => "§8.16",
+      Texture => "§8.17",
       _ => "",
     }
   }
@@ -359,7 +362,7 @@ impl Cmd {
       // reported, in section order
       States, Verdict, Corpus, Diag, Renaissance, Chromatic, Stretto, Density, Design, Sweep,
       Holdout, Render, Reconstruct, Scalarisations, Generality, Species, Shape, Plan, Soft,
-      Objective, Answer, Fourth, Episode, Key, Form, Fugue,
+      Objective, Answer, Fourth, Episode, Key, Form, Fugue, Texture,
       // superseded, kept reproducible
       Rank, Probe, Pareto, Revisit, Ncts, HarmonyDesign, HarmonyCorpus, Cadence, Hren, Seg,
       ModalControl, Func, BindingHarmony,
@@ -452,6 +455,7 @@ fn about(c: Cmd) -> &'static str {
     Key => "key-finding, against the cadence annotations",
     Form => "does the form grammar derive the book?",
     Fugue => "a whole fugue, from a subject",
+    Texture => "what a resting voice buys, against the free-voice wall",
     Realise => "render, reconstruct and scalarisations together",
     Exp => "all five of the tier-deadlock experiments",
     Harmony => "the three first-attempt harmony runs together",

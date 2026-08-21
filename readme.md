@@ -51,6 +51,7 @@ are built and measured — [§8](#8-what-is-built-and-what-it-measures). Realisa
   - [8.14 Key-finding, and the ground truth that was already here](#814-key-finding-and-the-ground-truth-that-was-already-here)
   - [8.15 Does the form grammar derive the book?](#815-does-the-form-grammar-derive-the-book)
   - [8.16 A fugue, from a subject](#816-a-fugue-from-a-subject)
+  - [8.17 Silence, and what the voice count really costs](#817-silence-and-what-the-voice-count-really-costs)
 - [9. Roadmap](#9-roadmap)
 - [10. Reproducing the results](#10-reproducing-the-results)
   - [10.1 Environment and data](#101-environment-and-data)
@@ -2226,6 +2227,65 @@ built — the grammar it came from, the rulebook, and a checker that does not kn
 
 ---
 
+### 8.17 Silence, and what the voice count really costs
+
+`cargo run --release -- texture`
+
+Every voice sounds in every bar of what §8.16 writes. `fill_block` gives the held voice the subject and every other
+voice a tiled rhythm, and **a voice with no notes is an error** — so a three-voice fugue has three voices from bar
+one, and an exposition, whose entire identity is voices arriving one at a time, has no arrival in it. That was
+reported by somebody reading the output, with the *Art of the Fugue* in hand.
+
+Fixing it looks like a musical improvement and turns out to be the same question [§9](#9-roadmap) asks about four
+voices. [§2.7](#27-where-a-solver-takes-over-from-the-dp) put the wall at the voice count;
+[§8.6](#86-realisation-and-the-first-notes) measured it at **two free voices**. A voice that rests is neither held
+nor free — it is absent, and its whole domain leaves the product. So: does resting one move a piece back under the
+wall?
+
+One entry block, BWV 847's subject, `full(5)`, a twelfth of compass per voice a fifth apart. Peak live states in a
+single layer, which is the figure [§8.6](#86-realisation-and-the-first-notes)'s budget bites on.
+
+| voices | resting | free | with the plan | without it |
+|---|---|---|---|---|
+| 2 | 0 | 1 | 68 | 158 |
+| 3 | 0 | 2 | **8 434** | refused |
+| 3 | 1 | 1 | 68 | 158 |
+| 4 | 0 | 3 | refused | refused |
+| 4 | 1 | 2 | **8 434** | refused |
+| 4 | 2 | 1 | 68 | 158 |
+| 5 | 0 | 4 | refused | refused |
+| 5 | 1 | 3 | refused | refused |
+| 5 | 2 | 2 | **8 434** | refused |
+| 5 | 3 | 1 | 68 | 158 |
+
+**Read down the *free* column and the table has three rows.** The cost is identical wherever the free count is,
+and it does not move at all with how many voices are sounding around them: 68 states at one free voice, 8 434 at
+two, refused at three. **Four voices with one resting costs exactly what three voices cost** — the same peak, the
+same 150 ms, nothing relaxed in either. Five voices with two resting, likewise.
+
+> **The wall is on the voices the search must choose, not on the voices you can hear.** §2.7 wrote it as `24^(V−e)`
+> and §8.6 corrected the multiplier to the obligation set; both were about `V − e` and neither noticed that `V − e`
+> is a *parameter*, not a consequence of `V`. Four voices is not out of reach. Four voices **all sounding at once**
+> is, and no fugue does that for long.
+
+**And the second column is the sharper finding.** Without the harmonic plan, two free voices is already past the
+wall — the three-voice case §8.16 generates every day refuses outright. So the plan is not merely tractability
+insurance as §8.16 put it when it chose which constraint to relax first: it is **worth exactly one free voice**,
+which is the difference between two voices and three. The relaxation ladder drops the join first and the plan last,
+and this says that ordering is not a preference but the only survivable one.
+
+**What this does not measure.** A whole piece. Which voice rests in which block is a `Layout` decision that does
+not exist, and a voice has to leave and re-enter in a way the join has never been asked about — `Problem::prior`
+carries one pitch per voice and a resting voice has none, so a re-entry is a cold start every time, which is what
+§8.16 already does deliberately before an entry and has never done anywhere else. This says the **search** can
+afford four voices. It does not say the counterpoint would be any good, and §8.16's list of what the numbers cannot
+see still applies.
+
+The measurement runs through `compose::fill_block` rather than beside it, for the reason that function exists at
+all: there were once two places that wrote a block and they drifted apart in four ways.
+
+---
+
 ## 9. Roadmap
 
 Steps 0 to 5 are done and reported above. The project now produces notes and can be listened to. What remains, in
@@ -2299,6 +2359,18 @@ order.
    free voices and [§8.6](#86-realisation-and-the-first-notes) measured at **two**. Do not layer: Schottstaedt
    reports that failing at three voices.
 
+   **But not for four voices, which is what the solver was wanted for.**
+   [§8.17](#817-silence-and-what-the-voice-count-really-costs) measures the wall against the free count and the
+   sounding count separately, and it moves only with the free count: four voices with one of them resting costs
+   **8 434** peak states, which is what three voices costs to the state, and fills in the same 150 ms with nothing
+   relaxed. The parameter was never the number of voices in the piece — it is the number sounding at once, and no
+   fugue sounds all four for long. So four voices is a **texture** feature and not a solver one, and the solver's
+   real remaining job is the stretto packing below and five voices all sounding, which nothing in this repertoire
+   asks for.
+
+   That does not make the solver wrong to want. It makes the ordering wrong: rests are cheap and buy the voice
+   count, and conflict learning is expensive and buys the cases rests cannot reach.
+
 7. ~~**Form**, per [§2.4](#24-form-is-a-grammar)~~ — **built, and it produces a fugue**
    ([§8.16](#816-a-fugue-from-a-subject)). Twelve blocks, 27 bars, three voices, from BWV 847's subject and nothing else of
    Bach's; it parses under the grammar it came from and has **zero violations on the confirmed tier** over 628
@@ -2306,7 +2378,10 @@ order.
    borrowed. What it is not is a good fugue, and §8.16 says where to look: three times Bach's dissonance rate,
    every accompanying voice in the subject's rhythm, and every episode a strict sequence when
    [§8.13](#813-are-episodes-sequences-and-how-much-of-a-fugue-is-episode) measured only 13.3% of Bach's that way.
-   The packing question still lives inside the stretto block, and **four voices still need the solver**.
+   The packing question still lives inside the stretto block. **Four voices no longer need the solver** — they
+   need silence, which is [§8.17](#817-silence-and-what-the-voice-count-really-costs) and is also the fault a
+   reader with the *Art of the Fugue* in hand noticed first: every voice here sounds in every bar, and an
+   exposition whose voices do not arrive one at a time is not an exposition.
 
    **Started, from the outside in.** The grammar's `Exposition` rule reads `Entry (Countersubject Entry){V−1}`,
    and the second `Entry` is an *answer* rather than a transposition — a distinction this document did not have
@@ -2468,6 +2543,7 @@ cut it again.
 | [§8.14](#814-key-finding-and-the-ground-truth-that-was-already-here) key-finding | `cargo run --release -- key` |
 | [§8.15](#815-does-the-form-grammar-derive-the-book) the grammar, parsed | `cargo run --release -- form` |
 | [§8.16](#816-a-fugue-from-a-subject) a whole fugue | `cargo run --release -- fugue` |
+| [§8.17](#817-silence-and-what-the-voice-count-really-costs) what a resting voice buys | `cargo run --release -- texture` |
 | every cross-reference in the repository | `cargo test --release --test references` |
 
 **This table is checked against the program.** `tests/references.rs` runs `list` and fails the build if a row here
