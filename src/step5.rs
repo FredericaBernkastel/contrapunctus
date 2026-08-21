@@ -3012,6 +3012,70 @@ pub fn texture() {
       println!("     voices sounding per bar: {counts:?}");
     }
   }
+  // ---- and what happens if the search is allowed to choose the rests itself
+  println!("
+   -- letting the search choose, over twelve seeds --
+");
+  println!("   `Layout::drawn_texture`. Every rest pattern a block could legally take is a search of");
+  println!("   its own; `realise::fill` counts each one's legal set exactly, and a pattern drawn in");
+  println!("   proportion to that count, then a fill drawn uniformly inside it, is a fill drawn");
+  println!("   uniformly from the union. No rule is invented — it is §8.10's finding applied to");
+  println!("   texture. The question is what comes out.
+");
+  let drawn = compose::Layout { drawn_texture: true, ..plain.clone() };
+  let mut seen: std::collections::BTreeMap<String, usize> = Default::default();
+  let mut density: std::collections::BTreeMap<usize, usize> = Default::default();
+  let mut refused = 0;
+  for k in 0..12u64 {
+    let seed = cli::params().seed.wrapping_mul(6364136223846793005).wrapping_add(k);
+    let Ok(o) = compose::fugue(&d, &drawn, tier, seed) else { refused += 1; continue };
+    for b in &o.blocks {
+      let (lo, hi) = (b.at, b.at + b.len);
+      let quiet: Vec<usize> = (0..d.voices)
+        .filter(|v| !o.voices[*v].notes.iter().any(|n| n.onset < hi && n.onset + n.dur > lo))
+        .collect();
+      *density.entry(d.voices - quiet.len()).or_default() += 1;
+      // only the blocks where anything was chosen: the exposition's rests are the
+      // grammar's and would drown the count
+      if quiet.len() == 1 {
+        *seen.entry(format!("voice {}", quiet[0] + 1)).or_default() += 1;
+      }
+    }
+  }
+  let blocks: usize = density.values().sum();
+  println!("   {} of 12 seeds refused; {blocks} blocks in all
+", refused);
+  println!("   voices sounding   blocks   share");
+  for (n, c) in &density {
+    println!("   {n:>15}   {c:>6}   {:>5.1}%", *c as f64 / blocks as f64 * 100.0);
+  }
+  println!("
+   where exactly one rests, which one:");
+  let one: usize = seen.values().sum();
+  for (who, c) in &seen {
+    println!("   {who:>17}   {c:>6}   {:>5.1}%", *c as f64 / one.max(1) as f64 * 100.0);
+  }
+  println!();
+  println!("   **The draw is dominated by density, and that is the answer to whether a drawn");
+  println!("   texture is a texture.** A pattern with one more free voice admits thousands of times");
+  println!("   more fills — measured on one block at three voices, the full texture takes 99.94% of");
+  println!("   the draw and resting anybody takes 0.06% between them — so uniform drawing over");
+  println!("   textures returns the densest legal one and essentially never anything sparser. A");
+  println!("   voice dropping out where nothing forced it is not rare under this scheme so much as");
+  println!("   accidental: one block in the 156 above, against 25 the grammar rests in the");
+  println!("   expositions and 131 at the fullest texture the wall allows.
+");
+  println!("   What it does give is the *choice among equals*: where the wall forces one voice out,");
+  println!("   the three ways to do that are within a factor of two of one another and the draw");
+  println!("   spreads over them. That replaces `rests_that_fit`'s least-recently-heard heuristic");
+  println!("   with something that invents nothing — and on this subject the two agree in four");
+  println!("   blocks out of five, so it is a small correction rather than a different piece.
+");
+  println!("   So it stays off by default, and now for a measured reason rather than caution:");
+  println!("   §8.10 says draw rather than optimise, and it is right about notes. Applied to");
+  println!("   texture the same argument returns the thing texture is supposed to vary.
+");
+
   println!();
   println!("   So the piece the block figures predicted does exist, and the part §8.17 could not");
   println!("   measure — that a rest has to be entered and left, and `Problem::prior` carries");

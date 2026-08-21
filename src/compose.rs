@@ -293,6 +293,27 @@ pub struct Layout {
   /// texture but an empty block.
   #[cfg_attr(feature = "serde", serde(default))]
   pub rests: Vec<(u64, Vec<usize>)>,
+  /// Whether the **search** decides who else rests, on top of whatever
+  /// [`Layout::rests`] pins. **Off**, and the reason it is a flag rather than the
+  /// behaviour is that nothing has measured whether a drawn texture is one.
+  ///
+  /// What it does invents no rule, which is the whole of why this shape and not
+  /// another. Every rest pattern a block could legally take is a search of its
+  /// own, `realise::fill` counts its legal set exactly, and a pattern drawn with
+  /// probability proportional to that count — then a fill drawn uniformly inside
+  /// it — is a fill drawn uniformly from the union of all of them. So the texture
+  /// comes out of the same mechanism the notes do, and
+  /// [§8.10](../readme.md)'s finding that drawing beats optimising covers it.
+  ///
+  /// It replaces [`rests_that_fit`], which rests whichever voice has gone longest
+  /// since holding anything and makes no claim to be musical. What comes out here
+  /// instead is *whichever absence leaves the counterpoint the most room*, which
+  /// is a consequence of the arithmetic rather than a preference anybody typed.
+  ///
+  /// A `Layout` field and not interface state, because it changes what is
+  /// generated and `docs/ui-spec.md` section 8 requires a saved fugue to reproduce.
+  #[cfg_attr(feature = "serde", serde(default))]
+  pub drawn_texture: bool,
 }
 
 impl Default for Layout {
@@ -309,6 +330,7 @@ impl Default for Layout {
       rerolls: vec![],
       turns: vec![],
       rests: vec![],
+      drawn_texture: false,
     }
   }
 }
@@ -654,6 +676,7 @@ fn fill_block(
   prior: &[Option<Pitch>],
   terminal: &[Option<Pitch>],
   silent: &[bool],
+  drawn: bool,
 ) -> Result<Written, String> {
   let b = &blocks[bi];
   let held = held_of(Some(b));
@@ -728,36 +751,72 @@ fn fill_block(
     .map(|s| harmony::Segment { start: s.start - b.at, end: s.end - b.at, ..s.clone() })
     .collect();
 
-  let mut got = None;
+  // **Which rest patterns this block may take.** One, ordinarily: whatever the
+  // grammar and the layout already said. With `Layout::drawn_texture` it is every
+  // subset of the voices still free that leaves no more than [`FREE_WALL`] of
+  // them — including the empty one, so the fullest texture is a candidate like
+  // any other and is not privileged by being the default.
+  let loose: Vec<usize> = (0..d.voices).filter(|v| free[*v]).collect();
+  let patterns: Vec<Vec<bool>> = if !drawn {
+    vec![free.clone()]
+  } else {
+    (0..1u32 << loose.len())
+      .filter_map(|mask| {
+        let resting: Vec<usize> =
+          loose.iter().enumerate().filter(|(i, _)| mask >> i & 1 == 1).map(|(_, v)| *v).collect();
+        (loose.len() - resting.len() <= FREE_WALL).then(|| {
+          (0..d.voices).map(|v| free[v] && !resting.contains(&v)).collect()
+        })
+      })
+      .collect()
+  };
+
+  let mut got: Option<(realise::Solution, usize)> = None;
   let mut why = String::new();
   for attempt in 0..3 {
-    let pr = Problem {
-      voices: voices.clone(),
-      free: free.clone(),
-      compass: d.compass.clone(),
-      key: d.key,
-      measure: d.measure,
-      // the join goes before the plan does. The plan is §2.3's obligation
-      // system and it is also what keeps the search tractable — dropping it
-      // first turns a dead block into an exploded one, which is worse. The
-      // prior is this generator's own convenience and is dropped first.
-      plan: if attempt < 2 { here.clone() } else { vec![] },
-      tier,
-      weights: [1.0; 6],
-      prescribe: [0.0; 3],
-      prior: if attempt == 0 { prior.to_vec() } else { vec![] },
-      terminal: terminal.to_vec(),
-      samples: 0,
-      seed,
-      beta: 0.0,
-    }
-    .drawing();
-    match realise::fill(&pr) {
-      Ok(s) => {
-        got = Some((s, attempt));
-        break;
+    // Every pattern at this rung before relaxing further, so that a texture is
+    // never bought with a constraint that did not have to be dropped.
+    let mut round: Vec<(realise::Solution, Vec<bool>)> = vec![];
+    for pattern in &patterns {
+      if !pattern.iter().any(|f| *f) {
+        continue; // nothing free: `fill` refuses that, and the caller above handles it
       }
-      Err(e) => why = e,
+      let pr = Problem {
+        voices: voices
+          .iter()
+          .enumerate()
+          .map(|(v, line)| if v != held && free[v] && !pattern[v] { Voice { notes: vec![] } } else { line.clone() })
+          .collect(),
+        free: pattern.clone(),
+        compass: d.compass.clone(),
+        key: d.key,
+        measure: d.measure,
+        // the join goes before the plan does. The plan is §2.3's obligation
+        // system and it is also what keeps the search tractable — dropping it
+        // first turns a dead block into an exploded one, which is worse. The
+        // prior is this generator's own convenience and is dropped first.
+        plan: if attempt < 2 { here.clone() } else { vec![] },
+        tier,
+        weights: [1.0; 6],
+        prescribe: [0.0; 3],
+        prior: if attempt == 0 { prior.to_vec() } else { vec![] },
+        terminal: terminal.to_vec(),
+        samples: 0,
+        seed,
+        beta: 0.0,
+      }
+      .drawing();
+      match realise::fill(&pr) {
+        Ok(s) => round.push((s, pattern.clone())),
+        Err(e) => why = e,
+      }
+    }
+    // The chosen pattern needs no carrying: `fill` returns a rested voice
+    // unchanged, and unchanged for a voice with no notes is no notes — so the
+    // solution already says who said nothing, and `joins` reads it off that.
+    if let Some((sol, _)) = draw_pattern(round, seed) {
+      got = Some((sol, attempt));
+      break;
     }
   }
   let Some((sol, attempt)) = got else {
@@ -796,6 +855,45 @@ fn fill_block(
   let chosen = sol.chosen();
   let after = joins(chosen);
   Ok((chosen.to_vec(), after, attempt, sol.peak_states))
+}
+
+/// Pick one of the block's rest patterns, **weighted by how much music each
+/// admits** — and the weighting is what makes this a uniform draw rather than a
+/// preference.
+///
+/// `realise::fill` returns an exact count of the fills a pattern allows and a
+/// sample drawn uniformly from among them. Take pattern `i` with probability
+/// `n_i / Σn` and then its own sample, and every fill in the union comes up with
+/// probability `(n_i/Σn)·(1/n_i) = 1/Σn`. So the texture is drawn from the same
+/// legal set the notes are, by the same argument
+/// [§8.10](../readme.md) makes for drawing over optimising, and **nothing here
+/// prefers one texture to another**.
+///
+/// What emerges is not nothing, though, and it is worth naming because it looks
+/// like a choice and is not: the fullest texture wins most of the time, because a
+/// pattern with one more free voice admits orders of magnitude more fills. When
+/// something has to rest, the voice that goes is whichever one's absence leaves
+/// the counterpoint the most room. Both fall out of the arithmetic.
+fn draw_pattern(round: Vec<(realise::Solution, Vec<bool>)>, seed: u64) -> Option<(realise::Solution, Vec<bool>)> {
+  if round.len() <= 1 {
+    return round.into_iter().next();
+  }
+  let total: u128 = round.iter().map(|(s, _)| s.legal_fills.max(1)).sum();
+  // SplitMix64 on the block's own seed, so the choice is part of what the seed
+  // reproduces and a reroll moves it along with everything else.
+  let mut z = seed.wrapping_add(0x9E37_79B9_7F4A_7C15);
+  z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+  z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+  z ^= z >> 31;
+  let mut want = (z as u128) % total.max(1);
+  for (sol, pattern) in round {
+    let n = sol.legal_fills.max(1);
+    if want < n {
+      return Some((sol, pattern));
+    }
+    want -= n;
+  }
+  None
 }
 
 /// Which voices say nothing in each block: **a voice is silent until it has
@@ -928,7 +1026,7 @@ pub fn block_cost(d: &Design, tier: &[Rule], silent: &[bool], with_plan: bool) -
   let blocks =
     vec![Block { at: 0, len: subject_bars(d), kind: Kind::Entry { voice: 0, shift: 0, tonal: false }, key_of: 0 }];
   let segments = if with_plan { plan(d, &blocks) } else { vec![] };
-  let (_, _, attempt, peak) = fill_block(d, &blocks, 0, &segments, tier, 0x5EED, &[], &[], silent)?;
+  let (_, _, attempt, peak) = fill_block(d, &blocks, 0, &segments, tier, 0x5EED, &[], &[], silent, false)?;
   Ok((peak, attempt))
 }
 
@@ -994,6 +1092,8 @@ pub struct Run<'a> {
   /// Who says nothing in each block — [`resting`], computed once with the plan
   /// because it is a property of the derivation and not of the fill.
   resting: Vec<Vec<bool>>,
+  /// [`Layout::drawn_texture`], carried because `Run` does not keep the layout.
+  drawn: bool,
   voices: Vec<Voice>,
   prior: Vec<Option<Pitch>>,
   relaxed: Relaxed,
@@ -1020,6 +1120,7 @@ impl<'a> Run<'a> {
     let seeds = seeds(d, l, seed);
     let resting = resting(d, l);
     Ok(Run {
+      drawn: l.drawn_texture,
       d: d.clone(),
       tier,
       blocks,
@@ -1069,7 +1170,7 @@ impl<'a> Run<'a> {
     let t0 = crate::clock::Instant::now();
     let bi = self.next;
     let (filled, after, attempt, _) =
-      fill_block(&self.d, &self.blocks, bi, &self.plan, self.tier, self.seeds[bi], &self.prior, &[], &self.resting[bi])?;
+      fill_block(&self.d, &self.blocks, bi, &self.plan, self.tier, self.seeds[bi], &self.prior, &[], &self.resting[bi], self.drawn)?;
     self.relaxed.blocks += (attempt > 0) as usize;
     self.relaxed.without_prior += (attempt >= 1) as usize;
     self.relaxed.without_plan += (attempt >= 2) as usize;
@@ -1344,7 +1445,8 @@ pub fn refill_span(
     };
 
     let (filled, after, _, _) =
-      fill_block(d, &blocks, bi, &full, tier, seeds[bi], &prior, &terminal, &quiet[bi]).map_err(|e| e.to_string())?;
+      fill_block(d, &blocks, bi, &full, tier, seeds[bi], &prior, &terminal, &quiet[bi], l.drawn_texture)
+        .map_err(|e| e.to_string())?;
     prior = after;
 
     // splice: the block's own bars replaced, everything else untouched
@@ -1641,6 +1743,68 @@ mod tests {
     }
     // the subject is stated in all four, which is what makes it a four-voice fugue
     assert!(o.verdict.exposition_covers_the_voices, "the exposition does not cover four voices");
+  }
+
+  /// **The search can choose the rests itself, and reaches four voices doing it.**
+  ///
+  /// `Layout::drawn_texture` with no `rests` at all: every legal rest pattern is a
+  /// search of its own, drawn in proportion to the fills it admits. What that has
+  /// to deliver is a piece where `rests_that_fit`'s heuristic delivered one, and
+  /// without the heuristic.
+  #[test]
+  fn the_search_can_choose_who_rests() {
+    let mut d = design();
+    d.voices = 4;
+    d.compass = (0..4).map(|v| { let top = 45 - 5 * v as i16; (top - 12, top) }).collect();
+    let brief = Layout { middles: vec![4], episode_bars: 2, ..Layout::default() };
+
+    // off, it is the same refusal as ever
+    match fugue(&d, &brief, CONFIRMED, 0x5EED) {
+      Ok(_) => panic!("four voices composed with nobody resting and the draw off"),
+      Err(e) => assert!(e.contains("state explosion"), "refused for another reason: {e}"),
+    }
+
+    // on, with no pattern given, it finds one
+    let l = Layout { drawn_texture: true, ..brief.clone() };
+    assert!(l.rests.is_empty(), "this must prove the draw, not a pattern");
+    let o = fugue(&d, &l, CONFIRMED, 0x5EED).expect("the draw reached four voices");
+    for (v, voice) in o.voices.iter().enumerate() {
+      assert!(!voice.notes.is_empty(), "voice {v} never sounds");
+    }
+    assert!(o.verdict.exposition_covers_the_voices, "the exposition does not cover four voices");
+
+    // and somebody really is resting where the wall would otherwise bite
+    let quiet_somewhere = o.blocks.iter().any(|b| {
+      let (lo, hi) = (b.at, b.at + b.len);
+      (0..d.voices).filter(|v| !o.voices[*v].notes.iter().any(|n| n.onset < hi && n.onset + n.dur > lo)).count() > 0
+    });
+    assert!(quiet_somewhere, "nothing rests anywhere, so the draw did not do what it claims");
+  }
+
+  /// **The draw is off by default, and at three voices it does nothing at all.**
+  ///
+  /// The second half is the finding, not a disappointment to be worked around. A
+  /// rest pattern with one more free voice admits thousands of times more fills —
+  /// at three voices the full texture takes 99.94% of the draw and resting anyone
+  /// takes 0.06% between them — so drawing uniformly over textures returns the
+  /// densest legal one, which is the texture the generator already had. Note for
+  /// note the same piece.
+  ///
+  /// That is what `readme` §8.17 concluded and it is why this ships off: §8.10's
+  /// finding that drawing beats optimising is right about notes, and applied to
+  /// texture the same argument returns the one thing texture is supposed to vary.
+  /// A test that asserted the flag *changes* the music would be asserting the
+  /// opposite of what was measured.
+  #[test]
+  fn drawing_the_texture_is_off_and_at_three_voices_is_the_same_piece() {
+    assert!(!Layout::default().drawn_texture, "the draw must be off by default");
+    let d = design();
+    let brief = Layout { middles: vec![4, 5], episode_bars: 2, ..Layout::default() };
+    let a = fugue(&d, &brief, CONFIRMED, 0x5EED).expect("plain");
+    let b = fugue(&d, &Layout { drawn_texture: true, ..brief.clone() }, CONFIRMED, 0x5EED).expect("drawn");
+    assert_eq!(a.bars, b.bars);
+    let same = notes(&a.voices) == notes(&b.voices);
+    assert!(same, "at three voices the draw took a thinner texture than the full one, which 99.94% says it should not");
   }
 
   /// `Block` and `Voice` carry no `PartialEq` and this file is not the place to

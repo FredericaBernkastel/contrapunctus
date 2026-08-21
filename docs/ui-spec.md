@@ -407,7 +407,7 @@ precedent for how to handle that — offer it with the condition stated — and 
 interface should maintain a legal pattern by default rather than leave somebody to
 discover the rule by hitting it.
 
-**3. The search chooses it. — roadmap item 1, and off by default**
+**3. The search chooses it. — BUILT, off by default, and it does not work**
 
 What it gives: four voices that simply work, with nothing to learn and no
 constraint to respect. And *Try a different one* becomes a much larger musical
@@ -432,6 +432,14 @@ fugal texture has shape. Repairing that is where an invented rule would creep ba
 in, and it is the reason this one is called the interesting candidate rather than
 the recommended one.
 
+**Measured, and the risk was the outcome.** readme §8.17 built it and counted: a
+pattern with one more voice playing admits thousands of times more fills, so the
+draw returns the densest legal texture essentially always — one block in 156 chose
+to be thinner than it had to be, and at three voices the flag changes not one
+note. What it does buy is the choice among *equally dense* patterns, spread 24 /
+9 / 31 / 36 across the four voices, which replaces `rests_that_fit`'s heuristic
+with something that invents nothing. A correction, not a different piece.
+
 **So it ships switched off, with a control to turn it on**, and that is a
 requirement rather than a nicety. It is a `Layout` field, not interface state: it
 changes what is generated, so section 8 requires it in the settings file or a
@@ -453,9 +461,11 @@ form cares about, four entries and a grammar that passes, and not four-part
 texture. Two things were being called four voices and only one of them was ever
 §9's solver item.
 
-**Build order.** 1 was a bug fix and is in. 2 delivered four voices and the
-compositional control. 3 fills in whatever 2 leaves unset, off by default, and is
-a §9 question wearing an interface control.
+**Build order, as it went.** 1 was a bug fix. 2 delivered four voices and the
+compositional control. 3 was built to see whether it could replace 2 and cannot —
+it is on by choice or not at all, and what it corrects is small. All three are in;
+what is left is not a fourth candidate but a different kind of thing, and item 4
+of the roadmap says so.
 
 **And one thing the measurement does not cover.** A voice has to leave and
 re-enter, and `Problem::prior` carries one pitch per voice — a resting voice has
@@ -1030,9 +1040,8 @@ Ordered by whether an interface can start without it.
 
 | # | change | why | size |
 |---|---|---|---|
-| 1 | Rest patterns in the legal set, drawn from, behind a flag | 4.4's third candidate, which invents no rule | medium |
-| 2 | Blocks addressable one at a time, for 4.5's palette | so a plan can be built rather than derived | medium |
-| 3 | A CDCL solver | **four parts sounding together**, and stretto packing | §9 |
+| 1 | Blocks addressable one at a time, for 4.5's palette | so a plan can be built rather than derived | medium |
+| 2 | A CDCL solver | **four parts sounding together**, and stretto packing | §9 |
 
 **Item 1 is measured and it is larger than it looks.** readme §8.17 asked what a
 resting voice costs and found that the search's wall moves with the number of
@@ -1200,6 +1209,7 @@ Status is one of **done**, **partial** — usable and honestly incomplete — or
 | 4.4 | A rest anywhere, clicked in the lane, and the accompaniment drawn so it can be seen | `four_voices_compose_when_one_of_them_rests` |
 | 3.2, 9 | **Four voices**, which asking for now sets a rest pattern for rather than refusing | `asking_for_four_voices_gives_four_voices`, `a_refusal_about_free_voices_names_its_own_cure` |
 | 4.1 | The strip drawing the piece it was given rather than the controls, which have moved | `the_strip_is_given_the_piece_it_is_drawing`, `a_click_in_a_lane_rests_that_voice` |
+| 4.4 | The search choosing the rests, off by default, with the finding beside the switch | `the_search_can_choose_who_rests`, `drawing_the_texture_is_off_and_at_three_voices_is_the_same_piece` |
 
 Fifty-one tests, all headless. The interesting one is
 `every_offered_subject_composes`: each of the 24 subjects is composed on the
@@ -1223,10 +1233,10 @@ silence is, in samples.
 
 | # | section | what | blocked on |
 |---|---|---|---|
-| 1 | 4.4 | The search choosing the rests, **off by default and switchable on** | a way to judge whether a drawn texture is one |
-| 2 | 4.5 | A block palette, judged by the grammar rather than gated by it | blocks addressable one at a time |
-| 3 | 7.3 | Generating in a worker, so the sound survives the work | a worker build; 6.4 is the workaround until then |
-| 4 | 6.3 | System MIDI out, behind a feature | a `midir` dependency, and a device to try it on |
+| 1 | 4.5 | A block palette, judged by the grammar rather than gated by it | blocks addressable one at a time |
+| 2 | 7.3 | Generating in a worker, so the sound survives the work | a worker build; 6.4 is the workaround until then |
+| 3 | 6.3 | System MIDI out, behind a feature | a `midir` dependency, and a device to try it on |
+| 4 | 4.4 | A texture that varies for a *musical* reason | a criterion, and readme §8.10 is about what those do |
 
 **Texture is built, and four voices with it.** `compose::resting` rests a voice
 until it has entered — no parameter, the derivation already said who enters when —
@@ -1235,20 +1245,18 @@ strip draws the accompaniment so a rest is visible, and a click toggles one.
 Asking for four voices sets a pattern rather than handing over a refusal, and a
 refusal that a rest *would* cure now says so in the message.
 
-**Item 1 is the same feature with the choosing done by the search**, and 4.4
-argues the one formulation that invents no rule: put the rest patterns in the
-legal set and draw uniformly, which is what readme §8.10 already prefers to
-optimising. It would replace `compose::rests_that_fit`, which rests whichever
-voice has gone longest since holding anything and is a feasibility helper making
-no claim to be musical.
+**The search choosing the rests is built, off, and measured.**
+`Layout::drawn_texture` is in SEARCH with the finding beside it. It invents no
+rule and it does not deliver a texture: readme §8.17 counted the legal sets and a
+pattern with one more voice playing admits thousands of times more fills, so the
+draw returns the densest legal one essentially always. At three voices it changes
+not a note. What it buys is which voice rests where one must, and there it
+replaces a heuristic with something principled.
 
-It **ships off with a control to turn it on**, because it changes what is
-generated and nothing has measured whether a drawn texture sounds like a texture —
-the same reason `--gen-tier` is separate from `--tier`. Being a `Layout` field
-rather than interface state is forced by section 8: a saved fugue has to
-reproduce. And it gives somebody a way back to a texture they can predict, which
-matters here more than usual, since with it on *Try a different one* would change
-who is playing.
+**Item 4 is what that leaves.** A texture that thins for a musical reason needs
+something that *prefers* one density to another, which is a positive criterion —
+and readme §8.10 is the section about what positive criteria do under a minimiser.
+It is on this list to be honest about being open, not because it is next.
 
 **Item 2 is mostly interface work on machinery that exists**, and 4.5 argues the
 one design point that matters: the palette should let an illegal plan be built

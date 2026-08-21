@@ -2343,6 +2343,43 @@ the form — four entries, four statements of the subject, the grammar satisfied
 > itself, which no arrangement of rests can move. §9's CDCL item survives this, narrowed: it is about density, not
 > about the voice count.
 
+#### Letting the search choose the rests, which invents no rule and does not work
+
+`rests_that_fit` picks the least recently heard voice, which is a heuristic and says so. The alternative that invents
+nothing is to put the rest patterns **in the legal set**: every pattern a block could take is a search of its own,
+`realise::fill` counts each one's legal set exactly, and a pattern drawn with probability `n_i / Σn` followed by a
+fill drawn uniformly inside it gives every fill in the union probability `1/Σn`. Texture out of the same mechanism
+the notes come from, and [§8.10](#810-replacing-the-soft-tier-and-the-degenerate-optimum-of-every-positive-criterion)'s
+finding that drawing beats optimising covers it without extension. `Layout::drawn_texture`.
+
+It reaches four voices with no pattern given at all, in 0.7 s against 0.5. And over twelve seeds, 156 blocks:
+
+| voices sounding | blocks | |
+|---|---|---|
+| 3 — the most the wall allows | 131 | 84.0% |
+| 2 | 13 | 8.3% |
+| 1 | 12 | 7.7% |
+
+The 25 thin blocks are the expositions: twelve pieces, each opening one voice then two. **One block in 156 chose to
+be thinner than it had to be.** The reason is arithmetic and it was measured on a single block: at three voices the
+full texture admits **12 719 151** fills and resting either other voice admits **4 744** and **2 894**, so the full
+texture takes **99.94%** of the draw. At four the three ways to rest one voice take 44.9%, 27.8% and 27.2%, and
+every way to rest two takes 0.03% between them.
+
+> **Drawing beats optimising, and applied to texture it returns the one thing texture is supposed to vary.** A
+> pattern with one more voice playing admits thousands of times more music, because that is what another free voice
+> *is*. So a uniform draw over textures is a draw over densities weighted by density, and it returns the densest
+> legal one every time. At three voices the flag changes not one note — `drawing_the_texture_is_off_and_at_three_-
+> voices_is_the_same_piece` asserts exactly that, because a test asserting the flag *changes* the music would be
+> asserting the opposite of what was measured.
+
+What it does buy is the **choice among equals**. Where the wall forces one voice out, the ways to do it are within a
+factor of two of one another and the draw spreads across them — 24%, 9%, 31%, 36% over the four voices across those
+twelve seeds. That replaces a heuristic with something that invents nothing, and on this subject the two agree in
+four blocks out of five, so it is a correction rather than a different piece.
+
+It ships **off**, and now for a measured reason rather than caution.
+
 **What this does not say.** That the counterpoint is good. §8.16's list of what the numbers cannot see applies
 here too, and this piece adds one of its own: a voice that drops out for a block and returns has no line to return
 *from*, and nothing here has looked at whether those seams sound like anything a composer would write. The rate
@@ -2450,14 +2487,19 @@ order.
    count, and it should have been all along: two different things were being called four voices, and only one of
    them was ever a solver problem.
 
-   The remaining candidate that is *not* a solver is `docs/ui-spec.md`'s: put the rest patterns in the legal set and
-   draw from them uniformly, which invents no rule, since
-   [§8.10](#810-replacing-the-soft-tier-and-the-degenerate-optimum-of-every-positive-criterion) already established
-   that drawing beats optimising and this is the same mechanism over a wider domain. It would replace
-   `rests_that_fit`, which is a feasibility helper choosing the least recently heard voice and makes no claim to be
-   musical. The open question is whether a uniform draw over textures gives anything a listener would call a
-   texture, and it is unmeasured — so it ships **switched off**, with a control to turn it on, for the reason
-   `--gen-tier` exists separately from `--tier`.
+   **The candidate that was not a solver is built and measured**, and it does not work.
+   `Layout::drawn_texture` puts the rest patterns in the legal set and draws from them, which invents no rule —
+   [§8.10](#810-replacing-the-soft-tier-and-the-degenerate-optimum-of-every-positive-criterion)'s argument covers it
+   unchanged. It reaches four voices with no pattern given, and it returns the densest legal texture essentially
+   always, because a pattern with one more voice playing admits thousands of times more fills. At three voices it
+   changes not one note. What it buys is the choice among equally dense patterns, where it replaces a heuristic with
+   something principled. It ships **off**, with a control to turn it on, and
+   [§8.17](#817-silence-and-what-the-voice-count-really-costs) is why rather than caution.
+
+   So the way to a texture that varies for musical reasons is not more drawing. It is a criterion that prefers one
+   density to another — which is a *positive* criterion, and
+   [§8.10](#810-replacing-the-soft-tier-and-the-degenerate-optimum-of-every-positive-criterion) is the section about
+   what those do under a minimiser. That is the open problem, and it is older than this section.
 
    That does not make the solver wrong to want. It makes the ordering wrong: rests are cheap and buy the voice
    count, and conflict learning is expensive and buys the cases rests cannot reach.

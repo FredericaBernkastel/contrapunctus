@@ -1119,6 +1119,27 @@ impl App {
 
       ui.add_space(12.0);
       group(ui, "SEARCH");
+
+      labelled(ui, "Let the search choose who rests", "Layout::drawn_texture");
+      let mut drawn = self.layout.drawn_texture;
+      if ui
+        .checkbox(&mut drawn, "")
+        .on_hover_text(
+          "Every way a block could rest its voices is a search of its own, and the fill is drawn            from all of them at once, in proportion to how much music each admits. That invents no            rule — it is the same draw the notes come from.",
+        )
+        .changed()
+      {
+        self.layout.drawn_texture = drawn;
+        changed = true;
+      }
+      ui.label(
+        RichText::new(
+          "Off, and measured rather than cautious: a pattern with one more voice playing admits            thousands of times more music, so the draw returns the fullest texture the search can            afford and almost never anything thinner. What it does change is *which* voice rests            where one has to — readme §8.17.",
+        )
+        .weak()
+        .small(),
+      );
+      ui.add_space(8.0);
       ui.horizontal(|ui| {
         ui.label(RichText::new("seed").monospace().small());
         let mut hex = format!("{:X}", self.seed);
