@@ -2916,13 +2916,12 @@ pub fn texture() {
       compass: (0..voices).map(|v| { let top = 45 - 5 * v as i16; (top - 12, top) }).collect(),
     };
     let l = compose::Layout::default();
-    let blocks = compose::derive(&d, &l);
     let origins = compose::origins(&d, &l);
     // Through `compose::resting`, which is the rule the generator now runs, so
     // this table cannot disagree with what the program does. Counting it here
     // instead got the link wrong: `derive` hands the link's motive to the voice
     // that is *about* to enter, and the held voice always sounds.
-    let quiet = compose::resting(&blocks, voices);
+    let quiet = compose::resting(&d, &l);
     let row: Vec<String> = quiet
       .iter()
       .enumerate()
@@ -2950,10 +2949,74 @@ pub fn texture() {
   println!("   Four voices needs a voice to rest **after** it has entered, and nothing in the");
   println!("   grammar says which one. That is a parameter or a search, not a rule.\n");
 
-  println!("   What this does not measure: a whole piece. A rest has to be entered and left in a");
-  println!("   way §8.16's join has never been asked about — `Problem::prior` carries one pitch per");
-  println!("   voice and a resting voice has none, so every re-entry is cold. This says the search");
-  println!("   can afford it, not that the counterpoint is good.");
+  // ---- and the whole piece, which is what the block figures were for
+  println!("   -- a whole four-voice fugue --
+");
+  println!("   The above is one block. This is twelve, with `Layout::rests` resting whichever voice");
+  println!("   has gone longest since holding anything, wherever a block would otherwise have three");
+  println!("   free. That choice is `compose::rests_that_fit` and it is a feasibility helper, not a");
+  println!("   rule: it claims the voice count is reachable, not that this is the texture anybody");
+  println!("   would write.
+");
+  let d = compose::Design {
+    subject: subject.clone(),
+    voices: 4,
+    key: p.key,
+    tonic,
+    measure: p.measure,
+    beat: p.beat,
+    compass: (0..4).map(|v| { let top = 45 - 5 * v as i16; (top - 12, top) }).collect(),
+  };
+  let plain = compose::Layout::default();
+  print!("   four voices, nobody resting:  ");
+  match compose::fugue(&d, &plain, tier, cli::params().seed) {
+    Ok(_) => println!("composed — then §8.17's premise has gone"),
+    Err(e) => println!("{}", e.lines().next().unwrap_or("refused")),
+  }
+  let l = compose::Layout { rests: compose::rests_that_fit(&d, &plain), ..plain.clone() };
+  let quiet = compose::resting(&d, &l);
+  let most = quiet.iter().map(|r| 4 - 1 - r.iter().filter(|q| **q).count()).max().unwrap_or(0);
+  println!("   {} of {} blocks take a rest; worst block has {most} free
+", l.rests.len(), quiet.len());
+  print!("   four voices, one resting:     ");
+  match compose::fugue(&d, &l, tier, cli::params().seed) {
+    Err(e) => println!("REFUSED: {e}"),
+    Ok(o) => {
+      println!("composed");
+      println!("     {} blocks over {} bars, in {:.1}s", o.blocks.len(), o.bars, o.seconds);
+      println!(
+        "     {} of {} blocks needed a constraint dropped: {} lost the join, {} the plan too",
+        o.relaxed.blocks, o.blocks.len(), o.relaxed.without_prior, o.relaxed.without_plan
+      );
+      let (rates, slices) = crate::experiments::rates(&kern::Piece {
+        id: "generated".into(), voices: o.voices.clone(), measure: d.measure, beat: d.beat,
+        key: d.key, tonic: None, polyphonic_instants: 0,
+      });
+      println!("     over {slices} slices, per thousand:");
+      for (name, r) in &rates {
+        println!("       {name:<28} {r:>7.1}");
+      }
+      let v = o.verdict;
+      println!("     exposition covers the voices  {}", yes(v.exposition_covers_the_voices));
+      println!("     exposition alternates         {}", yes(v.exposition_alternates));
+      println!("     has a middle                  {}", yes(v.has_a_middle));
+      println!("     ends at home                  {}", yes(v.ends_at_home));
+      // how full the texture actually is, bar by bar
+      let bars = (compose::length(&o.blocks) + d.measure - 1) / d.measure;
+      let counts: Vec<usize> = (0..bars)
+        .map(|b| {
+          let (lo, hi) = (b * d.measure, (b + 1) * d.measure);
+          o.voices.iter().filter(|v| v.notes.iter().any(|n| n.onset < hi && n.onset + n.dur > lo)).count()
+        })
+        .collect();
+      println!("     voices sounding per bar: {counts:?}");
+    }
+  }
+  println!();
+  println!("   So the piece the block figures predicted does exist, and the part §8.17 could not");
+  println!("   measure — that a rest has to be entered and left, and `Problem::prior` carries");
+  println!("   nothing for a voice that said nothing, so every re-entry is cold — costs what the");
+  println!("   relaxation line above says it costs and no more.");
 }
 
 pub fn fugue() {

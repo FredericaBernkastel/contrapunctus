@@ -272,6 +272,27 @@ pub struct Layout {
   /// the subject twice in one voice and never in another — [`turnable`].
   #[cfg_attr(feature = "serde", serde(default))]
   pub turns: Vec<(u64, i16)>,
+  /// Voices that say nothing in a block, **beyond the ones the grammar already
+  /// rests** — one entry per block that has any, naming the voices by index.
+  ///
+  /// [`resting`] rests a voice until it has entered, which costs no parameter
+  /// because the derivation already says who enters when. That rule empties
+  /// itself at the end of the exposition, and this is everything after: a voice
+  /// silent again once it has been heard, which is a *choice* and so is a field.
+  ///
+  /// It is what reaches four voices. readme §8.17 measured the exact search's
+  /// wall against the number of voices it must choose rather than the number
+  /// sounding — four voices with one resting costs what three voices costs, to
+  /// the state — and the grammar's rule cannot supply that, because by the fourth
+  /// entry every voice has entered and none may rest again.
+  ///
+  /// Keyed on [`identities_of`] like [`Layout::rerolls`] and [`Layout::turns`],
+  /// so a rest belongs to a place in the journey and not to an index that moves
+  /// when something is inserted before it. The block's own held voice may not be
+  /// named: a block is a line placed in a voice, and silencing that line is not a
+  /// texture but an empty block.
+  #[cfg_attr(feature = "serde", serde(default))]
+  pub rests: Vec<(u64, Vec<usize>)>,
 }
 
 impl Default for Layout {
@@ -287,6 +308,7 @@ impl Default for Layout {
       close_at_home: true,
       rerolls: vec![],
       turns: vec![],
+      rests: vec![],
     }
   }
 }
@@ -747,11 +769,27 @@ fn fill_block(
       .filter(|v| free[*v])
       .map(|v| format!("v{v} {}..{}", d.compass[v].0, d.compass[v].1))
       .collect();
+    // And when the reason is the free count, say the remedy. §8.17 measured the
+    // wall against the voices the search must choose, so a block with more than
+    // `FREE_WALL` of them has a fix that is not "use fewer voices" — it is to
+    // rest one, which is what `Layout::rests` is for. A refusal that names its
+    // own cure is the difference between a limit and a dead end.
+    let too_many = ranges.len() > FREE_WALL;
     return Err(format!(
       "block {bi} at bar {}: {why}
-     held voice {held} spans {lo}..{hi}; free voices {}",
+     held voice {held} spans {lo}..{hi}; free voices {}{}",
       b.at / d.measure + 1,
-      ranges.join(", ")
+      ranges.join(", "),
+      if too_many {
+        format!(
+          "\n     {} voices are free here and the exact search can choose {FREE_WALL}. \
+           Rest one in this block — `Layout::rests`, or `compose::rests_that_fit` for a pattern \
+           that fits the whole piece.",
+          ranges.len()
+        )
+      } else {
+        String::new()
+      }
     ));
   };
 
@@ -779,18 +817,97 @@ fn fill_block(
 /// of it, so this empties itself: after the exposition nobody is resting and the
 /// texture is as full as it ever was. Which is exactly as far as a rule can get,
 /// and readme §8.17 measures where that leaves the voice count.
-pub fn resting(blocks: &[Block], voices: usize) -> Vec<Vec<bool>> {
+pub fn resting(d: &Design, l: &Layout) -> Vec<Vec<bool>> {
+  let blocks = derive(d, l);
+  let ids = identities_of(d, l);
+  let voices = d.voices;
   let mut entered = vec![false; voices];
   blocks
     .iter()
-    .map(|b| {
+    .enumerate()
+    .map(|(bi, b)| {
       let held = held_of(Some(b));
       if matches!(b.kind, Kind::Entry { .. }) && held < voices {
         entered[held] = true;
       }
-      (0..voices).map(|v| v != held && !entered[v]).collect()
+      // the grammar's rule, and then whatever the layout adds to it
+      let named = ids.get(bi).and_then(|id| l.rests.iter().find(|(k, _)| k == id)).map(|(_, vs)| vs);
+      (0..voices)
+        .map(|v| v != held && (!entered[v] || named.is_some_and(|vs| vs.contains(&v))))
+        .collect()
     })
     .collect()
+}
+
+/// How many free voices the exact search can afford at once.
+///
+/// [§2.7](../readme.md) predicted four and [§8.6](../readme.md) measured **two**,
+/// on the obligation set rather than the pitch product.
+/// [§8.17](../readme.md) found the same number wherever it looked and found that
+/// it is the *free* count it attaches to, not the voice count.
+pub const FREE_WALL: usize = 2;
+
+/// A rest pattern that keeps every block under [`FREE_WALL`], and **not a musical
+/// choice**.
+///
+/// This is a feasibility helper, not a rule, and the distinction is the whole of
+/// §1's constraint: nothing here is transcribed from anybody, and it does not
+/// claim to be the texture a composer would write. What it claims is narrower —
+/// that a voice count is *reachable*, and that somebody who asks for four voices
+/// gets a piece instead of a refusal they cannot act on.
+///
+/// The voice it rests is the one that has gone longest since holding anything,
+/// which is the plainest available answer and is chosen for being plain rather
+/// than for being right. A caller who cares should edit the pattern; that is what
+/// [`Layout::rests`] is a field for.
+pub fn rests_that_fit(d: &Design, l: &Layout) -> Vec<(u64, Vec<usize>)> {
+  let blocks = derive(d, l);
+  let ids = identities_of(d, l);
+  let already = resting(d, l);
+  let mut out: Vec<(u64, Vec<usize>)> = vec![];
+  // least recently held first, which is the order a rest is taken in
+  let mut order: Vec<usize> = (0..d.voices).collect();
+  for (bi, b) in blocks.iter().enumerate() {
+    let held = held_of(Some(b));
+    order.retain(|v| *v != held);
+    order.push(held);
+    let mut free: Vec<usize> = (0..d.voices).filter(|v| *v != held && !already[bi][*v]).collect();
+    let mut rest = l.rests.iter().find(|(k, _)| Some(k) == ids.get(bi)).map_or(vec![], |(_, v)| v.clone());
+    while free.len() > FREE_WALL {
+      let Some(&oldest) = order.iter().find(|v| free.contains(v)) else { break };
+      free.retain(|v| *v != oldest);
+      rest.push(oldest);
+    }
+    if !rest.is_empty() {
+      out.push((ids[bi], rest));
+    }
+  }
+  out
+}
+
+/// Refuse a layout whose rests name a voice that is not there, or the one voice
+/// a block exists to carry. Checked where the plan is derived, beside the turns.
+fn check_rests(d: &Design, l: &Layout) -> Result<(), String> {
+  if l.rests.is_empty() {
+    return Ok(());
+  }
+  let blocks = derive(d, l);
+  let ids = identities_of(d, l);
+  for (k, voices) in &l.rests {
+    // a rest whose block is gone is kept and costs nothing, exactly as a
+    // reroll's is — it is what makes an undone edit come back the same
+    let Some(bi) = ids.iter().position(|id| id == k) else { continue };
+    let held = held_of(blocks.get(bi));
+    for v in voices {
+      if *v >= d.voices {
+        return Err(format!("block {bi} rests voice {v}, and there are {} voices", d.voices));
+      }
+      if *v == held {
+        return Err(format!("block {bi} rests voice {v}, which is the voice holding it"));
+      }
+    }
+  }
+  Ok(())
 }
 
 /// **What one block costs**, at this voice count, with `silent` voices absent —
@@ -897,10 +1014,11 @@ impl<'a> Run<'a> {
   pub fn new(d: &Design, l: &Layout, tier: &'a [Rule], seed: u64) -> Result<Run<'a>, String> {
     let t0 = crate::clock::Instant::now();
     check_turns(d, l)?;
+    check_rests(d, l)?;
     let blocks = derive(d, l);
     let plan = plan(d, &blocks);
     let seeds = seeds(d, l, seed);
-    let resting = resting(&blocks, d.voices);
+    let resting = resting(d, l);
     Ok(Run {
       d: d.clone(),
       tier,
@@ -1185,6 +1303,7 @@ pub fn refill_span(
   to: usize,
 ) -> Result<Outcome, String> {
   check_turns(d, l)?;
+  check_rests(d, l)?;
   let blocks = derive(d, l);
   if blocks.len() != prev.blocks.len() {
     return Err("the layout changed the number of blocks; refill is span-preserving".into());
@@ -1198,7 +1317,7 @@ pub fn refill_span(
 
   let full = plan(d, &blocks);
   let seeds = seeds(d, l, seed);
-  let quiet = resting(&blocks, d.voices);
+  let quiet = resting(d, l);
   // The running result. Each block's prior comes off *this*, so a block sees
   // what the one before it in the span actually wrote.
   let mut out = prev.voices.clone();
@@ -1479,6 +1598,49 @@ mod tests {
       notes_before(&b, b.blocks[at].at),
       "the block before the turn did not change, so the look-ahead has gone"
     );
+  }
+
+  /// **Four voices, with one resting wherever three would otherwise be free.**
+  ///
+  /// readme §8.17 measured one block and said the search could afford it. This is
+  /// the whole piece, which is the part that measurement explicitly did not cover:
+  /// a resting voice has no `Problem::prior`, so every re-entry is a cold start,
+  /// and nothing had asked whether a piece survives being cold that often.
+  #[test]
+  fn four_voices_compose_when_one_of_them_rests() {
+    let mut d = design();
+    d.voices = 4;
+    d.compass = (0..4).map(|v| { let top = 45 - 5 * v as i16; (top - 12, top) }).collect();
+    let brief = Layout { middles: vec![4], episode_bars: 2, ..Layout::default() };
+
+    // Without a rest it is three free voices from the fourth entry on, and the
+    // search refuses — which is the state §8.17 leaves four voices in.
+    match fugue(&d, &brief, CONFIRMED, 0x5EED) {
+      Ok(_) => panic!("four voices composed with nobody resting, so this test proves nothing"),
+      Err(e) => assert!(e.contains("state explosion"), "refused for another reason: {e}"),
+    }
+
+    // Now rest one voice in every block that has three free. Which one is a
+    // choice and this makes the plainest available: the voice that entered
+    // longest ago, which is the one furthest from having anything to say.
+    let rests = rests_that_fit(&d, &brief);
+    assert!(!rests.is_empty(), "no block needed a rest, so four voices was never the hard case");
+
+    let l = Layout { rests, ..brief.clone() };
+    let quiet = resting(&d, &l);
+    for (bi, row) in quiet.iter().enumerate() {
+      let free = d.voices - 1 - row.iter().filter(|q| **q).count();
+      assert!(free <= FREE_WALL, "block {bi} still has {free} free voices");
+    }
+
+    let o = fugue(&d, &l, CONFIRMED, 0x5EED).expect("four voices with one resting");
+    assert_eq!(o.voices.len(), 4);
+    // and every voice really is in the piece rather than resting through all of it
+    for (v, voice) in o.voices.iter().enumerate() {
+      assert!(!voice.notes.is_empty(), "voice {v} never sounds");
+    }
+    // the subject is stated in all four, which is what makes it a four-voice fugue
+    assert!(o.verdict.exposition_covers_the_voices, "the exposition does not cover four voices");
   }
 
   /// `Block` and `Voice` carry no `PartialEq` and this file is not the place to
@@ -1990,7 +2152,7 @@ mod tests {
     let d = design();
     let l = Layout::default();
     let (blocks, voices, _) = generate(&d, &l, CONFIRMED, 0x5EED).expect("a fugue");
-    let quiet = resting(&blocks, d.voices);
+    let quiet = resting(&d, &l);
     for (bi, b) in blocks.iter().enumerate() {
       for (i, v) in voices.iter().enumerate() {
         let sounds = v.notes.iter().any(|n| n.onset >= b.at && n.onset < b.at + b.len);
@@ -2016,7 +2178,7 @@ mod tests {
     let d = design();
     let l = Layout::default();
     let blocks = derive(&d, &l);
-    let quiet = resting(&blocks, d.voices);
+    let quiet = resting(&d, &l);
 
     // the first block is one voice alone, which is what an exposition opens with
     assert_eq!(quiet[0].iter().filter(|q| **q).count(), d.voices - 1, "the piece does not open with one voice");

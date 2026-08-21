@@ -926,20 +926,34 @@ impl App {
 
     labelled(ui, "How many voices", "Design::voices");
     ui.horizontal(|ui| {
-      for n in [2usize, 3] {
+      // Four is offered now, and it was not: readme §8.17 measured the search's
+      // wall against the voices it must *choose* rather than the voices sounding,
+      // and a rest takes one out of the choosing. What four voices needs is a
+      // rest wherever a block would otherwise have three free, so asking for four
+      // sets one — `rests_that_fit` — rather than handing over a refusal.
+      for n in [2usize, 3, 4] {
         if ui.selectable_label(self.design.voices == n, format!("{n}")).clicked() {
           self.design.voices = n;
           // The compass has one range per voice, so it moves with the count.
           self.design.compass = catalog::compass(n);
+          // A rest pattern that was legal at three voices is not at four, and one
+          // written for four is merely redundant at three, so it is recomputed
+          // either way rather than carried across.
+          self.layout.rests = vec![];
+          self.layout.rests = compose::rests_that_fit(&self.design, &self.layout);
           changed = true;
         }
       }
-      // Present and disabled, with the reason — spec 9. Hiding it would conceal
-      // a fact about the program, and this repository's habit is the opposite.
-      ui.add_enabled(false, egui::Button::new("4")).on_disabled_hover_text(
-        "Four voices needs three free voices at once. The search is exact up to two and          refuses beyond rather than beaming. It is §9's solver item.",
-      );
     });
+    if self.design.voices > 3 {
+      ui.label(
+        RichText::new(
+          "Four voices state the subject; three sound at once. The exact search can choose two            voices at a time, so one always rests — click a faint bar in the plan to move which.            Four sounding together is what §9's solver is for.",
+        )
+        .weak()
+        .small(),
+      );
+    }
 
     ui.add_space(8.0);
     labelled(ui, "Times the subject comes back", "Layout::middles.len()");
@@ -1157,6 +1171,10 @@ fn describe_edit(e: strip::Edit, l: &Layout) -> String {
         n => format!("that block and the rest moved {} {}", n.abs(), if n.abs() == 1 { "voice" } else { "voices" }),
       }
     }
+    strip::Edit::Rest { id, voice, .. } => {
+      let resting = l.rests.iter().find(|(k, _)| *k == id).is_some_and(|(_, vs)| vs.contains(&voice));
+      format!("voice {} {} there", voice + 1, if resting { "rests" } else { "plays again" })
+    }
     strip::Edit::CloseAtHome(true) => "closing at home".to_string(),
     strip::Edit::CloseAtHome(false) => "stopping after the last return".to_string(),
   }
@@ -1221,6 +1239,57 @@ mod tests {
     // loop with the frame budget taken off.
     app.settle();
     assert!(app.out.is_some(), "the default settings did not produce a fugue: {:?}", app.refused);
+  }
+
+  /// **Asking for four voices produces a fugue, not a refusal.**
+  ///
+  /// The button was disabled and said so, and readme §8.17 is why it is not any
+  /// more: the search's wall is on the voices it must *choose*, and a rest takes
+  /// one out of the choosing. So choosing four also sets a rest pattern —
+  /// `rests_that_fit` — rather than handing over a refusal nobody can act on,
+  /// which is the trap 4.4 names.
+  ///
+  /// Through the panel rather than the library, because the thing that could
+  /// break is the wiring: a voice count that changes without the pattern
+  /// following it composes at three and refuses at four.
+  #[test]
+  fn asking_for_four_voices_gives_four_voices() {
+    let mut app =
+      App { layout: Layout { middles: vec![4], episode_bars: 2, ..Layout::default() }, ..App::default() };
+
+    for n in [3usize, 4] {
+      app.design.voices = n;
+      app.design.compass = catalog::compass(n);
+      app.layout.rests = vec![];
+      app.layout.rests = compose::rests_that_fit(&app.design, &app.layout);
+      app.compose();
+      app.settle();
+      let out = app.out.clone().unwrap_or_else(|| panic!("{n} voices refused: {:?}", app.refused));
+      assert_eq!(out.voices.len(), n);
+      assert!(out.verdict.exposition_covers_the_voices, "{n} voices: the exposition does not cover them");
+      for (v, voice) in out.voices.iter().enumerate() {
+        assert!(!voice.notes.is_empty(), "{n} voices: voice {v} never sounds");
+      }
+      // three voices need no rests at all, four need some — which is the whole
+      // difference the button now has to carry
+      assert_eq!(app.layout.rests.is_empty(), n <= 3, "{n} voices: rests were {:?}", app.layout.rests);
+    }
+  }
+
+  /// A refusal for the one reason a rest would cure says so. Otherwise four
+  /// voices without a pattern is a dead end rather than a limit, and §9's
+  /// disabled button was at least honest about being one.
+  #[test]
+  fn a_refusal_about_free_voices_names_its_own_cure() {
+    let mut app = App::default();
+    app.design.voices = 4;
+    app.design.compass = catalog::compass(4);
+    app.layout = Layout { middles: vec![4], episode_bars: 2, ..Layout::default() };
+    app.layout.rests = vec![]; // deliberately none
+    app.compose();
+    app.settle();
+    let why = app.refused.clone().expect("four voices with nobody resting must refuse");
+    assert!(why.contains("Rest one in this block"), "the refusal does not say what to do: {why}");
   }
 
   /// **Every compass the widget can produce still composes.**

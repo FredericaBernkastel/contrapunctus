@@ -2312,12 +2312,41 @@ reproduces `Differs` rather than `Exact`, because voices that used to play throu
 `settings::Fidelity`'s whole purpose, and it is the fourth time a figure here has moved under a change that was
 correct.
 
-**What this does not measure.** A whole piece. Which voice rests in which block is a `Layout` decision that does
-not exist, and a voice has to leave and re-enter in a way the join has never been asked about — `Problem::prior`
-carries one pitch per voice and a resting voice has none, so a re-entry is a cold start every time, which is what
-§8.16 already does deliberately before an entry and has never done anywhere else. This says the **search** can
-afford four voices. It does not say the counterpoint would be any good, and §8.16's list of what the numbers cannot
-see still applies.
+#### A whole four-voice fugue, which is what the block figures were for
+
+`Layout::rests` is the field the grammar's rule cannot supply: a voice silent again *after* it has been heard.
+`compose::rests_that_fit` fills one in — resting whichever voice has gone longest since holding anything, wherever a
+block would otherwise have three free. That choice is a **feasibility helper and not a rule**: it claims the voice
+count is reachable, not that this is the texture anybody would write, and §1's constraint is why the distinction is
+laboured.
+
+| | four voices |
+|---|---|
+| nobody resting | refused at bar 8 — 202 752 live states against a 60 000 cap |
+| one resting, 9 of 13 blocks | **composed**, 29 bars, 1.3 s |
+
+Zero parallel perfects and zero direct-to-perfect on a downbeat over 991 slices; unprepared dissonance **2.0** per
+thousand and unresolved **3.0**. All four of §8.15's checks pass, including *exposition covers the voices* — the
+subject is stated in all four.
+
+**And the cost §8.17 could not price is now priced.** A resting voice has no `Problem::prior`, so every re-entry is
+a cold start; **3 of 13 blocks lost the join**, against 1 of 12 for the three-voice piece. That is what being cold
+that often costs, and it is a relaxation the `Relaxed` log already reports rather than a hidden one.
+
+**The texture never reaches four, and that is not a limitation of the rest pattern.** Sounding voices per bar run
+`1 1 2 2 3 3 3 …` — the exposition arrives, and after it one voice is always out. Four voices sounding at once *is*
+three free voices, which is exactly what the wall forbids. So this reaches four voices in the sense that matters for
+the form — four entries, four statements of the subject, the grammar satisfied — and **not** four-part texture.
+
+> **Two things were being called "four voices" and only one of them was a solver problem.** Four entries is a
+> texture decision and costs a `Layout` field. Four parts *sounding together* is three free voices and is the wall
+> itself, which no arrangement of rests can move. §9's CDCL item survives this, narrowed: it is about density, not
+> about the voice count.
+
+**What this does not say.** That the counterpoint is good. §8.16's list of what the numbers cannot see applies
+here too, and this piece adds one of its own: a voice that drops out for a block and returns has no line to return
+*from*, and nothing here has looked at whether those seams sound like anything a composer would write. The rate
+table says they are legal. It has never said more than that.
 
 The measurement runs through `compose::fill_block` rather than beside it, for the reason that function exists at
 all: there were once two places that wrote a block and they drifted apart in four ways.
@@ -2411,19 +2440,24 @@ order.
    two, then three, which it never did. A four-voice fugue under that rule alone still refuses at the fourth entry,
    because by then three voices have entered and none of them may rest again.
 
-   So what remains for four voices is a voice silent *after* it has entered, and the grammar does not say which
-   one. Two candidates, both on `docs/ui-spec.md`'s roadmap:
+   **`Layout::rests` supplies the rest of it, and a four-voice fugue now composes** — 29 bars, all four grammar
+   checks passing, the subject stated in all four voices, at a cost of three blocks losing the join where the
+   three-voice piece loses one. [§8.17](#817-silence-and-what-the-voice-count-really-costs) has the figures.
 
-   - **A `Layout` field**, per block, keyed like the rerolls and the turns. It reaches four voices and it is the
-     first thing here that would let somebody shape a texture rather than pick a preset. What it costs is that the
-     constraint becomes visible only when it is violated.
-   - **A larger legal set**, with the rest patterns in it and drawn from uniformly — which invents no rule, since
-     [§8.10](#810-replacing-the-soft-tier-and-the-degenerate-optimum-of-every-positive-criterion) already
-     established that drawing beats optimising, and this is the same mechanism over a wider domain. The open
-     question is whether a uniform draw over textures gives anything a listener would call a texture, and that is
-     unmeasured. It is therefore the one that ships **switched off by default**, with a control to turn it on, for
-     the same reason `--gen-tier` exists separately from `--tier`: a change that alters what is generated and has
-     not been measured against the book does not get to be the default.
+   **What survives for the solver is narrower and clearer than "four voices".** Four voices *sounding together* is
+   three free voices, which is the wall itself and no arrangement of rests can move it — the generated piece runs
+   `1 1 2 2 3 3 3 …` and never reaches four at once. So the item is about **texture density**, not about the voice
+   count, and it should have been all along: two different things were being called four voices, and only one of
+   them was ever a solver problem.
+
+   The remaining candidate that is *not* a solver is `docs/ui-spec.md`'s: put the rest patterns in the legal set and
+   draw from them uniformly, which invents no rule, since
+   [§8.10](#810-replacing-the-soft-tier-and-the-degenerate-optimum-of-every-positive-criterion) already established
+   that drawing beats optimising and this is the same mechanism over a wider domain. It would replace
+   `rests_that_fit`, which is a feasibility helper choosing the least recently heard voice and makes no claim to be
+   musical. The open question is whether a uniform draw over textures gives anything a listener would call a
+   texture, and it is unmeasured — so it ships **switched off**, with a control to turn it on, for the reason
+   `--gen-tier` exists separately from `--tier`.
 
    That does not make the solver wrong to want. It makes the ordering wrong: rests are cheap and buy the voice
    count, and conflict learning is expensive and buys the cases rests cannot reach.

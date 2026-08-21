@@ -82,6 +82,12 @@ pub enum Edit {
   /// not a per-block parameter and never was; what is settable is where the
   /// chain is rotated. `id` keys `Layout::turns` and `block` is where it is now.
   Turn { block: usize, id: u64, by: i16 },
+  /// This voice stops accompanying in this block, or starts again — 4.4's rest.
+  ///
+  /// The grammar already rests a voice until it has entered and that is not
+  /// editable, because it is not a choice. This is the other kind: a voice silent
+  /// again once it has been heard, which is what reaches four voices.
+  Rest { block: usize, id: u64, voice: usize },
 }
 
 impl Edit {
@@ -117,6 +123,13 @@ impl Edit {
       // both halves. Refilling from the turn itself would leave one block
       // stale, and fading from the turn itself would show less than moves.
       Edit::Turn { block, .. } => {
+        let last = compose::origins(d, l).len().checked_sub(1)?;
+        Some(block.saturating_sub(1)..=last)
+      }
+      // Span-preserving: silencing a voice moves not one bar. It reaches back one
+      // block for the same reason a turn does — `fill_block` rests the voice that
+      // holds the *next* block, so the block before is told something different.
+      Edit::Rest { block, .. } => {
         let last = compose::origins(d, l).len().checked_sub(1)?;
         Some(block.saturating_sub(1)..=last)
       }
@@ -156,6 +169,21 @@ impl Edit {
       // Turns at one place add up, and one that adds up to nothing is taken out
       // rather than left as a rotation of zero. Otherwise dragging a block down
       // and back up would leave a settings file that says something happened.
+      Edit::Rest { id, voice, .. } => {
+        match out.rests.iter_mut().find(|(k, _)| *k == id) {
+          Some((_, vs)) => {
+            if let Some(at) = vs.iter().position(|v| *v == voice) {
+              vs.remove(at);
+            } else {
+              vs.push(voice);
+            }
+          }
+          None => out.rests.push((id, vec![voice])),
+        }
+        // a block that rests nobody is not an entry, for the reason a turn of
+        // nothing is not one: a settings file should not record what did not happen
+        out.rests.retain(|(_, vs)| !vs.is_empty());
+      }
       Edit::Turn { id, by, .. } => {
         match out.turns.iter_mut().find(|(k, _)| *k == id) {
           Some((_, n)) => *n += by,
@@ -254,6 +282,10 @@ impl Strip<'_> {
     };
 
     let origins = compose::origins(self.design, self.layout);
+    // Who says nothing where, under the grammar's rule and the layout's own
+    // rests together — `compose::resting` is the authority and this asks it
+    // rather than working it out again.
+    let quiet = compose::resting(self.design, self.layout);
     // What each block is, for naming one in a reroll. An index would move under
     // the next insertion; this does not.
     let ids = compose::identities_of(self.design, self.layout);
@@ -400,6 +432,48 @@ impl Strip<'_> {
       }
     }
 
+    // ---- a click in a lane nothing is held in: that voice rests, or plays again
+    //
+    // After the gestures on the blocks themselves, so a block always wins the
+    // pointer over the empty lane behind it.
+    if self.writing.is_none() {
+      for (i, b) in self.out.blocks.iter().enumerate() {
+        let Some(held) = voice_of(&b.kind).filter(|v| *v < voices) else { continue };
+        for v in (0..voices).filter(|v| *v != held) {
+          // A voice that has not entered yet is not editable, because that is not
+          // a choice: `compose::resting` rests it by the grammar's own rule and
+          // there is nothing here for anybody to set. Only the other kind.
+          let entered = self.out.blocks[..=i].iter().any(|x| {
+            matches!(x.kind, Kind::Entry { .. }) && voice_of(&x.kind) == Some(v)
+          });
+          let r = block_rect(b, v, &x_of, &lane_top);
+          let h = ui.interact(r, ui.id().with(("rest", i, v)), Sense::click());
+          let silent = quiet.get(i).is_some_and(|row| row.get(v).copied().unwrap_or(false));
+          if !entered {
+            h.on_hover_text(format!(
+              "Voice {} has not entered yet. A fugue's voices arrive one at a time, and until this one                has stated the subject it says nothing — which is the grammar's rule and not a setting.",
+              v + 1
+            ));
+            continue;
+          }
+          let h = h.on_hover_text(if silent {
+            format!("Voice {} rests here. Click to bring it back.", v + 1)
+          } else {
+            format!(
+              "Voice {} is accompanying here. Click to rest it — which is what four voices needs,                since the search can choose two voices at once and no more.",
+              v + 1
+            )
+          });
+          if h.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+          }
+          if h.clicked() {
+            asked.edit = Some(Edit::Rest { block: i, id: ids[i], voice: v });
+          }
+        }
+      }
+    }
+
     // ---- what to draw: the proposal if one is being dragged, else the piece
     let showing: Vec<Block> = match (&proposed, self.writing) {
       (Some((_, l)), _) => compose::derive(self.design, l),
@@ -447,6 +521,28 @@ impl Strip<'_> {
     }
 
     let clip = p.with_clip_rect(area);
+
+    // **Who is accompanying, which the strip did not used to say.** A block is
+    // drawn in the lane that holds it and every other lane was left blank — so a
+    // voice playing an accompaniment and a voice saying nothing looked the same,
+    // and until 4.4 they always were the same. Now they are not: the exposition
+    // fills up lane by lane, and a rest is visible as the gap it is.
+    //
+    // Faint, because it is not a line anybody chose — it is the subject's rhythm
+    // with pitches the search picked, and drawing it as boldly as an entry would
+    // say something false about what is going on in it.
+    for (i, b) in showing.iter().enumerate() {
+      let Some(held) = voice_of(&b.kind).filter(|v| *v < voices) else { continue };
+      for v in (0..voices).filter(|v| *v != held) {
+        if quiet.get(i).is_some_and(|row| row.get(v).copied().unwrap_or(false)) {
+          continue;
+        }
+        let r = block_rect(b, v, &x_of, &lane_top).shrink2(Vec2::new(0.0, LANE * 0.34));
+        let alpha = if i >= settled { 26 } else { 52 };
+        clip.rect_filled(r, CornerRadius::same(2), theme::wash(v, dark, if dark { alpha } else { alpha - 8 }));
+      }
+    }
+
     for (i, b) in showing.iter().enumerate() {
       let Some(v) = voice_of(&b.kind).filter(|v| *v < voices) else { continue };
       let r = block_rect(b, v, &x_of, &lane_top);
@@ -564,7 +660,8 @@ impl Strip<'_> {
           format!("into voice {lane}, and every block after it moves with it")
         }
         // None of these is ever dragged, so none is ever previewed.
-        Edit::Key(..)
+        Edit::Rest { .. }
+        | Edit::Key(..)
         | Edit::Reroll { .. }
         | Edit::AddMiddle { .. }
         | Edit::RemoveMiddle(_)

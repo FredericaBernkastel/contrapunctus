@@ -322,11 +322,19 @@ That was noticed by a reader with the *Art of the Fugue* in hand. It was the
 plainest musical fault the interface displayed, and it turned out to be the same
 question readme §9 asks about four voices.
 
-**`compose::resting` is built and is candidate 1 below**: a voice says nothing
-until it has entered. The piece now opens with one voice, then two, then three,
-and the strip shows lanes filling rather than a full grid from bar one. It does
-not reach four voices and readme §8.17 says exactly where it stops — the rest is
-candidates 2 and 3, which are roadmap items 1 and 2.
+**Candidates 1 and 2 below are built.** `compose::resting` rests a voice until it
+has entered, so the piece opens with one voice, then two, then three; and
+`Layout::rests` rests a voice again after it has been heard, which is what reaches
+four voices. Asking for four sets a pattern rather than handing over a refusal.
+
+**The strip says who is accompanying, which it never used to.** A block was drawn
+in the lane holding it and every other lane left blank, so a voice playing an
+accompaniment and a voice saying nothing looked identical — and until this they
+always were identical. Faint bars now show the accompaniment, the exposition fills
+up lane by lane, and a rest is visible as the gap it is. Clicking one toggles it.
+
+Candidate 3 is roadmap item 1, and readme §8.17's four-voice figures are what says
+whether it is worth wanting.
 
 **readme §8.17 measures it.** The exact search's wall moves with the number of
 voices it must *choose*, not with the number sounding:
@@ -380,7 +388,7 @@ the exposition: from bar five onward every voice still plays continuously. What
 it does buy beyond the opening is speed — the first blocks drop to one and two
 free, 68 states where there were 8 434.
 
-**2. `Layout` carries it, per block. — roadmap item 1**
+**2. `Layout` carries it, per block. — BUILT**
 
 A field keyed on `identities_of` like the rerolls and the turns, and a gesture:
 click a block's lane to silence that voice there. The furniture exists.
@@ -399,7 +407,7 @@ precedent for how to handle that — offer it with the condition stated — and 
 interface should maintain a legal pattern by default rather than leave somebody to
 discover the rule by hitting it.
 
-**3. The search chooses it. — roadmap item 2, and off by default**
+**3. The search chooses it. — roadmap item 1, and off by default**
 
 What it gives: four voices that simply work, with nothing to learn and no
 constraint to respect. And *Try a different one* becomes a much larger musical
@@ -437,9 +445,17 @@ default. It also gives somebody a way back to a texture they can predict, which
 matters more here than usual, since the alternative is a piece where *Try a
 different one* changes who is playing.
 
-**Build order.** 1 was a bug fix and is in. 2 is what delivers four voices and the
-compositional control, with 1 as the default it starts from. 3 fills in whatever 2
-leaves unset, off by default, and is a §9 question wearing an interface control.
+**And one thing four voices does not give**, which the measurement made plain and
+the panel now says out loud: four voices state the subject and **three sound at
+once**. Four sounding together *is* three free voices, which is the wall itself —
+no arrangement of rests moves it. So this reaches four voices in the sense the
+form cares about, four entries and a grammar that passes, and not four-part
+texture. Two things were being called four voices and only one of them was ever
+§9's solver item.
+
+**Build order.** 1 was a bug fix and is in. 2 delivered four voices and the
+compositional control. 3 fills in whatever 2 leaves unset, off by default, and is
+a §9 question wearing an interface control.
 
 **And one thing the measurement does not cover.** A voice has to leave and
 re-enter, and `Problem::prior` carries one pitch per voice — a resting voice has
@@ -1014,10 +1030,9 @@ Ordered by whether an interface can start without it.
 
 | # | change | why | size |
 |---|---|---|---|
-| 1 | A `Layout` field for a rest after a voice has entered | 4.4 — four voices, which the grammar's rule cannot reach | small |
-| 2 | Rest patterns in the legal set, drawn from, behind a flag | 4.4's third candidate, which invents no rule | medium |
-| 3 | Blocks addressable one at a time, for 4.5's palette | so a plan can be built rather than derived | medium |
-| 4 | A CDCL solver | five voices all sounding, and stretto packing | §9 |
+| 1 | Rest patterns in the legal set, drawn from, behind a flag | 4.4's third candidate, which invents no rule | medium |
+| 2 | Blocks addressable one at a time, for 4.5's palette | so a plan can be built rather than derived | medium |
+| 3 | A CDCL solver | **four parts sounding together**, and stretto packing | §9 |
 
 **Item 1 is measured and it is larger than it looks.** readme §8.17 asked what a
 resting voice costs and found that the search's wall moves with the number of
@@ -1028,13 +1043,19 @@ the texture also buys the voice count that readme §9 had assigned to a solver.
 `compose::fill_block` already takes a `silent` argument and `compose::block_cost`
 is the measurement's way in.
 
-**The free half is built**: `compose::resting` is the grammar's own rule and takes
-no parameter. It is *not* enough for four voices — §8.17's per-block table shows
-the fourth entry already at three free voices and every block after it the same,
-so a four-voice fugue under that rule alone refuses at the block completing its
-own exposition. Items 1 and 2 above are the two ways to supply a rest *after* a
-voice has entered, which the grammar cannot; 4.4 has what each gives somebody
-using the program, and why the second is switchable off.
+**Both halves of the texture are built**: `compose::resting` for the grammar's own
+rule and `Layout::rests` for the choice it cannot make, with
+`compose::rests_that_fit` supplying a pattern that keeps a piece under the wall.
+readme §8.17 has a whole four-voice fugue — 29 bars, all four grammar checks
+passing, three of thirteen blocks losing the join where the three-voice piece
+loses one.
+
+**Item 3 is narrower than it was and clearer for it.** Four voices *sounding
+together* is three free voices, which is the wall itself and no arrangement of
+rests moves it — the four-voice piece runs `1 1 2 2 3 3 3 ...` and never reaches
+four at once. So the solver is for **texture density**, not for the voice count.
+Two things were being called four voices, and only one of them was ever a solver
+problem.
 
 Everything else on this list is now done:
 
@@ -1176,8 +1197,10 @@ Status is one of **done**, **partial** — usable and honestly incomplete — or
 | 4.3 | A voice drag, as the rotation it really is, with the knock-on ghosted | `a_turn_rotates_its_block_and_the_tail_behind_it`, `a_turn_reaches_the_block_before_it` |
 | 7.3 | A block a frame instead of a frame a piece, with the plan filling in as it goes | `stepping_a_run_writes_what_generating_it_would_have` |
 | 4.4 | A voice says nothing until it has entered, so the exposition has arrivals in it | `a_voice_is_silent_until_it_has_entered`, `every_voice_sounds_in_every_block` |
+| 4.4 | A rest anywhere, clicked in the lane, and the accompaniment drawn so it can be seen | `four_voices_compose_when_one_of_them_rests` |
+| 3.2, 9 | **Four voices**, which asking for now sets a rest pattern for rather than refusing | `asking_for_four_voices_gives_four_voices`, `a_refusal_about_free_voices_names_its_own_cure` |
 
-Forty-seven tests, all headless. The interesting one is
+Forty-nine tests, all headless. The interesting one is
 `every_offered_subject_composes`: each of the 24 subjects is composed on the
 shortest layout that is still a fugue, because a picker whose entries have not
 been tried is a picker that wastes the one click a beginner is sure to make. It
@@ -1199,35 +1222,32 @@ silence is, in samples.
 
 | # | section | what | blocked on |
 |---|---|---|---|
-| 1 | 4.4 | A rest anywhere, as a `Layout` field — which is what reaches four voices | nothing; readme §8.17 says it is worth it |
-| 2 | 4.4 | The search choosing the rests, **off by default and switchable on** | 1, and a way to judge whether a drawn texture is one |
-| 3 | 4.5 | A block palette, judged by the grammar rather than gated by it | blocks addressable one at a time |
-| 4 | 7.3 | Generating in a worker, so the sound survives the work | a worker build; 6.4 is the workaround until then |
-| 5 | 6.3 | System MIDI out, behind a feature | a `midir` dependency, and a device to try it on |
+| 1 | 4.4 | The search choosing the rests, **off by default and switchable on** | a way to judge whether a drawn texture is one |
+| 2 | 4.5 | A block palette, judged by the grammar rather than gated by it | blocks addressable one at a time |
+| 3 | 7.3 | Generating in a worker, so the sound survives the work | a worker build; 6.4 is the workaround until then |
+| 4 | 6.3 | System MIDI out, behind a feature | a `midir` dependency, and a device to try it on |
 
-**The half of this that was free is done.** `compose::resting` rests a voice until
-it has entered, so a fugue opens with one voice, then two, then three, and the
-strip shows lanes filling rather than a full grid. No parameter, no gesture, no
-settings field — the derivation already said who enters when.
+**Texture is built, and four voices with it.** `compose::resting` rests a voice
+until it has entered — no parameter, the derivation already said who enters when —
+and `Layout::rests` rests one again afterwards, which is what reaches four. The
+strip draws the accompaniment so a rest is visible, and a click toggles one.
+Asking for four voices sets a pattern rather than handing over a refusal, and a
+refusal that a rest *would* cure now says so in the message.
 
-**Item 1 is the half that is not free, and it is what reaches four voices.**
-readme §8.17 measured four voices with one resting at 8 434 peak states, exactly
-what three voices costs — but the grammar's rule cannot supply it, because by the
-fourth entry every voice has entered and none may rest again. A rest *after* a
-voice has entered is a choice, so it is a field: keyed on `identities_of` like the
-rerolls and the turns, a click on a block's lane to silence that voice there, and
-in the settings file so a texture reproduces. The trap to design around is that
-the constraint is invisible until violated — four voices with nobody resting
-refuses, and §9's disabled four-voice button is the precedent for how to say so.
-
-**Item 2 is the same feature with the choosing done by the search**, and 4.4
+**Item 1 is the same feature with the choosing done by the search**, and 4.4
 argues the one formulation that invents no rule: put the rest patterns in the
 legal set and draw uniformly, which is what readme §8.10 already prefers to
-optimising. It **ships off with a control to turn it on**, because it changes what
-is generated and nothing has measured whether a drawn texture sounds like a
-texture — the same reason `--gen-tier` is separate from `--tier`. Being a `Layout`
-field rather than interface state is forced by section 8: a saved fugue has to
-reproduce.
+optimising. It would replace `compose::rests_that_fit`, which rests whichever
+voice has gone longest since holding anything and is a feasibility helper making
+no claim to be musical.
+
+It **ships off with a control to turn it on**, because it changes what is
+generated and nothing has measured whether a drawn texture sounds like a texture —
+the same reason `--gen-tier` is separate from `--tier`. Being a `Layout` field
+rather than interface state is forced by section 8: a saved fugue has to
+reproduce. And it gives somebody a way back to a texture they can predict, which
+matters here more than usual, since with it on *Try a different one* would change
+who is playing.
 
 **Item 2 is mostly interface work on machinery that exists**, and 4.5 argues the
 one design point that matters: the palette should let an illegal plan be built
