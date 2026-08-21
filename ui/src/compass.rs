@@ -241,12 +241,9 @@ const GRAB: f32 = 6.0;
 fn name(step: i16, key: &[i8; 7]) -> String {
   const LETTER: [char; 7] = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
   let deg = step.rem_euclid(7) as usize;
-  let acc = match key[deg] {
-    a if a > 0 => "♯".repeat(a as usize),
-    a if a < 0 => "♭".repeat(-a as usize),
-    _ => String::new(),
-  };
-  format!("{}{}{}", LETTER[deg], acc, step.div_euclid(7))
+  // Through `glyph`, because the sharp and the flat are characters no font egui
+  // ships actually has — this label was where that turned up, as a tofu box.
+  format!("{}{}{}", LETTER[deg], glyph::accidental(key[deg]), step.div_euclid(7))
 }
 
 /// The narrowest a voice may be, given the subject it has to state.

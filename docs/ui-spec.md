@@ -355,7 +355,7 @@ three glyphs, and they are the only shapes here simple enough to be worth
 drawing rather than setting.
 
 **The clefs are a font, and the reason is the geometry rather than the drawing.**
-`ui/assets/clefs.otf` is two glyphs of Bravura, SMuFL's reference font: 15 kB of
+`ui/assets/music.otf` is four glyphs of Bravura, SMuFL's reference font: 16 kB of
 868, which costs the browser build 0.07 MB. SMuFL specifies that **one em is four
 staff spaces** and that **each clef's origin sits on the line it names**, so a
 clef drawn at a size of four staff spaces with its baseline on the G or F line is
@@ -977,7 +977,8 @@ Status is one of **done**, **partial** — usable and honestly incomplete — or
 | 4.2 | Asking for one block to be written again, and it surviving a save | `a_rerolled_block_survives_a_round_trip` |
 | 4.2 | Adding and removing a return, and the close, from the strip and the panel alike | `the_shapes_the_handles_can_reach_all_compose` |
 | 5.1 | Beams, by beat and by contiguity, with stubs and flags | `a_beam_stays_inside_its_beat`, `a_duration_wants_the_beams_it_should` |
-| 5.1 | Clefs, from a two-glyph SMuFL subset placed by its own geometry | `both_clefs_have_ink_in_them`, `a_clef_is_the_size_smufl_says` |
+| 5.1 | Clefs, from a four-glyph SMuFL subset placed by its own geometry | `both_clefs_have_ink_in_them`, `a_clef_is_the_size_smufl_says` |
+| 3.3 | Sharps and flats in text, which no font egui ships has, from the same subset | `the_accidentals_are_reachable_from_text`, `an_accidental_sits_on_the_baseline_and_a_clef_does_not` |
 | 5.2 | Wheel to pan and ctrl-wheel to zoom the score, about the pointer, with the strip shading what is off the page | `a_bar_under_the_pointer_stays_under_it`, `the_wheel_pans_and_ctrl_and_the_wheel_zooms` |
 | 3.2 | Importing a subject from a `**kern` file | `an_imported_subject_replaces_the_design` |
 | 5.2 | The score following the playhead while it plays | by inspection |

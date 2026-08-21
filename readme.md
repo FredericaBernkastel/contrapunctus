@@ -2430,12 +2430,13 @@ where it is used.
 
 | file | what | licence |
 |---|---|---|
-| `ui/assets/clefs.otf` | two glyphs of [Bravura](https://github.com/steinbergmedia/bravura), SMuFL's reference font | **SIL OFL 1.1**, Reserved Font Name *Bravura* |
+| `ui/assets/music.otf` | four glyphs of [Bravura](https://github.com/steinbergmedia/bravura), SMuFL's reference font | **SIL OFL 1.1**, Reserved Font Name *Bravura* |
 
-15 kB of a 868 kB font — the G clef and the F clef, and nothing else. The reserved name is why the subset is called
-*Contrapunctus Clefs*: clause 3 of the OFL forbids a modified version using the reserved one, and a subset is a
-modified version. `ui/assets/clefs-LICENSE.txt` carries Steinberg’s notice and the full licence, which clause 2
-requires to travel with the file, and `ui/assets/README.md` says how the subset was cut and how to cut it again.
+16 kB of a 868 kB font — the two clefs, and the flat and the sharp, and nothing else. The reserved name is why
+the subset is called *Contrapunctus Music*: clause 3 of the OFL forbids a modified version using the reserved one,
+and a subset is a modified version. `ui/assets/music-LICENSE.txt` carries Steinberg’s notice and the full licence,
+which clause 2 requires to travel with the file, and `ui/assets/README.md` says how the subset was cut and how to
+cut it again.
 
 ### 10.2 Which command produces which section
 
