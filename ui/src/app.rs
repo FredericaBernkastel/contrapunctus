@@ -53,6 +53,23 @@ pub struct App {
   stale: bool,
   /// Compose once on the first frame, so the window appears before the work.
   first: bool,
+  /// The design and layout the piece in `out` was actually written from.
+  ///
+  /// **Not the same as `design` and `layout` once a control has moved**, and the
+  /// plan strip draws the *piece*, so it has to ask these. The gap is the window
+  /// between changing a control and pressing Compose, which the "↻" is there to
+  /// advertise — and in that window the live controls describe a piece that does
+  /// not exist yet. Handing them to the strip drew a plan of one piece over the
+  /// blocks of another: at four voices it drew a fourth lane over a three-voice
+  /// fugue and looked up every block's identity in a thirteen-block plan against
+  /// a twelve-block one, so a click in a lane asked for a rest in the wrong
+  /// block, or in a voice that had never entered and was refused.
+  ///
+  /// It was reported as the rest gesture not working at four voices. It was the
+  /// strip being lied to, and every gesture had the same fault where a control
+  /// had moved — the voice count only made it visible, because that is the
+  /// control that changes how many lanes there are.
+  shown: Option<(Design, Layout)>,
   /// A generate in progress, a block per frame — spec 7.3.
   ///
   /// Six tenths of a second is rude on a desktop and freezes a browser tab, and
@@ -128,6 +145,7 @@ impl Default for App {
       refused: None,
       stale: false,
       first: true,
+      shown: None,
       work: None,
       status: None,
       fidelity: None,
@@ -218,6 +236,7 @@ impl App {
       Ok(o) => {
         self.status = Some(format!("{all} blocks written in {:.0} ms", o.seconds * 1000.0));
         self.out = Some(o);
+        self.shown = Some((self.design.clone(), self.layout.clone()));
         self.refused = None;
         self.resound();
       }
@@ -287,6 +306,7 @@ impl App {
       last - first + 1
     ));
     self.layout = l;
+    self.shown = Some((self.design.clone(), self.layout.clone()));
     self.out = Some(next);
     self.fidelity = None;
   }
@@ -302,6 +322,7 @@ impl App {
         self.status =
           Some(format!("{what} — every bar after it moves, so the piece was rewritten: {} bars in {ms:.0} ms", o.bars));
         self.layout = l;
+        self.shown = Some((self.design.clone(), self.layout.clone()));
         self.out = Some(o);
         self.fidelity = None;
       }
@@ -429,6 +450,7 @@ impl App {
             other => other.message().unwrap_or_default(),
           });
           self.fidelity = Some(l.how);
+          self.shown = Some((self.design.clone(), self.layout.clone()));
           self.out = Some(l.outcome);
           self.refused = None;
           self.stale = false;
@@ -708,9 +730,14 @@ impl App {
       let head = self.playhead();
       let seen = self.seen.filter(|(a, b)| *b - *a < 0.999);
       let writing = self.work.as_ref().map(|r| (r.blocks(), r.progress().0));
-      let asked =
-        strip::Strip { out, design: &self.design, layout: &self.layout, playhead: head, window: seen, writing }
-          .show(ui);
+      // **The design and layout the piece came from**, not the ones the controls
+      // are showing — see `App::shown`. A strip drawing one piece from another's
+      // plan is a strip whose every gesture lands in the wrong place.
+      let (design, layout) = match &self.shown {
+        Some((d, l)) => (d, l),
+        None => (&self.design, &self.layout),
+      };
+      let asked = strip::Strip { out, design, layout, playhead: head, window: seen, writing }.show(ui);
       edit = asked.edit;
       seek = asked.seek;
 
@@ -1239,6 +1266,60 @@ mod tests {
     // loop with the frame budget taken off.
     app.settle();
     assert!(app.out.is_some(), "the default settings did not produce a fugue: {:?}", app.refused);
+  }
+
+  /// **The strip draws the piece, not the controls** — and every gesture in it
+  /// lands where the piece is.
+  ///
+  /// Reported as manual resting not working once four voices were enabled. It was
+  /// not the rest gesture: between changing a control and pressing Compose the
+  /// panel described a piece that did not exist yet, and the strip was handed
+  /// those controls rather than the ones the piece on screen came from. At four
+  /// voices that drew a fourth lane over a three-voice fugue — a lane whose voice
+  /// had entered nowhere, so a click in it was refused — and looked every block's
+  /// identity up in a thirteen-block plan against a twelve-block one, so the
+  /// three real lanes asked for rests in the wrong blocks.
+  ///
+  /// The voice count only made it visible. Every gesture had it, for any control.
+  #[test]
+  fn the_strip_is_given_the_piece_it_is_drawing() {
+    let mut app =
+      App { layout: Layout { middles: vec![4], episode_bars: 2, ..Layout::default() }, ..App::default() };
+    app.compose();
+    app.settle();
+    let made = app.out.clone().expect("a three-voice fugue");
+
+    // exactly what the voice picker does, and no Compose after it
+    app.design.voices = 4;
+    app.design.compass = catalog::compass(4);
+    app.layout.rests = compose::rests_that_fit(&app.design, &app.layout);
+    assert!(app.stale || app.shown.is_some(), "the piece is stale and nothing says so");
+
+    let (design, layout) = app.shown.clone().expect("the piece remembers what wrote it");
+    // the whole of the fix: what the strip is handed is *not* what the controls
+    // say, and a `shown` that merely aliased the live values would pass every
+    // assertion below while reproducing the bug exactly
+    assert_ne!(design.voices, app.design.voices, "`shown` is following the controls rather than the piece");
+    assert_eq!(design.voices, made.voices.len(), "the strip would draw the wrong number of lanes");
+    assert_eq!(
+      compose::resting(&design, &layout).len(),
+      made.blocks.len(),
+      "the strip would ask about a different number of blocks than it draws"
+    );
+    assert_eq!(
+      compose::identities_of(&design, &layout).len(),
+      made.blocks.len(),
+      "the strip would name blocks by identities from another plan"
+    );
+
+    // and once it is composed, the two agree again
+    app.compose();
+    app.settle();
+    let now = app.out.clone().unwrap_or_else(|| panic!("four voices refused: {:?}", app.refused));
+    let (design, layout) = app.shown.clone().expect("still remembered");
+    assert_eq!(design.voices, 4);
+    assert_eq!(compose::resting(&design, &layout).len(), now.blocks.len());
+    assert!(!layout.rests.is_empty(), "four voices with no rests would not have composed");
   }
 
   /// **Asking for four voices produces a fugue, not a refusal.**

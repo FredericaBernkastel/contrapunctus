@@ -1199,8 +1199,9 @@ Status is one of **done**, **partial** — usable and honestly incomplete — or
 | 4.4 | A voice says nothing until it has entered, so the exposition has arrivals in it | `a_voice_is_silent_until_it_has_entered`, `every_voice_sounds_in_every_block` |
 | 4.4 | A rest anywhere, clicked in the lane, and the accompaniment drawn so it can be seen | `four_voices_compose_when_one_of_them_rests` |
 | 3.2, 9 | **Four voices**, which asking for now sets a rest pattern for rather than refusing | `asking_for_four_voices_gives_four_voices`, `a_refusal_about_free_voices_names_its_own_cure` |
+| 4.1 | The strip drawing the piece it was given rather than the controls, which have moved | `the_strip_is_given_the_piece_it_is_drawing`, `a_click_in_a_lane_rests_that_voice` |
 
-Forty-nine tests, all headless. The interesting one is
+Fifty-one tests, all headless. The interesting one is
 `every_offered_subject_composes`: each of the 24 subjects is composed on the
 shortest layout that is still a fugue, because a picker whose entries have not
 been tried is a picker that wastes the one click a beginner is sure to make. It
@@ -1351,6 +1352,24 @@ Stated rather than left to be discovered:
   was neither a test nor a session at the keyboard: it was designing a
   constraint, and then asking what the library did to the values on the far side
   of it. That is a cheap question and it had not been asked before.
+- **The strip used to be handed the controls, not the piece.** Between changing a
+  control and pressing Compose the panel describes a fugue that does not exist
+  yet, and `Strip` was given the live `Design` and `Layout` while drawing an
+  `Outcome` written from older ones. It draws its lanes from the voice count and
+  looks every block up by identity, so at four voices it drew a fourth lane over a
+  three-voice piece — a lane whose voice had entered nowhere, so a click in it was
+  refused — and indexed a thirteen-block plan against a twelve-block one, so the
+  three real lanes asked for rests in the wrong blocks. `App::shown` keeps what
+  wrote the piece and the strip asks that.
+
+  It was reported as manual resting not working at four voices, and it was neither
+  about resting nor about four voices: **every gesture had it, for any control
+  that had moved**. It had been latent since the first edit gesture — changing the
+  number of returns and then dragging one has the same fault — and stayed
+  invisible because the mismatch was usually one block wide and the wrong block
+  was next to the right one. The voice count is the one control that changes how
+  many lanes there are, so it is the one that made the mismatch impossible to
+  mistake for anything else.
 - **A test can pass on the piece before the one it is about.** The import test
   asserted that taking a second voice of a file composed, and it had never been
   true: that file is a whole fugue, its lines span a sixteenth, and every one of

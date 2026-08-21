@@ -531,7 +531,11 @@ impl Strip<'_> {
     // Faint, because it is not a line anybody chose — it is the subject's rhythm
     // with pitches the search picked, and drawing it as boldly as an entry would
     // say something false about what is going on in it.
-    for (i, b) in showing.iter().enumerate() {
+    // Not while a generate is running: `showing` is then the plan being written
+    // and `quiet` describes the one on screen, so the two are indexed by
+    // different derivations. The blocks filling in are the progress indicator;
+    // the texture arrives with them.
+    for (i, b) in showing.iter().enumerate().take_while(|_| self.writing.is_none()) {
       let Some(held) = voice_of(&b.kind).filter(|v| *v < voices) else { continue };
       for v in (0..voices).filter(|v| *v != held) {
         if quiet.get(i).is_some_and(|row| row.get(v).copied().unwrap_or(false)) {
@@ -1025,6 +1029,91 @@ mod tests {
       }
     }
     assert!(offered > 0, "no turn was offered anywhere, so this test checked nothing");
+  }
+
+  /// **A click in an accompanying lane asks for a rest** — at three voices and at
+  /// four, which is where it was reported not to.
+  ///
+  /// Through a synthetic pointer over the real strip, because the edit itself was
+  /// fine when called directly and what was broken was the gesture reaching it.
+  #[test]
+  fn a_click_in_a_lane_rests_that_voice() {
+    use egui::{Event, Modifiers, PointerButton, Pos2};
+    for voices in [3usize, 4] {
+      let d = crate::catalog::load().subjects[0].design(voices);
+      let mut l = Layout::default();
+      l.rests = compose::rests_that_fit(&d, &l);
+      // The strip reads the plan and the relaxation log and nothing else, so the
+      // outcome is built rather than searched for: this is a test about a click
+      // landing, and making it depend on whether that subject happens to fill
+      // would make it fail for a reason that has nothing to do with the gesture.
+      let blocks = compose::derive(&d, &l);
+      let out = compose::Outcome {
+        bars: compose::length(&blocks) / d.measure.max(1),
+        blocks,
+        voices: vec![Default::default(); voices],
+        relaxed: Default::default(),
+        verdict: Default::default(),
+        tally: Default::default(),
+        seconds: 0.0,
+      };
+      let quiet = compose::resting(&d, &l);
+
+      // the last block, well past the exposition, and somebody playing in it
+      let bi = out.blocks.len() - 1;
+      let held = voice_of(&out.blocks[bi].kind).expect("a lane");
+      let target = (0..voices)
+        .find(|v| *v != held && !quiet[bi][*v])
+        .unwrap_or_else(|| panic!("{voices} voices: nobody is accompanying in the last block"));
+
+      let ctx = egui::Context::default();
+      crate::glyph::install(&ctx);
+      let screen = egui::Rect::from_min_size(Pos2::ZERO, egui::vec2(900.0, 600.0));
+      let asked = std::cell::Cell::new(None);
+      let spot = std::cell::Cell::new(Pos2::ZERO);
+      let clock = std::cell::Cell::new(1.0f64);
+      let frame = |events: Vec<Event>| {
+        clock.set(clock.get() + 1.0 / 60.0);
+        let input =
+          egui::RawInput { screen_rect: Some(screen), time: Some(clock.get()), events, ..Default::default() };
+        ctx
+          .run_ui(input, |ui| {
+            let top = ui.next_widget_position();
+            let total = compose::length(&out.blocks).max(1) as f32;
+            let b = &out.blocks[bi];
+            let x = |t: i64| top.x + 900.0 * (t as f32 / total);
+            spot.set(Pos2::new(
+              (x(b.at) + x(b.at + b.len)) / 2.0,
+              top.y + RULER + target as f32 * (LANE + GAP) + LANE / 2.0,
+            ));
+            let a = Strip { out: &out, design: &d, layout: &l, playhead: None, window: None, writing: None }.show(ui);
+            if a.edit.is_some() {
+              asked.set(a.edit);
+            }
+          })
+          .drop_without_applying_deltas();
+      };
+
+      frame(vec![]);
+      let at = spot.get();
+      frame(vec![
+        Event::PointerMoved(at),
+        Event::PointerButton { pos: at, button: PointerButton::Primary, pressed: true, modifiers: Modifiers::NONE },
+      ]);
+      frame(vec![Event::PointerButton {
+        pos: at,
+        button: PointerButton::Primary,
+        pressed: false,
+        modifiers: Modifiers::NONE,
+      }]);
+
+      match asked.get() {
+        Some(Edit::Rest { block, voice, .. }) => {
+          assert_eq!((block, voice), (bi, target), "{voices} voices: the click landed on the wrong lane");
+        }
+        other => panic!("{voices} voices: clicking voice {target}'s lane in block {bi} asked for {other:?}"),
+      }
+    }
   }
 
   /// A drag says the same thing the commit does, because both go through
