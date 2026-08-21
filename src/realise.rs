@@ -356,7 +356,13 @@ impl Solution {
 /// so the augmented fourth and the diminished fifth of §2.1 stay distinct
 /// because neither is the other's respelling within a key.
 fn domain(compass: (i16, i16), key: &[i8; 7], chord: Option<Chord>) -> Vec<Pitch> {
-  let mut out: Vec<Pitch> = Vec::with_capacity((compass.1 - compass.0 + 1) as usize);
+  // `max(0)`, because a capacity is a hint and a hint must not be able to
+  // panic. An upside-down compass made this negative, and `as usize` turned
+  // that into a request for nine million million pitches — a capacity
+  // overflow, in a function whose loop would have produced nothing anyway.
+  // `fill` rejects such a compass before it gets here; this is the second
+  // line of it, for any other caller.
+  let mut out: Vec<Pitch> = Vec::with_capacity((compass.1 - compass.0 + 1).max(0) as usize);
   // the key's own spelling first; then the plainer accidental, so that a G
   // natural is preferred to an F double sharp when the two sound alike
   let rank = |p: Pitch| {
@@ -498,6 +504,13 @@ pub fn fill(pr: &Problem) -> Result<Solution, String> {
   let nv = pr.voices.len();
   if pr.free.len() != nv || pr.compass.len() != nv {
     return Err("free/compass do not match the voice count".into());
+  }
+  // A compass whose ends are the wrong way round is an empty domain, and an
+  // empty domain is a search that fails with nothing to say about why. Named
+  // here instead, beside the other shape check, because both are about the
+  // caller having handed over something that is not a problem.
+  if let Some((v, (lo, hi))) = pr.compass.iter().enumerate().find(|(_, (lo, hi))| lo > hi) {
+    return Err(format!("voice {v}'s compass runs {lo}..{hi}, which is upside down"));
   }
   if nv > MAXV {
     return Err(format!("{nv} voices, {MAXV} supported"));
@@ -1073,6 +1086,34 @@ mod tests {
       seed: 0x5EED,
       beta: 0.0,
     }
+  }
+
+  /// **An upside-down compass is refused, not crashed on.**
+  ///
+  /// It used to panic, and in the worst place for one: `domain` sized its vector
+  /// from `hi - lo + 1`, which goes negative, and `as usize` turns a negative
+  /// `i16` into a request for nine million million pitches. So a `Design` whose
+  /// compass had its ends the wrong way round took the process down rather than
+  /// returning an error — and `Design` is read from a settings file that a person
+  /// can edit, so the input was reachable without writing any code at all.
+  ///
+  /// Found while building the interface's compass, by asking what the drag ought
+  /// to be stopped from producing. The interface stops it; this is what happens
+  /// to everybody who is not the interface.
+  #[test]
+  fn a_compass_the_wrong_way_round_is_an_error_and_not_a_panic() {
+    let mut pr = problem(line(&[28, 29, 30, 31]), line(&[0, 0, 0, 0]), CONFIRMED);
+    pr.compass = vec![(0, 0), (39, 35)];
+    let e = match fill(&pr) {
+      Err(e) => e,
+      Ok(_) => panic!("an upside-down compass was accepted"),
+    };
+    assert!(e.contains("upside down"), "refused, but not for the reason: {e}");
+    assert!(e.contains("voice 1"), "refused without naming the voice: {e}");
+
+    // and the empty-but-not-inverted case is still a legal one-note compass
+    pr.compass = vec![(0, 0), (37, 37)];
+    assert!(fill(&pr).is_ok(), "a compass of one pitch is narrow, not invalid");
   }
 
   /// Every prescription is charged **in place of** the soft tier, so a test for

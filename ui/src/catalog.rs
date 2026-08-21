@@ -47,9 +47,13 @@ impl Subject {
 ///
 /// Three is the published layout — §8.16's own, and what every figure in that
 /// section was measured with, so it is reproduced exactly rather than derived
-/// from a formula that happens to agree. The others are spaced the same way: a
-/// two-octave box per voice, overlapping by about a sixth, laid out so no two
-/// voices are obliged to sit on top of one another.
+/// from a formula that happens to agree.
+///
+/// Each box is **twelve diatonic steps**, a thirteenth, and the three overlap by
+/// a ninth at the top pair and a sixth at the bottom. This comment used to call
+/// them two-octave boxes overlapping by about a sixth, which was wrong twice and
+/// went unnoticed for as long as the numbers were only numbers. `ui::compass`
+/// now draws them on a staff, where anybody can count the lines.
 pub fn compass(voices: usize) -> Vec<(i16, i16)> {
   match voices {
     2 => vec![(33, 45), (24, 36)],

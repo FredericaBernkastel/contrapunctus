@@ -939,8 +939,10 @@ Status is one of **done**, **partial** — usable and honestly incomplete — or
 | 5.2 | Wheel to pan and ctrl-wheel to zoom the score, about the pointer, with the strip shading what is off the page | `a_bar_under_the_pointer_stays_under_it`, `the_wheel_pans_and_ctrl_and_the_wheel_zooms` |
 | 3.2 | Importing a subject from a `**kern` file | `an_imported_subject_replaces_the_design` |
 | 5.2 | The score following the playhead while it plays | by inspection |
+| 3.3 | Each voice's compass, as bars dragged on a grand staff — ends, and the whole range | `a_drag_on_a_handle_moves_that_bound`, `an_end_stops_where_it_has_to` |
+| 3.3 | And every arrangement a drag can reach still composing | `any_compass_the_drag_can_reach_still_composes` |
 
-Seventeen tests, all headless. The interesting one is
+Forty-one tests, all headless. The interesting one is
 `every_offered_subject_composes`: each of the 24 subjects is composed on the
 shortest layout that is still a fugue, because a picker whose entries have not
 been tried is a picker that wastes the one click a beginner is sure to make. It
@@ -949,7 +951,7 @@ costs 13 seconds in release and two and a half minutes unoptimised.
 `tests/references.rs` now sweeps `ui/src` beside `src` and `docs/`, so the
 section numbers this crate's doc comments cite are checked like every other.
 
-One of the fifteen is worth naming on its own. `no_gap_swallows_every_voice_at_once`
+One of them is worth naming on its own. `no_gap_swallows_every_voice_at_once`
 asserts that the whole texture never falls silent inside the piece — which is the
 **third listening test made mechanical**. A listener heard "0.4s long silence
 breaks repeating every 3-6s" in a fugue whose every number looked right, because
@@ -965,7 +967,6 @@ silence is, in samples.
 | 1 | 7.3 | Generating in a worker, so the sound survives the work | a worker build; 6.4 is the workaround until then |
 | 2 | 4.3 | A voice drag at all | there is no `Layout` field for it — see below |
 | 3 | 6.3 | System MIDI out, behind a feature | a `midir` dependency, and a device to try it on |
-| 4 | 3.3 | The compass as draggable ranges on a staff | nothing |
 
 **Item 2 needs saying properly, because 4.3 assumed something that is not
 there.** That section says a voice drag should ghost its knock-on rather than
@@ -1001,12 +1002,6 @@ Stated rather than left to be discovered:
   listener still finds one voice dominating after it, the next thing to add is a
   **per-voice trim** rather than more bands — the imbalance a listener notices in
   a fugue is nearly always one *voice*, and each voice keeps to a register.
-- **Two faults have been found by opening the page, and none by a test.** A
-  clock that compiles and panics (7.4), and an audio stream that a stalled frame
-  destroys permanently (6.4). Both are in the layer no test here reaches — the
-  first was linted for afterwards, the second cannot be. That is the honest score
-  for the web target: everything mechanical passes, and the two real bugs came
-  from somebody pressing buttons.
 - **The audio stream is rebuilt on every compose, on the web.** It is a cure for
   6.4 and not a design: a worker doing the generation would let the sound run
   through it untouched, and 7.3 now says so. What this costs is a moment of
@@ -1040,14 +1035,36 @@ Stated rather than left to be discovered:
   the price of a settings file that reproduces. The bars after an edit are not
   faded while it happens; at three voices it is over before anything could be
   seen, and at five it will not be.
-- **Seven faults have now been found by somebody using this, and none by a test.**
-  Four listening reports, a clock that compiles and panics, an audio stream a
-  stalled frame destroys, and a settings file that did not reproduce what it
-  recorded. Every one was in something the tests were not pointed at — the ear,
-  the browser, the sound card, and the difference between a piece and its
-  history, and a zoom that read the wrong input channel. The pattern is worth
-  naming: the tests here check what the program *computes*, and every one of
-  these was in what the program *does* — the ear, the browser, the sound card,
-  the difference between a piece and its history, and the wheel. The zoom is the
-  sharpest case, because its arithmetic had four tests and all four passed: they
-  covered the half that was right.
+- **The compass bounds the search, not the piece.** A voice's compass is the
+  domain the free voices are filled from, and a *stated* subject is given rather
+  than searched — so an entry sounds where its entry puts it whether the compass
+  admits those notes or not. The first draft of the widget said otherwise, in a
+  doc comment and on the screen, and measuring it is what settled it: every
+  arrangement a drag can produce composes, including three voices squeezed into
+  one octave and the bass sitting above the soprano. The minimum span the widget
+  enforces is therefore a floor on usefulness and not on legality, and it now
+  says so where a reader will see it.
+- **Eight faults have now been found by somebody using this, and one by
+  building.** The eight: four listening reports, a clock that compiles and
+  panics, an audio stream a stalled frame destroys, a settings file that did not
+  reproduce what it recorded, and a zoom that read the wrong input channel. Every
+  one was in something the tests were not pointed at — the ear, the browser, the
+  sound card, the difference between a piece and its history, and the wheel. The
+  tests here check what the program *computes*; all eight were in what it
+  *does*. The zoom is the sharpest case, because its arithmetic had four tests
+  and all four passed: they covered the half that was right.
+
+  The ninth came a different way and is worth separating. Building the compass
+  meant deciding what a drag must be **stopped** from producing, and asking that
+  question found `realise::domain` sizing a vector from `high - low + 1` — which
+  on an inverted compass goes negative, and `as usize` turns into a request for
+  nine million million pitches. A `Design` read from a settings file could take
+  the process down, and settings files are text a person can edit. So the route
+  was neither a test nor a session at the keyboard: it was designing a
+  constraint, and then asking what the library did to the values on the far side
+  of it. That is a cheap question and it had not been asked before.
+- **The compass shows what is allowed and not what was used.** Nothing on the
+  staff says where the voices actually went, so a compass three octaves wider
+  than the music needs looks the same as one the music fills. `kern::compass`
+  already measures the second thing from an `Outcome`, so drawing it inside the
+  bar is a small piece of work and not a decision.

@@ -11,6 +11,7 @@
 mod app;
 mod audio;
 mod catalog;
+mod compass;
 mod files;
 mod glyph;
 mod report;

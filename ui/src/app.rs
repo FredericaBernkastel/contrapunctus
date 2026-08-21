@@ -25,7 +25,7 @@ use crate::files::{self, Imported, Loaded, Note};
 use crate::schedule;
 use crate::synth::Mix;
 use crate::task::Slot;
-use crate::{report, score, strip, theme};
+use crate::{compass, report, score, strip, theme};
 
 pub struct App {
   cat: Catalog,
@@ -907,6 +907,17 @@ impl App {
 
     if self.advanced {
       ui.add_space(12.0);
+      group(ui, "COMPASS");
+      labelled(ui, "Where each voice may go", "Design::compass");
+      // The key is copied out because the widget takes the compass mutably and
+      // both live in `design`. Seven bytes, and it saves a split borrow.
+      let key = self.design.key;
+      let least = compass::least_for(&self.design.subject);
+      if (compass::Compass { ranges: &mut self.design.compass, key, least }).show(ui) {
+        changed = true;
+      }
+
+      ui.add_space(12.0);
       group(ui, "LAYOUT");
 
       labelled(ui, "Episode length", "Layout::episode_bars");
@@ -1099,6 +1110,51 @@ mod tests {
         .drop_without_applying_deltas();
     }
     assert!(app.out.is_some(), "the default settings did not produce a fugue: {:?}", app.refused);
+  }
+
+  /// **Every compass the widget can produce still composes.**
+  ///
+  /// The drag can put the voices anywhere: all three inside one octave, the bass
+  /// above the soprano, or three boxes that never meet. None of those is a
+  /// sensible fugue and all of them are two seconds of dragging away, so the
+  /// question is whether the search survives them. It does — which is why the
+  /// widget clamps only the two things that are not arrangements but errors: an
+  /// end passing its partner, and a bound leaving the staff.
+  ///
+  /// Written after the inverted case turned out to **panic** in the library
+  /// rather than refuse. `realise::a_compass_the_wrong_way_round_is_an_error_and_not_a_panic`
+  /// is that fix; this is the interface end of the same finding.
+  #[test]
+  fn any_compass_the_drag_can_reach_still_composes() {
+    let cat = catalog::load();
+    let s = &cat.subjects[0];
+    let brief = Layout { middles: vec![4], episode_bars: 2, link: None, ..Layout::default() };
+    let (floor, ceil) = (compass::FLOOR, compass::CEIL);
+    let arrangements = [
+      ("the default", vec![(33, 45), (28, 40), (21, 33)]),
+      ("all three in one octave", vec![(28, 35), (28, 35), (28, 35)]),
+      ("upside down: the bass on top", vec![(21, 33), (28, 40), (33, 45)]),
+      ("three that never meet", vec![(38, 45), (28, 35), (14, 21)]),
+      ("squeezed to the floor", vec![(36, 43), (31, 38), (24, 31)]),
+      ("against both stops", vec![(ceil - 7, ceil), (28, 40), (floor, floor + 7)]),
+    ];
+    let mut refused = vec![];
+    for (what, cs) in arrangements {
+      // First that the case is one the widget could actually reach, so this
+      // never quietly becomes a test of compasses no drag can produce.
+      for &(lo, hi) in &cs {
+        assert!(hi - lo >= 7, "{what}: {lo}..{hi} is narrower than the widget's floor");
+        assert!(lo >= floor && hi <= ceil, "{what}: {lo}..{hi} is off the staff the widget draws");
+      }
+      let mut d = s.design(3);
+      d.compass = cs;
+      if let Err(e) = compose::fugue(&d, &brief, Tier::Full.rules(), 0x5EED) {
+        refused.push(format!("{what}: {e}"));
+      }
+    }
+    assert!(refused.is_empty(), "a compass the drag can reach will not compose:
+  {}", refused.join("
+  "));
   }
 
   /// Every subject the picker offers must produce a design the generator will
