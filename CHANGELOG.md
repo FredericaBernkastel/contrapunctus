@@ -1467,6 +1467,37 @@ treatises read so far says when a voice should rest, beyond the two rules alread
 make room for an entry. That is a gap in the sources rather than in the search, and filling it by invention is the
 one thing this project does not do.
 
+## A plan authored rather than derived
+
+[`2f6ca89`](../../commit/2f6ca89)
+
+`Layout::built` is `docs/ui-spec.md` section 4.5's palette: a plan somebody wrote, instead of one the parameters
+generated. `compose::taken_apart` is the way in, because a palette that starts empty is one nobody uses — it starts
+from the plan this program wrote, exactly, block for block and identity for identity.
+
+Three guarantees the parameter path supplied for free, and what each became.
+
+> **A guarantee is better kept by a type than by a check.** `derive` could not produce a gap or an overlap because
+> it accumulated `at`; an authored plan could produce both. The answer was not to validate but to leave `at` out of
+> `Built` altogether, so where a block sits is derived from the list and a gap is not a thing the palette can say.
+> An entry's length went the same way: it is the subject's, so it is not a field.
+
+> **Two vocabularies need one authority, not a flag.** Every edit in 4.2 is written over `Origin::Middle(k)` or
+> `Origin::Link`; an authored block comes back `Origin::Built` and matches neither, so the returns and the link
+> stop offering themselves and the palette's own gestures appear. Which set is available is decided by the same
+> function that decides what a block *is*. A mode flag would have been two places that could disagree, and this
+> file's history is mostly those.
+
+And the argument the section was written for, now a test: **judged rather than gated.** A plan with one entry and no
+exposition composes, and comes back with `exposition_covers_the_voices` false. What is refused is a plan that is not
+a plan — no blocks at all, or a block in a voice that does not exist — because those are not illegal fugues but
+unanswerable questions. A palette that permitted only legal plans would teach nothing, everything it allowed being
+legal already.
+
+This clears the last row of the interface's list of what the library still needs. What is left there is the CDCL
+solver, and for a narrower thing than it was first written for: four parts **sounding together**, which is three
+free voices and is the wall itself, rather than four voices, which turned out to cost a `Layout` field.
+
 ---
 
 ## Recurring pattern
