@@ -76,15 +76,26 @@ impl Settings {
   /// tells the truth about which it is.
   pub fn reproduce(&self) -> Result<(compose::Outcome, Fidelity), String> {
     let out = compose::fugue(&self.design, &self.layout, self.tier.rules(), self.seed)?;
-    let got = fingerprint(&out.voices);
-    let how = if self.fingerprint == 0 {
+    let how = self.check(&out.voices);
+    Ok((out, how))
+  }
+
+  /// The same verdict, on notes that were generated **somewhere else**.
+  ///
+  /// [`reproduce`](Settings::reproduce) runs the search and blocks for as long as
+  /// it takes, which is the whole of a generate. An interface that has already
+  /// arranged not to block — a block per frame, or a worker — wants the judgement
+  /// without the search attached to it, and this is that half on its own. The two
+  /// cannot disagree, because the first now calls the second.
+  pub fn check(&self, voices: &[crate::kern::Voice]) -> Fidelity {
+    let got = fingerprint(voices);
+    if self.fingerprint == 0 {
       Fidelity::Unchecked
     } else if got == self.fingerprint {
       Fidelity::Exact
     } else {
       Fidelity::Differs { wrote: self.engine.clone(), now: env!("CARGO_PKG_VERSION").to_string() }
-    };
-    Ok((out, how))
+    }
   }
 }
 

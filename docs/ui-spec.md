@@ -1421,10 +1421,11 @@ Status is one of **done**, **partial** — usable and honestly incomplete — or
 | 4.4 | The search choosing the rests, off by default, with the finding beside the switch | `the_search_can_choose_who_rests`, `drawing_the_texture_is_off_and_at_three_voices_is_the_same_piece` |
 | 4.5 | A plan authored block by block, judged by the grammar rather than gated by it | `an_authored_plan_composes_and_is_judged_not_gated`, `a_built_plan_takes_the_palette_and_not_the_parameters` |
 | 4.5 | A palette section, dropped into by drag, landing between blocks and converting the plan on the way | `a_drop_lands_at_the_nearest_boundary`, `a_built_plan_takes_the_palette_and_not_the_parameters` |
+| 8, 7.3 | Opening a file generated like anything else, with the fidelity checked afterwards | `opening_a_file_is_generated_like_anything_else_and_still_judged` |
 | 6.3 | System MIDI out, on the synth's own clock, against a real port, with the card silenced | `a_playhead_becomes_notes_and_leaves_none_held`, `a_midi_port_silences_the_card_without_stopping_it` |
 | 7.3 | Generating in a worker, with the protocol tested on the desktop and a fallback that says so | `a_reply_becomes_a_piece_or_a_reason`, `there_is_always_somewhere_to_generate_and_it_is_named` |
 
-Sixty-six tests, all headless — three of them only where a MIDI port exists. The interesting one is
+Sixty-seven tests, all headless — three of them only where a MIDI port exists. The interesting one is
 `every_offered_subject_composes`: each of the 24 subjects is composed on the
 shortest layout that is still a fugue, because a picker whose entries have not
 been tried is a picker that wastes the one click a beginner is sure to make. It
@@ -1524,6 +1525,14 @@ Stated rather than left to be discovered:
   combination still *references* the panic, and referencing is not calling. The
   path it was reached by is gone; whether the string is reachable at all is
   unknown, and saying so is better than reporting a clean binary.
+- **Everything that generates goes through one path, and it took a report to
+  finish that.** Compose showed progress and went to the worker; Open froze the
+  window for the length of a search, because `Settings::reproduce` ran the search
+  *and* judged what came out, and on the web the first of those ran on the one
+  thread the page has. They are apart now — `Settings::check` is the judgement
+  without the search — and opening a file supplies the controls and then
+  generates like anything else. **A function that does two things is a function
+  one caller will want half of**, and the half they want is usually the cheap one.
 - **The worker runs, and nothing here can tell.** A reader confirmed both halves
   — the panel says it is in a worker, and Compose during playback no longer
   breaks the sound — and every check in this repository would say exactly the

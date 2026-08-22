@@ -16,16 +16,21 @@
 
 use contrapunctus::{
   compose::{self, Design, Layout, Outcome},
-  settings::{Fidelity, Settings},
+  settings::Settings,
 };
 
 use crate::task::{spawn, Slot};
 
 /// What came back from a load, once the dialog and the search are both done.
+/// A settings file, read and parsed and **not yet generated**.
+///
+/// Reading is instant and generating is half a second, and putting the second
+/// inside the first froze the window until it was over — reported, and the plain
+/// difference between Open and Compose, which had a progress line and a worker.
+/// So this carries what was in the file and the interface generates it the way
+/// it generates anything else.
 pub struct Loaded {
   pub settings: Settings,
-  pub outcome: Outcome,
-  pub how: Fidelity,
 }
 
 /// A message for the status line — the interface says what happened either way,
@@ -88,10 +93,10 @@ pub fn load_settings(into: Slot<Result<Loaded, Note>>) {
       Ok(s) => s,
       Err(e) => return into.put(Err(Note::Failed(e))),
     };
-    match settings.reproduce() {
-      Ok((outcome, how)) => into.put(Ok(Loaded { settings, outcome, how })),
-      Err(e) => into.put(Err(Note::Failed(format!("the settings loaded and the search refused: {e}")))),
-    }
+    // Parsed and handed over. **Not generated here**: this is an async task with
+    // no thread under it on the web, so a search inside it is a search on the
+    // one thread the page has.
+    into.put(Ok(Loaded { settings }));
   });
 }
 

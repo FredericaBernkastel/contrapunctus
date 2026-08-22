@@ -93,6 +93,13 @@ pub struct App {
 
   /// What the last file operation or edit did, in one line.
   status: Option<String>,
+  /// A settings file that has been opened and is being written out.
+  ///
+  /// The fidelity check needs the notes, and the notes take half a second, so
+  /// the two are apart now: this holds what the file said until there is
+  /// something to compare it against. `Settings::check` is that comparison
+  /// without the search attached.
+  expecting: Option<contrapunctus::settings::Settings>,
   /// Whether a loaded file reproduced the fugue it recorded. `None` once the
   /// music has been changed since, because the answer would no longer be about
   /// anything on screen.
@@ -178,6 +185,7 @@ impl Default for App {
       stale: false,
       first: true,
       shown: None,
+      expecting: None,
       farm: farm::Farm::start(),
       asked: None,
       #[cfg(feature = "midi-out")]
@@ -267,13 +275,14 @@ impl App {
         self.asked = None;
         match done {
           Ok(o) => {
-            self.status = Some(format!("{} blocks written in a worker, in {:.0} ms", o.blocks.len(), o.seconds * 1000.0));
-            self.out = Some(o);
+            let said = format!("{} blocks written in a worker, in {:.0} ms", o.blocks.len(), o.seconds * 1000.0);
             self.shown = Some((d, l));
-            self.refused = None;
-            self.resound();
+            self.arrived(o, said);
           }
-          Err(e) => self.refused = Some(e),
+          Err(e) => {
+            self.expecting = None;
+            self.refused = Some(e);
+          }
         }
         ctx.request_repaint();
       } else {
@@ -318,6 +327,7 @@ impl App {
       let Some(run) = self.work.as_mut() else { return false };
       match run.step() {
         Err(e) => {
+          self.expecting = None;
           self.refused = Some(e);
           self.work = None;
           return false;
@@ -331,13 +341,16 @@ impl App {
     let (_, all) = run.progress();
     match run.finish() {
       Ok(o) => {
-        self.status = Some(format!("{all} blocks written in {:.0} ms", o.seconds * 1000.0));
-        self.out = Some(o);
-        self.shown = Some((self.design.clone(), self.layout.clone()));
-        self.refused = None;
-        self.resound();
+        let said = format!("{all} blocks written in {:.0} ms", o.seconds * 1000.0);
+        self.arrived(o, said);
       }
-      Err(e) => self.refused = Some(e),
+      Err(e) => {
+        // The file's claim goes with the refusal. Left standing, the next
+        // generate — of something else entirely — would be judged against a
+        // fingerprint from a fugue nobody is looking at.
+        self.expecting = None;
+        self.refused = Some(e);
+      }
     }
     false
   }
@@ -624,6 +637,33 @@ impl App {
     }
   }
 
+  /// A piece has arrived: keep it, and if it was opened from a file, say whether
+  /// it is the fugue that file recorded.
+  ///
+  /// **Both completion paths go through here** — the worker's and the frame's —
+  /// because a file opened in a browser and the same file opened on the desktop
+  /// answering differently about its own fidelity would be the worst kind of
+  /// bug: one that only ever appears in a sentence.
+  fn arrived(&mut self, o: Outcome, said: String) {
+    self.status = Some(match self.expecting.take() {
+      None => said,
+      Some(s) => {
+        let how = s.check(&o.voices);
+        let msg = match &how {
+          Fidelity::Exact => "opened — the same fugue, note for note".to_string(),
+          other => other.message().unwrap_or_default(),
+        };
+        self.fidelity = Some(how);
+        msg
+      }
+    });
+    self.out = Some(o);
+    self.shown = Some((self.design.clone(), self.layout.clone()));
+    self.refused = None;
+    self.stale = false;
+    self.resound();
+  }
+
   /// Send the mix the card should be playing. Every caller goes through here, so
   /// that "a MIDI port silences the synth" is one rule in one place rather than a
   /// thing three call sites have to remember.
@@ -677,22 +717,21 @@ impl App {
             .subjects
             .iter()
             .position(|s| contrapunctus::settings::fingerprint(std::slice::from_ref(&s.notes)) == want);
-          self.design = l.settings.design;
-          self.layout = l.settings.layout;
+          self.design = l.settings.design.clone();
+          self.layout = l.settings.layout.clone();
           self.tier = l.settings.tier;
           self.seed = l.settings.seed;
-          self.status = Some(match &l.how {
-            Fidelity::Exact => "opened — the same fugue, note for note".to_string(),
-            other => other.message().unwrap_or_default(),
-          });
-          self.fidelity = Some(l.how);
-          self.shown = Some((self.design.clone(), self.layout.clone()));
-          self.out = Some(l.outcome);
+          // **Generated the way anything else is**, rather than inside the
+          // reading task. Opening a file used to freeze the window for the
+          // length of a search, because `Settings::reproduce` did both halves
+          // and the second is the whole of a generate; on the web that ran on
+          // the one thread the page has. Now the file supplies the controls and
+          // the search goes to the worker or to a block a frame, like Compose.
+          self.status = Some("opened — writing it out".into());
+          self.fidelity = None;
+          self.expecting = Some(l.settings);
           self.refused = None;
-          self.stale = false;
-          // `Settings::reproduce` ran the search, and on the web that ran on
-          // this thread — `spawn_local` is not another one.
-          self.resound();
+          self.compose();
         }
         Err(Note::Cancelled) => self.status = Some("nothing opened".into()),
         Err(Note::Failed(e)) => self.status = Some(format!("could not open: {e}")),
@@ -904,7 +943,10 @@ impl App {
       // saying anything is happening.
       if self.asked.is_some() {
         ui.add_space(6.0);
-        ui.label(RichText::new("Writing — in a worker").strong());
+        ui.label(
+          RichText::new(if self.expecting.is_some() { "Opening — writing it out in a worker" } else { "Writing — in a worker" })
+            .strong(),
+        );
         ui.spinner();
         ui.label(
           RichText::new(
@@ -918,7 +960,14 @@ impl App {
       if let Some(run) = &self.work {
         let (done, all) = run.progress();
         ui.add_space(6.0);
-        ui.label(RichText::new(format!("Writing — block {done} of {all}")).strong());
+        ui.label(
+          RichText::new(if self.expecting.is_some() {
+            format!("Opening — block {done} of {all}")
+          } else {
+            format!("Writing — block {done} of {all}")
+          })
+          .strong(),
+        );
         ui.add(egui::ProgressBar::new(done as f32 / all.max(1) as f32).desired_height(6.0));
         ui.label(
           RichText::new(
@@ -1714,6 +1763,80 @@ mod tests {
     assert_eq!(heard(app.mix, true).mute, !0, "a port did not silence the card");
     assert_eq!(app.mix.mute, 0b010, "opening a port changed what the listener had asked for");
     assert_eq!(heard(app.mix, false).mute, 0b010, "closing it did not give them back what they asked for");
+  }
+
+  /// **Opening a file generates the way everything else does, and still says
+  /// whether the file reproduced.**
+  ///
+  /// Reported: Compose showed progress and Open froze the window until it was
+  /// done. `Settings::reproduce` did two things — run the search, and judge what
+  /// came out — and the first is the whole of a generate, which on the web ran
+  /// on the one thread the page has. They are apart now: the file supplies the
+  /// controls, the search goes wherever searches go, and `Settings::check` does
+  /// the judging when there is something to judge.
+  ///
+  /// The half that could quietly break is the second. A verdict computed a
+  /// moment later has to be the verdict `reproduce` would have given.
+  #[test]
+  fn opening_a_file_is_generated_like_anything_else_and_still_judged() {
+    let mut app = App { layout: Layout { middles: vec![4], episode_bars: 2, ..Layout::default() }, ..App::default() };
+    app.compose();
+    app.settle();
+    let made = app.out.clone().expect("a fugue");
+
+    // the file this would have saved
+    let saved = contrapunctus::settings::Settings::of(&app.design, &app.layout, app.tier, app.seed, &made);
+    assert_ne!(saved.fingerprint, 0, "a file written from a piece records one");
+
+    // opened: the controls come from the file and the notes are not in it
+    let mut open = App {
+      design: saved.design.clone(),
+      layout: saved.layout.clone(),
+      tier: saved.tier,
+      seed: saved.seed,
+      expecting: Some(saved.clone()),
+      ..App::default()
+    };
+    open.compose();
+    assert!(open.out.is_none() || open.fidelity.is_none(), "the verdict was reached before the notes were");
+    open.settle();
+
+    let got = open.out.clone().unwrap_or_else(|| panic!("opening refused: {:?}", open.refused));
+    assert_eq!(
+      contrapunctus::settings::fingerprint(&got.voices),
+      contrapunctus::settings::fingerprint(&made.voices),
+      "the same settings gave a different piece"
+    );
+    assert!(matches!(open.fidelity, Some(Fidelity::Exact)), "the verdict was {:?}", open.fidelity);
+    assert!(open.expecting.is_none(), "the file's claim outlived the piece it was about");
+    assert!(open.status.as_deref().unwrap_or("").contains("note for note"), "{:?}", open.status);
+
+    // and a file whose fingerprint does not match says so rather than nothing
+    let mut lying = App {
+      design: saved.design.clone(),
+      layout: saved.layout.clone(),
+      tier: saved.tier,
+      seed: saved.seed,
+      expecting: Some(contrapunctus::settings::Settings { fingerprint: 12345, ..saved.clone() }),
+      ..App::default()
+    };
+    lying.compose();
+    lying.settle();
+    assert!(matches!(lying.fidelity, Some(Fidelity::Differs { .. })), "a file that did not reproduce said nothing");
+
+    // **and the claim does not outlive a refusal**, or the next generate of
+    // something else entirely is judged against a fugue nobody is looking at
+    let mut refuses = App {
+      layout: Layout { middles: vec![4], episode_bars: 2, ..Layout::default() },
+      expecting: Some(saved),
+      ..App::default()
+    };
+    refuses.design.voices = 4;
+    refuses.design.compass = catalog::compass(4);
+    refuses.compose();
+    refuses.settle();
+    assert!(refuses.refused.is_some(), "four voices with no rests must refuse, or this proves nothing");
+    assert!(refuses.expecting.is_none(), "the claim survived a refusal");
   }
 
   /// **The strip draws the piece, not the controls** — and every gesture in it
