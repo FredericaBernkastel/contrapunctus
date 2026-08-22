@@ -14,6 +14,11 @@ publish = false
 name = "contrapunctus-ui"
 path = "src/main.rs"
 
+[features]
+default = []
+# Play through a system MIDI port instead of the built-in synth — spec 6.3.
+midi-out = ["dep:midir"]
+
 [dependencies]
 # `serde` for settings files, `embedded-corpus` so a browser build has the 24
 # subjects without a network fetch — spec 7.1.
@@ -32,6 +37,10 @@ cpal = "0.18"
 # and panics when called, which is how the browser build first came up as a
 # stack trace; `eframe` already depends on this, so it costs nothing.
 web-time = "1"
+# System MIDI out — spec 6.3, and behind a feature so a build without it has no
+# dependency at all. `midir` is one crate on every desktop API and Web MIDI on
+# wasm, which is why the section names it rather than three platform crates.
+midir = { version = "0.11", optional = true }
 
 # A future has to be driven by something, and that something is the one part of
 # this crate that cannot be written once: a browser has no threads.

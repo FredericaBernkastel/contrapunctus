@@ -26,6 +26,8 @@ use crate::schedule;
 use crate::synth::Mix;
 use crate::task::Slot;
 use crate::{compass, report, score, strip, theme};
+#[cfg(feature = "midi-out")]
+use crate::midi;
 
 pub struct App {
   cat: Catalog,
@@ -118,6 +120,18 @@ pub struct App {
   /// What part of the piece the score is showing, as fractions — the plan strip
   /// draws it, so that zooming in does not lose the reader.
   seen: Option<(f32, f32)>,
+  /// The system MIDI port chosen, and the connection to it — spec 6.3.
+  ///
+  /// **The sound card keeps running while this is open**, with every voice
+  /// muted, because it is the clock: `midi::Out` is told where the playhead is
+  /// and works out what changed, so it wants a position and there is already one
+  /// that counts samples in an audio callback. One scheduler, two sinks.
+  #[cfg(feature = "midi-out")]
+  midi: Option<midi::Out>,
+  /// The ports there were when the panel last looked, or why there were none.
+  /// Enumerated once rather than every frame: it opens a client each time.
+  #[cfg(feature = "midi-out")]
+  midi_ports: Option<Result<Vec<String>, String>>,
   /// The very score the player holds. Kept so that every tick-to-sample
   /// conversion goes through the tempo the sound was actually built at, rather
   /// than through whatever the tempo control says at the moment of asking.
@@ -146,6 +160,10 @@ impl Default for App {
       stale: false,
       first: true,
       shown: None,
+      #[cfg(feature = "midi-out")]
+      midi: None,
+      #[cfg(feature = "midi-out")]
+      midi_ports: None,
       work: None,
       status: None,
       fidelity: None,
@@ -409,6 +427,103 @@ impl App {
   }
 
   /// Where the ear is, in ticks. `None` when nothing has ever played.
+  /// The port picker — spec 6.3, whose whole insistence is that absence is
+  /// stated. There are three states and they are three different sentences: no
+  /// MIDI on this machine at all, MIDI but nothing to send to, and a list.
+  #[cfg(feature = "midi-out")]
+  fn midi_out(&mut self, ui: &mut Ui) {
+    // Enumerated on first sight rather than every frame: each call opens a
+    // client. A button re-asks, because a port can be plugged in later and
+    // nothing tells us when.
+    if self.midi_ports.is_none() {
+      self.midi_ports = Some(midi::ports());
+    }
+    ui.horizontal(|ui| {
+      ui.label(RichText::new("send to").monospace().weak().small());
+      let chosen = self.midi.as_ref().map(|m| m.name().to_owned());
+      match self.midi_ports.as_ref() {
+        Some(Err(why)) => {
+          ui.add_enabled(false, egui::Button::new("no MIDI")).on_disabled_hover_text(why.clone());
+        }
+        Some(Ok(names)) if names.is_empty() => {
+          ui.add_enabled(false, egui::Button::new("no ports"))
+            .on_disabled_hover_text("This machine has MIDI but nothing to send it to.");
+        }
+        Some(Ok(names)) => {
+          let names = names.clone();
+          let mut want: Option<Option<usize>> = None;
+          egui::ComboBox::from_id_salt("midi")
+            .width(190.0)
+            .selected_text(chosen.clone().unwrap_or_else(|| "the built-in synth".into()))
+            .show_ui(ui, |ui| {
+              if ui.selectable_label(chosen.is_none(), "the built-in synth").clicked() {
+                want = Some(None);
+              }
+              for (i, name) in names.iter().enumerate() {
+                if ui.selectable_label(chosen.as_deref() == Some(name.as_str()), name).clicked() {
+                  want = Some(Some(i));
+                }
+              }
+            });
+          if let Some(which) = want {
+            self.choose_port(which);
+          }
+        }
+        None => {}
+      }
+      if ui.small_button("↻").on_hover_text("Look for ports again").clicked() {
+        self.midi_ports = None;
+      }
+    });
+    if self.midi.is_some() {
+      ui.label(
+        RichText::new(
+          "The sound card keeps the time and says nothing; the notes go out of the port. Events            are sent once a frame, so a note can be up to about 16 ms late — the built-in synth is            the one that keeps better time and this is the one that sounds better.",
+        )
+        .weak()
+        .small(),
+      );
+    }
+  }
+
+  /// Open a port, or go back to the synth. Either way, whatever was sounding on
+  /// the old sink stops first — a port dropped mid-note holds it forever.
+  #[cfg(feature = "midi-out")]
+  fn choose_port(&mut self, which: Option<usize>) {
+    if let Some(m) = self.midi.as_mut() {
+      m.silence();
+    }
+    self.midi = None;
+    let Some(i) = which else {
+      self.status = Some("back to the built-in synth".into());
+      return;
+    };
+    match midi::Out::open(i) {
+      Ok(m) => {
+        self.status = Some(format!("sending to {}", m.name()));
+        self.midi = Some(m);
+      }
+      Err(e) => self.status = Some(e),
+    }
+  }
+
+  /// Put the port where the playhead is. Once a frame, from the sound card's own
+  /// sample count — see `midi.rs` for why a position rather than a stream of
+  /// events, and why that is what makes a stuck note impossible.
+  #[cfg(feature = "midi-out")]
+  fn pump_midi(&mut self) {
+    let Some(m) = self.midi.as_mut() else { return };
+    let (Some(p), Some(score)) = (self.player.as_ref(), self.sound.as_ref()) else {
+      m.silence();
+      return;
+    };
+    if p.is_playing() {
+      m.at(score, p.position());
+    } else {
+      m.silence();
+    }
+  }
+
   fn playhead(&self) -> Option<i64> {
     let p = self.player.as_ref()?;
     Some(self.sound.as_ref()?.tick_of(p.position()))
@@ -542,6 +657,8 @@ impl App {
       self.compose();
     }
     self.grind(ui.ctx());
+    #[cfg(feature = "midi-out")]
+    self.pump_midi();
     self.collect();
 
     let mut save = false;
@@ -678,6 +795,11 @@ impl App {
         );
         ui.add_space(6.0);
       }
+
+      // Before the piece is borrowed, because it needs all of `self` and the
+      // views below hold `out` for the rest of the panel.
+      #[cfg(feature = "midi-out")]
+      self.midi_out(ui);
 
       let Some(out) = &self.out else { return };
       let measure = self.design.measure;

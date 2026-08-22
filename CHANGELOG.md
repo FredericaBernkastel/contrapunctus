@@ -1393,7 +1393,7 @@ dead end, and the difference is one sentence.
 
 [`09ea4f0`](../../commit/09ea4f0)
 
-`Layout::drawn_texture`, and it is the third of §4.4's three candidates: let the **search** decide who rests.
+`Layout::drawn_texture`, and it is the third of `docs/ui-spec.md` section 4.4's three candidates: let the **search** decide who rests.
 
 The shape is the only one that adds nothing to the rulebook. Every rest pattern a block could legally take is a
 search of its own; `realise::fill` counts each one's legal set exactly and returns a fill drawn uniformly from it;

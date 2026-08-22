@@ -14,6 +14,8 @@ mod catalog;
 mod compass;
 mod files;
 mod glyph;
+#[cfg(feature = "midi-out")]
+mod midi;
 mod report;
 mod schedule;
 mod score;
@@ -21,6 +23,19 @@ mod strip;
 mod synth;
 mod task;
 mod theme;
+
+#[cfg(all(test, feature = "midi-out"))]
+mod probe_ports {
+  #[test]
+  fn list() {
+    let out = midir::MidiOutput::new("contrapunctus").expect("a midi client");
+    let ports = out.ports();
+    eprintln!("{} midi output ports", ports.len());
+    for p in &ports {
+      eprintln!("  {:?}", out.port_name(p));
+    }
+  }
+}
 
 #[cfg(not(target_arch = "wasm32"))]
 fn main() -> eframe::Result {

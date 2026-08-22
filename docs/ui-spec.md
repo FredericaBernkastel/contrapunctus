@@ -709,15 +709,47 @@ slope. It is one knob in the header beside the voice toggles, it goes to zero,
 and past about five it makes things worse in the other direction — which the
 table above is the reason to know.
 
-### 6.3 System MIDI out — optional
+### 6.3 System MIDI out — built, behind `--features midi-out`
 
-`midir`, which also targets Web MIDI on wasm.
+`midir` 0.11, which also targets Web MIDI on wasm. **0.10 will not resolve**: it
+wants `alsa-sys 0.3` where `cpal` 0.18 wants `0.4`, and two crates cannot link
+the same native library — which is a Linux constraint that bites on Windows,
+because cargo resolves the whole graph and not the host's part of it.
 
 - Ports enumerated into a dropdown; nothing sent until one is chosen.
-- On the web, Web MIDI needs a permission prompt and is not available in every
-  browser. **Absence is a disabled dropdown with a reason, never a silent
-  failure.**
+- **Absence is stated, and there are three sentences and not two**: no MIDI on
+  this machine at all, MIDI with nothing to send to, and a list. A refresh
+  button, because a port can be plugged in later and nothing announces it.
 - Behind a cargo feature so a build without it has no dependency.
+
+**It shares the synth's scheduler and the synth's clock**, which is the design
+rather than an economy. `schedule::Score` already holds every note as a span of
+samples and a MIDI number, and `audio::Player` already counts samples in its
+callback — so the port is *told where the playhead is* and works out the rest.
+The sound card keeps running with every voice muted, because being the clock is
+what it is for. One scheduler, two sinks, and no second timeline to drift.
+
+**A position rather than a stream of events**, and that is what makes a stuck
+note impossible. `Out::at` diffs what should be sounding against what is; a seek,
+a pause, a dropped frame, a piece swapped mid-play or the port being closed are
+all just a position that does not follow the last, handled the same way. It costs
+a scan of the score a frame, which is nothing.
+
+A note is keyed by **where it begins** and not by its pitch. Two statements of one
+pitch, the second beginning where the first ends, are a single held note under a
+diff on pitch alone — and telling a struck note from a held one is §2.2's whole
+business, which is not a distinction to lose in the last ten lines of the program.
+
+**What it is not is sample-accurate.** Events go out once a frame, so a note can
+be up to about 16 ms late against a quarter of 790 ms. That is audible on the
+fastest figures, and it is why 6.2 keeps the built-in synth the default: this is
+the sink that sounds better and keeps worse time.
+
+**This is the one thing in the repository that needed hardware**, and it got it.
+`a_playhead_becomes_notes_and_leaves_none_held` opens a real port and sends real
+bytes — never a virtual cable, only a synth that ends at a speaker, because a
+loopback port goes to whatever is listening and something listening is somebody
+else's session. Where there is no port it skips, loudly.
 
 ### 6.4 The stream does not survive a stall, and is rebuilt
 
@@ -1210,8 +1242,9 @@ Status is one of **done**, **partial** — usable and honestly incomplete — or
 | 3.2, 9 | **Four voices**, which asking for now sets a rest pattern for rather than refusing | `asking_for_four_voices_gives_four_voices`, `a_refusal_about_free_voices_names_its_own_cure` |
 | 4.1 | The strip drawing the piece it was given rather than the controls, which have moved | `the_strip_is_given_the_piece_it_is_drawing`, `a_click_in_a_lane_rests_that_voice` |
 | 4.4 | The search choosing the rests, off by default, with the finding beside the switch | `the_search_can_choose_who_rests`, `drawing_the_texture_is_off_and_at_three_voices_is_the_same_piece` |
+| 6.3 | System MIDI out, on the synth's own clock, against a real port | `a_playhead_becomes_notes_and_leaves_none_held`, `the_ports_are_named_or_the_absence_is` |
 
-Fifty-one tests, all headless. The interesting one is
+Fifty-five tests, all headless — three of them only where a MIDI port exists. The interesting one is
 `every_offered_subject_composes`: each of the 24 subjects is composed on the
 shortest layout that is still a fugue, because a picker whose entries have not
 been tried is a picker that wastes the one click a beginner is sure to make. It
@@ -1235,8 +1268,7 @@ silence is, in samples.
 |---|---|---|---|
 | 1 | 4.5 | A block palette, judged by the grammar rather than gated by it | blocks addressable one at a time |
 | 2 | 7.3 | Generating in a worker, so the sound survives the work | a worker build; 6.4 is the workaround until then |
-| 3 | 6.3 | System MIDI out, behind a feature | a `midir` dependency, and a device to try it on |
-| 4 | 4.4 | A texture that varies for a *musical* reason | a criterion, and readme §8.10 is about what those do |
+| 3 | 4.4 | A texture that varies for a *musical* reason | a criterion, and readme §8.10 is about what those do |
 
 **Texture is built, and four voices with it.** `compose::resting` rests a voice
 until it has entered — no parameter, the derivation already said who enters when —
