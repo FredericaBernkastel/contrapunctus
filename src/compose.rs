@@ -634,6 +634,7 @@ pub fn plan(d: &Design, blocks: &[Block]) -> Vec<harmony::Segment> {
 /// then the harmonic plan, which is [§2.3](../readme.md)'s obligation system and
 /// is *also* what keeps the search tractable — dropping it first turns a dead
 /// block into an exploded one, which is worse.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Default, Debug, Clone)]
 pub struct Relaxed {
   pub blocks: usize,
@@ -1298,6 +1299,24 @@ pub fn fugue(d: &Design, l: &Layout, tier: &[Rule], seed: u64) -> Result<Outcome
   let mut run = Run::new(d, l, tier, seed)?;
   while run.step()? {}
   run.finish()
+}
+
+/// Judge notes that were filled **somewhere else** — the interface's worker,
+/// `docs/ui-spec.md` section 7.3.
+///
+/// A browser has no threads, so generating without stalling the page means
+/// generating in a worker, and a worker can send back notes but not an
+/// [`Outcome`]: the verdict, the tally and the block list are not things to
+/// serialise and post across a boundary when two of the three are cheap to
+/// recompute and the third is a pure function of the design.
+///
+/// So the worker returns what only it has — the voices, and the relaxation log
+/// that says what it had to give up — and this puts an `Outcome` back together
+/// on the other side. It is [`fugue`]'s second half, and it is the same second
+/// half: a piece judged here and a piece judged there cannot disagree, because
+/// there is one `judge` and both go through it.
+pub fn judged(d: &Design, l: &Layout, voices: Vec<Voice>, relaxed: Relaxed, seconds: f64) -> Outcome {
+  judge(d, derive(d, l), voices, relaxed, seconds)
 }
 
 /// Every check §8 can make, over a finished piece.

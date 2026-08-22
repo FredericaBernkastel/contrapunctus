@@ -14,6 +14,10 @@ publish = false
 name = "contrapunctus-ui"
 path = "src/main.rs"
 
+[[bin]]
+name = "worker"
+path = "src/bin/worker.rs"
+
 [features]
 default = []
 # Play through a system MIDI port instead of the built-in synth — spec 6.3.
@@ -37,6 +41,10 @@ cpal = "0.18"
 # and panics when called, which is how the browser build first came up as a
 # stack trace; `eframe` already depends on this, so it costs nothing.
 web-time = "1"
+# The worker's messages are JSON, because `settings::Settings` already is —
+# spec 7.3, and it is the same content section 8 saves to a file.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 # System MIDI out — spec 6.3, and behind a feature so a build without it has no
 # dependency at all. `midir` is one crate on every desktop API and Web MIDI on
 # wasm, which is why the section names it rather than three platform crates.
@@ -51,6 +59,11 @@ pollster = "0.4"
 wasm-bindgen-futures = "0.4"
 # The entry point: a canvas to draw on, and something to hand the future to.
 wasm-bindgen = "0.2"
-web-sys = { version = "0.3", features = ["Document", "Window", "Element", "HtmlCanvasElement"] }
+web-sys = { version = "0.3", features = [
+  "Document", "Window", "Element", "HtmlCanvasElement",
+  # The generating worker — spec 7.3.
+  "Worker", "WorkerOptions", "WorkerType", "DedicatedWorkerGlobalScope", "MessageEvent", "Blob", "BlobPropertyBag", "Url",
+] }
+js-sys = "0.3"
 # `cpal` reaches WebAudio through wasm-bindgen rather than through a system API.
 cpal = { version = "0.18", features = ["wasm-bindgen"] }

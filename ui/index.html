@@ -9,7 +9,10 @@
     content="A fugue generator built from counterpoint transcribed by hand, with no model fitted to any corpus." />
 
   <!-- Trunk builds the crate and injects the loader here:  trunk serve --release  -->
-  <link data-trunk rel="rust" data-wasm-opt="2" />
+  <link data-trunk rel="rust" data-bin="contrapunctus-ui" data-wasm-opt="2" />
+  <link data-trunk rel="rust" data-bin="worker" data-type="worker" data-wasm-opt="2" />
+  <!-- The two lines that actually start the worker — see the file. -->
+  <link data-trunk rel="copy-file" href="worker-boot.js" />
 
   <style>
     /* Both themes, because the page is whatever the reader's machine says it is

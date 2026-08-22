@@ -25,7 +25,7 @@ use crate::files::{self, Imported, Loaded, Note};
 use crate::schedule;
 use crate::synth::Mix;
 use crate::task::Slot;
-use crate::{compass, report, score, strip, theme};
+use crate::{compass, farm, report, score, strip, theme};
 #[cfg(feature = "midi-out")]
 use crate::midi;
 
@@ -72,7 +72,14 @@ pub struct App {
   /// had moved — the voice count only made it visible, because that is the
   /// control that changes how many lanes there are.
   shown: Option<(Design, Layout)>,
-  /// A generate in progress, a block per frame — spec 7.3.
+  /// Where generating happens — spec 7.3. A worker in a browser that has them,
+  /// and this thread otherwise, and it always says which.
+  farm: farm::Farm,
+  /// The design and layout a worker was asked with, because it answers later and
+  /// the controls may have moved by then — the same reason `shown` exists, and
+  /// the same fault it was written for.
+  asked: Option<(Design, Layout)>,
+  /// A generate in progress **here**, a block per frame — spec 7.3.
   ///
   /// Six tenths of a second is rude on a desktop and freezes a browser tab, and
   /// the blockwise fill already had the shape to be stopped between two blocks.
@@ -160,6 +167,8 @@ impl Default for App {
       stale: false,
       first: true,
       shown: None,
+      farm: farm::Farm::start(),
+      asked: None,
       #[cfg(feature = "midi-out")]
       midi: None,
       #[cfg(feature = "midi-out")]
@@ -185,6 +194,18 @@ impl App {
   /// Start a generate. It runs a block per frame in [`App::grind`] and finishes
   /// there; nothing here blocks.
   fn compose(&mut self) {
+    // Somewhere else first, if there is anywhere else. `Farm::ask` says whether
+    // it took the work; `false` is a browser without workers or a desktop, and
+    // both mean the same thing here — do it in the frame.
+    self.work = None;
+    self.asked = None;
+    if self.farm.ask(&self.design, &self.layout, self.tier, self.seed) {
+      self.asked = Some((self.design.clone(), self.layout.clone()));
+      self.refused = None;
+      self.stale = false;
+      self.fidelity = None;
+      return;
+    }
     match compose::Run::new(&self.design, &self.layout, self.tier.rules(), self.seed) {
       Ok(run) => {
         self.work = Some(run);
@@ -213,6 +234,30 @@ impl App {
   /// sound can still be crowded; 7.3 wants a worker and 6.4's stream rebuild is
   /// what stands in until there is one.
   fn grind(&mut self, ctx: &egui::Context) {
+    // Whatever the worker has said since the last frame, first: it answers all
+    // at once and there is nothing to do in the frame while it is working.
+    if let Some((d, l)) = self.asked.clone() {
+      if let Some(done) = self.farm.take(&d, &l) {
+        self.asked = None;
+        match done {
+          Ok(o) => {
+            self.status = Some(format!("{} blocks written in a worker, in {:.0} ms", o.blocks.len(), o.seconds * 1000.0));
+            self.out = Some(o);
+            self.shown = Some((d, l));
+            self.refused = None;
+            self.resound();
+          }
+          Err(e) => self.refused = Some(e),
+        }
+        ctx.request_repaint();
+      } else {
+        // It is working and will not tell us how far along it is. A worker that
+        // reported progress would have to send a message a block, which is the
+        // cost the worker exists to avoid paying.
+        ctx.request_repaint();
+      }
+      return;
+    }
     if self.grind_for(0.006) {
       ctx.request_repaint();
     }
@@ -225,6 +270,14 @@ impl App {
   /// loop with the budget taken off, not a second way of generating.
   #[allow(dead_code)] // used by the tests, which are the callers with no frame
   pub fn settle(&mut self) {
+    // A worker cannot be waited for from here — there is no thread to block and
+    // a browser would deadlock if there were. Tests run on the desktop, where
+    // `Farm::ask` always declines, so this is the whole of it; a caller that
+    // reached here with a worker outstanding is told rather than hung.
+    if self.asked.is_some() {
+      self.status = Some("waiting on the worker; there is nothing to settle here".into());
+      return;
+    }
     while self.grind_for(f64::INFINITY) {}
   }
 
@@ -781,6 +834,19 @@ impl App {
       // block by block from the same run, but on the very first one there is no
       // previous piece and therefore no strip, so this line is the only thing
       // saying anything is happening.
+      if self.asked.is_some() {
+        ui.add_space(6.0);
+        ui.label(RichText::new("Writing — in a worker").strong());
+        ui.spinner();
+        ui.label(
+          RichText::new(
+            "The page is free while it works, and so is the sound: nothing here is doing the              arithmetic. What was on screen before is still on screen and still plays.",
+          )
+          .weak()
+          .small(),
+        );
+        ui.add_space(6.0);
+      }
       if let Some(run) = &self.work {
         let (done, all) = run.progress();
         ui.add_space(6.0);
@@ -1298,6 +1364,20 @@ impl App {
     {
       self.seed = self.seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
       self.compose();
+    }
+
+    // **Where the work happens, said out loud.** A worker that quietly failed to
+    // start and a worker that quietly worked look identical from a chair, and
+    // the difference is the whole feature — spec 7.3.
+    ui.label(RichText::new(format!("writing happens {}", self.farm.where_it_runs())).weak().small());
+    if self.farm.stalls_the_sound() {
+      ui.label(
+        RichText::new(
+          "so a piece already playing will break up while a new one is written — 6.4 rebuilds            the stream afterwards, which is a cure for the symptom.",
+        )
+        .weak()
+        .small(),
+      );
     }
 
     if changed {

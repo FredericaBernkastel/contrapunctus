@@ -847,7 +847,52 @@ generator is tens of milliseconds native and more in a browser. Smaller units
 help and they do not clear the bar; a **worker** does, and is the honest answer
 for the web whenever the sound has to survive the work.
 
-Until there is one, the stream is rebuilt around anything long — 6.4.
+**Built.** `ui/src/farm.rs` and `ui/src/bin/worker.rs`, and the numbers above are
+now measured rather than reasoned at one end: over the default piece the twelve
+blocks take **451 ms in all, worst 84 ms** natively — right at the queue, none
+over it. Wasm is slower than native and by how much is *not* measured here, so
+"the worst block overruns the audio in a browser" remains an inference. It is the
+inference the whole section rests on and it should be labelled as one.
+
+**One file, two binaries.** The protocol and the generating half live in
+`farm.rs`, which `worker.rs` includes with `#[path]`, so the two ends of a
+message have one definition and the *desktop* compiles and tests both. Every web
+fault in this project so far has been in a path the desktop never took; this is
+the largest piece of web-only machinery yet built and the answer to that was to
+make as little of it web-only as possible. What is genuinely a worker is twelve
+lines.
+
+`settings::Settings` goes over as the request, because it is already exactly what
+determines a fugue — section 8 exists to say so, and a second message type for
+the same content is a second place to forget a field. The voices and the
+relaxation log come back; not an `Outcome`, since the blocks are a pure function
+of the design and the verdict and tally are cheap, so posting them would
+serialise three things to save recomputing two. `compose::judged` reassembles it
+through the same `judge` `fugue` uses, so a piece judged in the worker and one
+judged in the page cannot disagree.
+
+**Two things trunk does not do for you**, and both were found by building:
+
+- `data-type="worker"` emits wasm-bindgen's `no-modules` shim, which *defines*
+  `wasm_bindgen` and never calls it. A `Worker` pointed at that file loads a
+  function and then sits there for ever. `worker-boot.js` is the two lines that
+  were missing — `importScripts` then `wasm_bindgen(...)` — copied in as an asset.
+- The main bundle is content-hashed and the worker's output is **not**, so
+  `./worker-boot.js` and `./worker.js` are paths that can be written down. That is
+  luck rather than design and a trunk that starts hashing them would break this
+  silently, which is why the failure is a fallback and not a panic.
+
+**It always falls back and always says which.** A worker can fail for reasons no
+build check reaches — a browser without them, a page on `file://`, a policy that
+forbids them — so `Farm::start` cannot fail: it returns something that generates
+either way, and the panel carries a line saying *where writing happens*. Until
+the worker has answered once, that line says so: a worker that quietly failed to
+start and one that quietly worked look identical from a chair, and the difference
+is the entire feature.
+
+Until a browser has run it, that is exactly what this is: built, type-checked on
+both targets, its protocol tested on the desktop, and **unverified where it
+matters**. 6.4's stream rebuild is still there and still the safety net.
 
 ### 7.4 Built, and how
 
@@ -1243,8 +1288,9 @@ Status is one of **done**, **partial** — usable and honestly incomplete — or
 | 4.1 | The strip drawing the piece it was given rather than the controls, which have moved | `the_strip_is_given_the_piece_it_is_drawing`, `a_click_in_a_lane_rests_that_voice` |
 | 4.4 | The search choosing the rests, off by default, with the finding beside the switch | `the_search_can_choose_who_rests`, `drawing_the_texture_is_off_and_at_three_voices_is_the_same_piece` |
 | 6.3 | System MIDI out, on the synth's own clock, against a real port | `a_playhead_becomes_notes_and_leaves_none_held`, `the_ports_are_named_or_the_absence_is` |
+| 7.3 | Generating in a worker, with the protocol tested on the desktop and a fallback that says so | `a_reply_becomes_a_piece_or_a_reason`, `there_is_always_somewhere_to_generate_and_it_is_named` |
 
-Fifty-five tests, all headless — three of them only where a MIDI port exists. The interesting one is
+Fifty-seven tests, all headless — three of them only where a MIDI port exists. The interesting one is
 `every_offered_subject_composes`: each of the 24 subjects is composed on the
 shortest layout that is still a fugue, because a picker whose entries have not
 been tried is a picker that wastes the one click a beginner is sure to make. It
@@ -1267,7 +1313,6 @@ silence is, in samples.
 | # | section | what | blocked on |
 |---|---|---|---|
 | 1 | 4.5 | A block palette, judged by the grammar rather than gated by it | blocks addressable one at a time |
-| 2 | 7.3 | Generating in a worker, so the sound survives the work | a worker build; 6.4 is the workaround until then |
 | 3 | 4.4 | A texture that varies for a *musical* reason | a criterion, and readme §8.10 is about what those do |
 
 **Texture is built, and four voices with it.** `compose::resting` rests a voice
@@ -1339,6 +1384,11 @@ Stated rather than left to be discovered:
   combination still *references* the panic, and referencing is not calling. The
   path it was reached by is gone; whether the string is reachable at all is
   unknown, and saying so is better than reporting a clean binary.
+- **The worker is built and has never run.** 7.3 has what it does and how it
+  falls back. What no test here reaches is whether a browser starts it, whether
+  the two paths trunk emits are the two paths it serves, and whether the sound
+  actually survives — the panel says where writing is happening precisely so that
+  the first of those takes one glance rather than a debugger.
 - **Generation no longer blocks the frame, and on the web that is still not
   enough.** `compose::Run` fills a block at a time and the interface spends six
   milliseconds of each frame on it, so the window stays answerable and the plan

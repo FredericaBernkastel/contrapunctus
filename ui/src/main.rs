@@ -12,6 +12,7 @@ mod app;
 mod audio;
 mod catalog;
 mod compass;
+mod farm;
 mod files;
 mod glyph;
 #[cfg(feature = "midi-out")]
