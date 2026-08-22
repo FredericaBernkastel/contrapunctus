@@ -56,7 +56,9 @@ pub fn height(voices: usize) -> f32 {
 
 /// What a gesture asks for. Every variant is a `Layout` field, because nothing
 /// else is a parameter — spec 4.2.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+///
+/// Not `Copy` since 4.5: `Append` carries a block, and a block is not a number.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Edit {
   /// `middles[k]` becomes this degree.
   Key(usize, i16),
@@ -82,6 +84,22 @@ pub enum Edit {
   /// not a per-block parameter and never was; what is settable is where the
   /// chain is rotated. `id` keys `Layout::turns` and `block` is where it is now.
   Turn { block: usize, id: u64, by: i16 },
+  /// The plan stops being derived and becomes blocks — 4.5's way in.
+  ///
+  /// Not an edit to the music: `taken_apart` is exact, so the piece is the same
+  /// piece the moment after. What changes is what can be said about it.
+  TakeApart,
+  /// Back to the parameters, throwing the authored blocks away.
+  PutBack,
+  /// A block appended to an authored plan.
+  Append(compose::Built),
+  /// A block taken out of an authored plan.
+  Drop(usize),
+  /// An authored block's length in bars, for an episode.
+  Bars(usize, i64),
+  /// An authored block moved to another lane. **A lane and not a rotation**: a
+  /// built plan authors its own, so 4.3's chain has nothing to say about it.
+  Lane(usize, usize),
   /// This voice stops accompanying in this block, or starts again — 4.4's rest.
   ///
   /// The grammar already rests a voice until it has entered and that is not
@@ -133,9 +151,24 @@ impl Edit {
         let last = compose::origins(d, l).len().checked_sub(1)?;
         Some(block.saturating_sub(1)..=last)
       }
+      // A lane is span-preserving on a built plan — the block stays where it is
+      // and changes which voice carries it — and reaches back one, for the reason
+      // a turn does: the block before rests whoever is about to enter.
+      Edit::Lane(at, _) => {
+        let last = compose::origins(d, l).len().checked_sub(1)?;
+        Some(at.saturating_sub(1)..=last)
+      }
       // All of these change how many blocks there are, so every bar after them
-      // moves and there is nothing local about it.
-      Edit::EpisodeBars(_)
+      // moves and there is nothing local about it. `TakeApart` and `PutBack`
+      // change none, and are still recomposed: they are a change of *mode*, and
+      // one that reported itself as local would be promising a locality it has
+      // no way to check the far side of.
+      Edit::TakeApart
+      | Edit::PutBack
+      | Edit::Append(_)
+      | Edit::Drop(_)
+      | Edit::Bars(..)
+      | Edit::EpisodeBars(_)
       | Edit::LinkBars(_)
       | Edit::AddMiddle { .. }
       | Edit::RemoveMiddle(_)
@@ -146,7 +179,7 @@ impl Edit {
   /// The layout this edit would produce. One function, used both to preview the
   /// edit and to commit it, so the picture cannot promise something the commit
   /// does not do.
-  pub fn applied(self, l: &Layout) -> Layout {
+  pub fn applied(self, d_hint: &Design, l: &Layout) -> Layout {
     let mut out = l.clone();
     match self {
       Edit::Key(k, deg) => {
@@ -169,6 +202,32 @@ impl Edit {
       // Turns at one place add up, and one that adds up to nothing is taken out
       // rather than left as a rotation of zero. Otherwise dragging a block down
       // and back up would leave a settings file that says something happened.
+      Edit::TakeApart => out.built = Some(compose::taken_apart(d_hint, l)),
+      Edit::PutBack => out.built = None,
+      Edit::Append(b) => {
+        if let Some(v) = out.built.as_mut() {
+          v.push(b);
+        }
+      }
+      Edit::Drop(at) => {
+        if let Some(v) = out.built.as_mut() {
+          if at < v.len() {
+            v.remove(at);
+          }
+        }
+      }
+      Edit::Bars(at, bars) => {
+        if let Some(compose::Built::Episode { bars: n, .. }) = out.built.as_mut().and_then(|v| v.get_mut(at)) {
+          *n = bars.clamp(1, 12);
+        }
+      }
+      Edit::Lane(at, voice) => {
+        if let Some(b) = out.built.as_mut().and_then(|v| v.get_mut(at)) {
+          match b {
+            compose::Built::Entry { voice: v, .. } | compose::Built::Episode { voice: v, .. } => *v = voice,
+          }
+        }
+      }
       Edit::Rest { id, voice, .. } => {
         match out.rests.iter_mut().find(|(k, _)| *k == id) {
           Some((_, vs)) => {
@@ -315,7 +374,8 @@ impl Strip<'_> {
             if h.drag_stopped() {
               asked.edit = Some(e);
             } else {
-              proposed = Some((e, e.applied(self.layout)));
+              let next = e.clone().applied(self.design, self.layout);
+                proposed = Some((e, next));
             }
           }
         }
@@ -357,7 +417,8 @@ impl Strip<'_> {
               if h.drag_stopped() {
                 asked.edit = Some(e);
               } else {
-                proposed = Some((e, e.applied(self.layout)));
+                let next = e.clone().applied(self.design, self.layout);
+                proposed = Some((e, next));
               }
             }
           }
@@ -396,7 +457,8 @@ impl Strip<'_> {
               if h.drag_stopped() {
                 asked.edit = Some(e);
               } else {
-                proposed = Some((e, e.applied(self.layout)));
+                let next = e.clone().applied(self.design, self.layout);
+                proposed = Some((e, next));
               }
             }
           }
@@ -429,6 +491,62 @@ impl Strip<'_> {
             ui.close();
           }
         });
+      }
+    }
+
+    // ---- the palette: 4.5's blocks, where the plan is authored rather than derived
+    //
+    // Only on a built plan, and only as gestures the *blocks* understand: a
+    // derived plan's edits are phrased over returns and links, which an authored
+    // plan does not have. Two vocabularies, and which one is offered is decided
+    // by `Origin` rather than by a flag somebody has to keep in step.
+    if self.writing.is_none() && self.layout.built.is_some() {
+      for (i, b) in self.out.blocks.iter().enumerate() {
+        let Some(v) = voice_of(&b.kind).filter(|v| *v < voices) else { continue };
+        let r = block_rect(b, v, &x_of, &lane_top);
+        let h = ui.interact(r, ui.id().with(("built", i)), Sense::click_and_drag());
+
+        // Dragged out of its lane: the block moves there. A lane and not a
+        // rotation — an authored plan sets its own, so 4.3's chain, which is
+        // what a turn rotates, has nothing to say about one.
+        if h.dragged() || h.drag_stopped() {
+          if let Some(pos) = h.interact_pointer_pos() {
+            let to = lane_at(pos.y);
+            if to != v {
+              let e = Edit::Lane(i, to);
+              if h.drag_stopped() {
+                asked.edit = Some(e);
+              } else {
+                let next = e.clone().applied(self.design, self.layout);
+                proposed = Some((e, next));
+              }
+            }
+          }
+        } else {
+          let bars = b.len / measure.max(1);
+          let episode = matches!(b.kind, Kind::Episode { .. });
+          opened(&h).show(|ui| {
+            ui.label(egui::RichText::new(describe(b)).strong());
+            if episode {
+              ui.label(egui::RichText::new("bars").weak().small());
+              for n in [1i64, 2, 3, 4, 6] {
+                if ui.selectable_label(n == bars, format!("{n}")).clicked() {
+                  asked.edit = Some(Edit::Bars(i, n));
+                  ui.close();
+                }
+              }
+              ui.separator();
+            }
+            if ui.button("write these bars again").clicked() {
+              asked.edit = Some(Edit::Reroll { block: i, id: ids[i] });
+              ui.close();
+            }
+            if ui.button("take this block out").clicked() {
+              asked.edit = Some(Edit::Drop(i));
+              ui.close();
+            }
+          });
+        }
       }
     }
 
@@ -574,6 +692,26 @@ impl Strip<'_> {
       }
     }
 
+    // ---- the palette's own row, where a derived plan has its handles
+    if self.layout.built.is_some() {
+      let y = area.bottom() - HANDLES;
+      let mut at = egui::Rect::from_min_size(Pos2::new(area.left() + 2.0, y), Vec2::new(150.0, HANDLES - 2.0));
+      let mut put = |ui: &mut Ui, label: &str, hint: &str, what: Edit| {
+        let r = egui::Rect::from_min_size(at.min, Vec2::new(label.len() as f32 * 6.5 + 14.0, HANDLES - 2.0));
+        at = egui::Rect::from_min_size(Pos2::new(r.max.x + 4.0, y), r.size());
+        if ui.put(r, egui::Button::new(egui::RichText::new(label).size(10.0)).small()).on_hover_text(hint).clicked() {
+          asked.edit = Some(what);
+        }
+      };
+      // Appended at the end and in the top voice, because a palette that made
+      // those choices for you would be a generator with fewer parameters.
+      put(ui, "+ entry", "A statement of the subject, as long as the subject is.",
+        Edit::Append(compose::Built::Entry { voice: 0, shift: 0, tonal: false, key_of: 0 }));
+      put(ui, "+ episode", "An episode of two bars, its motive in the top voice.",
+        Edit::Append(compose::Built::Episode { voice: 0, shift: 0, key_of: 0, bars: 2 }));
+      put(ui, "put it back", "Back to a plan derived from the controls, throwing these blocks away.", Edit::PutBack);
+    }
+
     // ---- the handles: a return added, a return removed, the close toggled
     //
     // These are the edits 4.2 wanted as gestures on the blocks themselves, and
@@ -664,7 +802,13 @@ impl Strip<'_> {
           format!("into voice {lane}, and every block after it moves with it")
         }
         // None of these is ever dragged, so none is ever previewed.
-        Edit::Rest { .. }
+        Edit::TakeApart
+        | Edit::PutBack
+        | Edit::Append(_)
+        | Edit::Drop(_)
+        | Edit::Bars(..)
+        | Edit::Lane(..)
+        | Edit::Rest { .. }
         | Edit::Key(..)
         | Edit::Reroll { .. }
         | Edit::AddMiddle { .. }
@@ -892,11 +1036,11 @@ mod tests {
       Edit::Turn { block: 9, id: compose::identities_of(&d, &base_layout)[9], by: -1 },
     ];
     for e in cases {
-      let l = e.applied(&base_layout);
+      let l = e.clone().applied(&d, &base_layout);
       let after = compose::derive(&d, &l);
       let same = after.len() == base.len()
         && after.iter().zip(&base).all(|(a, b)| a.at == b.at && a.len == b.len);
-      assert_eq!(e.touches(&d, &l).is_some(), same, "{e:?} is classified wrongly: derive says same-span = {same}");
+      assert_eq!(e.clone().touches(&d, &l).is_some(), same, "{e:?} is classified wrongly: derive says same-span = {same}");
     }
   }
 
@@ -910,8 +1054,8 @@ mod tests {
     let before = compose::derive(&d, &l0);
 
     for e in [Edit::Key(1, 6), Edit::MoveMiddle(0, 2), Edit::MoveMiddle(2, 1)] {
-      let l = e.applied(&l0);
-      let Some(range) = e.touches(&d, &l) else { continue };
+      let l = e.clone().applied(&d, &l0);
+      let Some(range) = e.clone().touches(&d, &l) else { continue };
       let after = compose::derive(&d, &l);
       let changed: Vec<usize> =
         (0..before.len()).filter(|i| before[*i].key_of != after[*i].key_of || before[*i].kind != after[*i].kind).collect();
@@ -926,7 +1070,7 @@ mod tests {
     // A reroll changes no block's *plan* at all — only the notes drawn into one
     // — so it claims exactly its own block and derive sees nothing.
     let e = Edit::Reroll { block: 6, id: compose::identities_of(&d, &l0)[6] };
-    let l = e.applied(&l0);
+    let l = e.clone().applied(&d, &l0);
     assert_eq!(e.touches(&d, &l), Some(6..=6));
     assert_eq!(compose::derive(&d, &l).len(), before.len(), "a reroll must not change the plan");
   }
@@ -952,7 +1096,7 @@ mod tests {
       .expect("a middle");
 
     let e = Edit::Turn { block: at, id: ids[at], by: 1 };
-    let l = e.applied(&l0);
+    let l = e.clone().applied(&d, &l0);
     let range = e.touches(&d, &l).expect("a turn is span-preserving");
     assert_eq!(*range.start(), at - 1, "a turn must claim the block before it");
     assert_eq!(*range.end(), before.len() - 1, "a turn reaches the end of the piece");
@@ -979,9 +1123,9 @@ mod tests {
       .position(|o| matches!(o, compose::Origin::Middle(_)))
       .expect("a middle");
 
-    let down = Edit::Turn { block: at, id: ids[at], by: 1 }.applied(&l0);
+    let down = Edit::Turn { block: at, id: ids[at], by: 1 }.applied(&d, &l0);
     assert_eq!(down.turns, vec![(ids[at], 1)]);
-    let up = Edit::Turn { block: at, id: ids[at], by: -1 }.applied(&down);
+    let up = Edit::Turn { block: at, id: ids[at], by: -1 }.applied(&d, &down);
     assert!(up.turns.is_empty(), "a turn and its opposite left {:?} behind", up.turns);
     assert_eq!(up, l0, "a turn undone is not the layout it started from");
   }
@@ -1018,7 +1162,7 @@ mod tests {
           continue;
         };
         offered += 1;
-        let after = e.applied(&l);
+        let after = e.clone().applied(&d, &l);
         // The layout is one the library accepts *as a layout*. `Run::new` is
         // exactly that question — it derives the plan and validates the turns
         // and fills nothing — so this asks it rather than composing 24 fugues to
@@ -1069,7 +1213,7 @@ mod tests {
       let ctx = egui::Context::default();
       crate::glyph::install(&ctx);
       let screen = egui::Rect::from_min_size(Pos2::ZERO, egui::vec2(900.0, 600.0));
-      let asked = std::cell::Cell::new(None);
+      let asked = std::cell::RefCell::new(None);
       let spot = std::cell::Cell::new(Pos2::ZERO);
       let clock = std::cell::Cell::new(1.0f64);
       let frame = |events: Vec<Event>| {
@@ -1088,7 +1232,7 @@ mod tests {
             ));
             let a = Strip { out: &out, design: &d, layout: &l, playhead: None, window: None, writing: None }.show(ui);
             if a.edit.is_some() {
-              asked.set(a.edit);
+              *asked.borrow_mut() = a.edit;
             }
           })
           .drop_without_applying_deltas();
@@ -1107,7 +1251,8 @@ mod tests {
         modifiers: Modifiers::NONE,
       }]);
 
-      match asked.get() {
+      let got = asked.borrow().clone();
+      match got {
         Some(Edit::Rest { block, voice, .. }) => {
           assert_eq!((block, voice), (bi, target), "{voices} voices: the click landed on the wrong lane");
         }
@@ -1116,23 +1261,77 @@ mod tests {
     }
   }
 
+  /// **The palette's edits build a plan, and the derived plan's edits are not
+  /// offered on one** — 4.5, and the two vocabularies it says are needed.
+  ///
+  /// Which one is offered is decided by `Origin`, so they cannot drift: a built
+  /// plan's blocks all come back `Origin::Built`, which matches none of the
+  /// patterns the return and link edits are written over.
+  #[test]
+  fn a_built_plan_takes_the_palette_and_not_the_parameters() {
+    let d = design();
+    let derived = Layout { middles: vec![4], episode_bars: 2, ..Layout::default() };
+
+    // in, exactly
+    let apart = Edit::TakeApart.applied(&d, &derived);
+    assert!(apart.built.is_some());
+    assert_eq!(
+      compose::derive(&d, &apart).len(),
+      compose::derive(&d, &derived).len(),
+      "taking it apart changed the plan"
+    );
+    assert!(
+      compose::origins(&d, &apart).iter().all(|o| *o == compose::Origin::Built),
+      "an authored block still claims to have come from a parameter"
+    );
+
+    // the palette
+    let n = apart.built.as_ref().unwrap().len();
+    let grown = Edit::Append(compose::Built::Episode { voice: 1, shift: 0, key_of: 0, bars: 3 }).applied(&d, &apart);
+    assert_eq!(grown.built.as_ref().unwrap().len(), n + 1);
+    assert_eq!(compose::derive(&d, &grown).len(), n + 1, "the appended block is not in the plan");
+
+    let longer = Edit::Bars(n, 5).applied(&d, &grown);
+    assert_eq!(compose::derive(&d, &longer).last().unwrap().len, 5 * d.measure, "the bars did not change");
+
+    let moved = Edit::Lane(n, 2).applied(&d, &longer);
+    assert_eq!(voice_of(&compose::derive(&d, &moved)[n].kind), Some(2), "the block did not move lane");
+
+    let shrunk = Edit::Drop(0).applied(&d, &moved);
+    assert_eq!(shrunk.built.as_ref().unwrap().len(), n, "the block was not taken out");
+
+    // and the parameters are inert while built is set
+    let noisy = Edit::EpisodeBars(6).applied(&d, &grown);
+    assert_eq!(
+      compose::derive(&d, &noisy).len(),
+      compose::derive(&d, &grown).len(),
+      "a parameter moved an authored plan"
+    );
+
+    // out again
+    let back = Edit::PutBack.applied(&d, &grown);
+    assert!(back.built.is_none());
+    assert_eq!(compose::derive(&d, &back).len(), compose::derive(&d, &derived).len(), "putting it back lost the plan");
+  }
+
   /// A drag says the same thing the commit does, because both go through
   /// `applied`. Worth a line: the preview promising one plan and the commit
   /// producing another is the failure mode a live preview invents.
   #[test]
   fn the_preview_and_the_commit_are_the_same_function() {
+    let d = design();
     let l0 = Layout::default();
     for e in [Edit::EpisodeBars(5), Edit::LinkBars(2), Edit::LinkBars(0), Edit::MoveMiddle(0, 1)] {
-      assert_eq!(e.applied(&l0), e.applied(&l0));
+      assert_eq!(e.clone().applied(&d, &l0), e.clone().applied(&d, &l0));
     }
     // and asking for a block again counts, rather than toggling
-    let once = Edit::Reroll { block: 0, id: 7 }.applied(&l0);
+    let once = Edit::Reroll { block: 0, id: 7 }.applied(&d, &l0);
     assert_eq!(once.rerolls, vec![(7, 1)]);
-    let twice = Edit::Reroll { block: 0, id: 7 }.applied(&once);
+    let twice = Edit::Reroll { block: 0, id: 7 }.applied(&d, &once);
     assert_eq!(twice.rerolls, vec![(7, 2)], "asking twice must not undo asking once");
 
-    assert_eq!(Edit::EpisodeBars(99).applied(&l0).episode_bars, 8, "clamped");
-    assert_eq!(Edit::EpisodeBars(0).applied(&l0).episode_bars, 1, "clamped");
-    assert!(Edit::LinkBars(0).applied(&l0).link.is_none(), "dragged to nothing removes it");
+    assert_eq!(Edit::EpisodeBars(99).applied(&d, &l0).episode_bars, 8, "clamped");
+    assert_eq!(Edit::EpisodeBars(0).applied(&d, &l0).episode_bars, 1, "clamped");
+    assert!(Edit::LinkBars(0).applied(&d, &l0).link.is_none(), "dragged to nothing removes it");
   }
 }

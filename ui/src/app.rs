@@ -353,11 +353,11 @@ impl App {
   /// for the length of the drag, so the second is not a surprise by the time it
   /// happens.
   fn apply(&mut self, e: strip::Edit) {
-    let next = e.applied(&self.layout);
+    let next = e.clone().applied(&self.design, &self.layout);
     if next == self.layout {
       return;
     }
-    match e.touches(&self.design, &next) {
+    match e.clone().touches(&self.design, &next) {
       Some(blocks) => self.recolour(e, blocks, next),
       None => self.rebuild(e, next),
     }
@@ -1317,6 +1317,45 @@ impl App {
       }
 
       ui.add_space(12.0);
+      group(ui, "THE PLAN ITSELF");
+      if self.layout.built.is_none() {
+        labelled(ui, "Derived from the controls below", "Layout::built = None");
+        if ui
+          .button("Take it apart into blocks")
+          .on_hover_text(
+            "The controls below are the parameters of a *generator* of plans. Taking it apart              gives you the plan itself — blocks to add, drag between voices, resize and remove.              The piece does not change: it is the same blocks, said a different way.",
+          )
+          .clicked()
+        {
+          from_panel = Some(strip::Edit::TakeApart);
+        }
+        ui.label(
+          RichText::new(
+            "Nothing then checks that what you build is a fugue. The grammar reports on it              instead — the five verdicts below — because a palette that only allowed legal plans              would teach nothing, everything it allowed being legal already.",
+          )
+          .weak()
+          .small(),
+        );
+      } else {
+        let n = self.layout.built.as_ref().map_or(0, |v| v.len());
+        labelled(ui, &format!("Built, {n} blocks"), "Layout::built");
+        ui.label(
+          RichText::new(
+            "Drag a block between voices, click one for its length or to take it out, and the              row under the plan adds more. The returns and the link below say nothing now: they              are the generator's parameters and this is no longer generated.",
+          )
+          .weak()
+          .small(),
+        );
+        if ui
+          .button("Put it back")
+          .on_hover_text("Back to a plan derived from the controls. These blocks are thrown away.")
+          .clicked()
+        {
+          from_panel = Some(strip::Edit::PutBack);
+        }
+      }
+
+      ui.add_space(12.0);
       group(ui, "LAYOUT");
 
       labelled(ui, "Episode length", "Layout::episode_bars");
@@ -1495,6 +1534,15 @@ fn describe_edit(e: strip::Edit, l: &Layout) -> String {
       let resting = l.rests.iter().find(|(k, _)| *k == id).is_some_and(|(_, vs)| vs.contains(&voice));
       format!("voice {} {} there", voice + 1, if resting { "rests" } else { "plays again" })
     }
+    strip::Edit::TakeApart => "the plan taken apart into blocks — the parameters have nothing more to say".to_string(),
+    strip::Edit::PutBack => "back to a derived plan, and the blocks thrown away".to_string(),
+    strip::Edit::Append(_) => format!("a block added — {} in all", l.built.as_ref().map_or(0, |v| v.len())),
+    strip::Edit::Drop(_) => format!("a block taken out — {} left", l.built.as_ref().map_or(0, |v| v.len())),
+    strip::Edit::Bars(at, _) => format!("block {} of {} bars", at + 1, match l.built.as_ref().and_then(|v| v.get(at)) {
+      Some(compose::Built::Episode { bars, .. }) => *bars,
+      _ => 0,
+    }),
+    strip::Edit::Lane(at, v) => format!("block {} moved to voice {}", at + 1, v + 1),
     strip::Edit::CloseAtHome(true) => "closing at home".to_string(),
     strip::Edit::CloseAtHome(false) => "stopping after the last return".to_string(),
   }
@@ -1884,7 +1932,7 @@ mod tests {
 
     for e in edits {
       let mut probe = probe_from(&start, &l0);
-      probe.apply(e);
+      probe.apply(e.clone());
       let Some(after) = probe.out.as_ref() else { continue };
       if probe.layout == l0 {
         continue; // a no-op, or it refused and left everything alone
@@ -1901,7 +1949,7 @@ mod tests {
       );
 
       // 2. and the bars before the edit did not move
-      let Some(range) = e.touches(&probe.design, &probe.layout) else { continue };
+      let Some(range) = e.clone().touches(&probe.design, &probe.layout) else { continue };
       let at = start.blocks[*range.start()].at;
       let before = |o: &Outcome, v: usize| -> Vec<(i64, i64, i16, i8)> {
         o.voices[v]

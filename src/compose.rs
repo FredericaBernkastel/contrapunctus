@@ -63,6 +63,46 @@ pub struct Design {
   pub compass: Vec<(i16, i16)>,
 }
 
+/// A block **as somebody authored it** — `docs/ui-spec.md` section 4.5's palette.
+///
+/// Not a [`Block`], and the difference is the point: **`at` is not here.** Where
+/// a block sits is derived by laying the list end to end from tick zero, so a
+/// gap and an overlap are not things a palette can express — the same guarantee
+/// the parameter path gets for free from accumulating, kept rather than replaced
+/// by a validator that would have to be remembered.
+///
+/// Nor is an entry's length, which is the subject's and is not a choice. Every
+/// field here is one somebody can mean.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Built {
+  /// A statement of the subject, as long as the subject is.
+  Entry { voice: usize, shift: i16, tonal: bool, key_of: i16 },
+  /// An episode of `bars` bars, its motive in `voice`.
+  Episode { voice: usize, shift: i16, key_of: i16, bars: i64 },
+}
+
+impl Built {
+  /// What this becomes at `at`, given the design that says how long a subject is.
+  fn block(&self, d: &Design, at: i64) -> Block {
+    match *self {
+      Built::Entry { voice, shift, tonal, key_of } => {
+        Block { at, len: subject_bars(d), kind: Kind::Entry { voice, shift, tonal }, key_of }
+      }
+      Built::Episode { voice, shift, key_of, bars } => {
+        Block { at, len: bars.max(1) * d.measure.max(1), kind: Kind::Episode { voice, shift }, key_of }
+      }
+    }
+  }
+
+  /// The lane it is in, which a palette authors directly.
+  pub fn voice(&self) -> usize {
+    match *self {
+      Built::Entry { voice, .. } | Built::Episode { voice, .. } => voice,
+    }
+  }
+}
+
 /// One block of the derivation.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug, PartialEq)]
@@ -314,6 +354,22 @@ pub struct Layout {
   /// generated and `docs/ui-spec.md` section 8 requires a saved fugue to reproduce.
   #[cfg_attr(feature = "serde", serde(default))]
   pub texture: Texture,
+  /// A plan **authored block by block**, instead of derived from the fields
+  /// above — section 4.5.
+  ///
+  /// When this is set, [`middles`](Layout::middles), `episode_bars`, `link` and
+  /// `close_at_home` say nothing: they are the parameters of a *generator* of
+  /// plans, and this is a plan. `derive` returns these, laid end to end.
+  ///
+  /// **Nothing validates that it is a fugue, and that is deliberate.**
+  /// `form::parse` already judges any plan against §2.4's grammar and returns
+  /// five independent verdicts, and those are what the generated pieces are
+  /// scored against. So a palette lets somebody build whatever they like and the
+  /// verdict says which of the five things they built — a palette that permitted
+  /// only legal plans would teach nothing, because everything it allowed would
+  /// already be legal.
+  #[cfg_attr(feature = "serde", serde(default))]
+  pub built: Option<Vec<Built>>,
 }
 
 impl Default for Layout {
@@ -331,6 +387,7 @@ impl Default for Layout {
       turns: vec![],
       rests: vec![],
       texture: Texture::Given,
+      built: None,
     }
   }
 }
@@ -381,6 +438,9 @@ pub fn turnable(d: &Design, l: &Layout, bi: usize) -> Result<(), String> {
   }
   match origins(d, l).get(bi) {
     None => Err(format!("no block {bi}")),
+    Some(Origin::Built) => Err(
+      "a built plan sets its own lanes; move the block rather than rotating the chain into it".into(),
+    ),
     Some(Origin::Exposition(_)) | Some(Origin::Link) => Err(
       "the exposition states the subject once in each voice; turning part of it would state it        twice in one and never in another"
         .into(),
@@ -410,6 +470,20 @@ fn check_turns(d: &Design, l: &Layout) -> Result<(), String> {
 }
 
 fn chain(d: &Design, l: &Layout) -> Vec<Block> {
+  // An authored plan is not derived from anything: it is laid end to end from
+  // tick zero, which is where the tiling guarantee comes from rather than from
+  // a check somebody has to remember to run.
+  if let Some(built) = &l.built {
+    let mut at = 0i64;
+    return built
+      .iter()
+      .map(|b| {
+        let block = b.block(d, at);
+        at += block.len;
+        block
+      })
+      .collect();
+  }
   let sl = subject_bars(d);
   let ep = l.episode_bars.max(1) * d.measure;
   let mut out = vec![];
@@ -1023,6 +1097,51 @@ pub fn rests_that_fit(d: &Design, l: &Layout) -> Vec<(u64, Vec<usize>)> {
   out
 }
 
+/// Take a derived plan apart into an authored one — section 4.5's way in.
+///
+/// A palette that starts empty is a palette nobody uses: the interesting thing
+/// to do to a fugue's plan is change it, and the interesting thing to change is
+/// one this program wrote. So the parameters produce a plan and this turns that
+/// plan into blocks, after which the parameters have nothing more to say.
+///
+/// It is exact. `derive(d, &Layout { built: Some(taken_apart(d, l)), ..l })`
+/// gives back the blocks `derive(d, l)` gave, which
+/// `taking_a_plan_apart_changes_nothing` asserts — because the moment it is not
+/// exact, "take it apart" becomes an edit somebody did not ask for.
+pub fn taken_apart(d: &Design, l: &Layout) -> Vec<Built> {
+  derive(d, l)
+    .into_iter()
+    .map(|b| match b.kind {
+      Kind::Entry { voice, shift, tonal } => Built::Entry { voice, shift, tonal, key_of: b.key_of },
+      Kind::Episode { voice, shift } => {
+        Built::Episode { voice, shift, key_of: b.key_of, bars: (b.len / d.measure.max(1)).max(1) }
+      }
+    })
+    .collect()
+}
+
+/// Refuse a layout whose blocks name a voice that is not there, or no blocks at
+/// all. **Nothing here asks whether it is a fugue** — `form::parse` answers that
+/// afterwards, and answering it here would be a palette that refuses to build
+/// what somebody wanted to look at.
+fn check_built(d: &Design, l: &Layout) -> Result<(), String> {
+  let Some(built) = &l.built else { return Ok(()) };
+  if built.is_empty() {
+    return Err("a built plan with no blocks in it is not a piece".into());
+  }
+  for (i, b) in built.iter().enumerate() {
+    if b.voice() >= d.voices {
+      return Err(format!("block {i} is in voice {}, and there are {} voices", b.voice(), d.voices));
+    }
+    if let Built::Episode { bars, .. } = b {
+      if *bars < 1 {
+        return Err(format!("block {i} is an episode of {bars} bars"));
+      }
+    }
+  }
+  Ok(())
+}
+
 /// Refuse a layout whose rests name a voice that is not there, or the one voice
 /// a block exists to carry. Checked where the plan is derived, beside the turns.
 fn check_rests(d: &Design, l: &Layout) -> Result<(), String> {
@@ -1153,6 +1272,7 @@ impl<'a> Run<'a> {
   /// the exposition is not a piece that fills badly — it is not a piece.
   pub fn new(d: &Design, l: &Layout, tier: &'a [Rule], seed: u64) -> Result<Run<'a>, String> {
     let t0 = crate::clock::Instant::now();
+    check_built(d, l)?;
     check_turns(d, l)?;
     check_rests(d, l)?;
     let blocks = derive(d, l);
@@ -1461,6 +1581,7 @@ pub fn refill_span(
   from: usize,
   to: usize,
 ) -> Result<Outcome, String> {
+  check_built(d, l)?;
   check_turns(d, l)?;
   check_rests(d, l)?;
   let blocks = derive(d, l);
@@ -1548,6 +1669,10 @@ pub fn encode(o: &Outcome, d: &Design, qpm: u32) -> Vec<u8> {
 /// `derive` by a test.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Origin {
+  /// A block somebody authored — [`Layout::built`]. It came from nothing but
+  /// itself, which is why every edit phrased over the parameters below simply
+  /// does not offer itself on one.
+  Built,
   /// One of the exposition's entries.
   Exposition(usize),
   /// The episode [`Layout::link`] inserts into the exposition.
@@ -1560,6 +1685,9 @@ pub enum Origin {
 
 /// One [`Origin`] per block of `derive(d, l)`, in the same order.
 pub fn origins(d: &Design, l: &Layout) -> Vec<Origin> {
+  if let Some(built) = &l.built {
+    return vec![Origin::Built; built.len()];
+  }
   let mut out = vec![];
   for i in 0..d.voices {
     out.push(Origin::Exposition(i));
@@ -1907,6 +2035,95 @@ mod tests {
     // about texture rather than about breaking the generator
     for (what, o) in [("given", &given), ("drawn", &drawn), ("thinnest", &thin)] {
       assert!(o.verdict.exposition_covers_the_voices, "{what} stopped being a fugue");
+    }
+  }
+
+  /// **Taking a plan apart changes nothing.**
+  ///
+  /// The way into section 4.5's palette is a plan this program wrote, and the
+  /// moment "take it apart" is not exact it becomes an edit nobody asked for.
+  /// Block for block, over every shape the parameters can make.
+  #[test]
+  fn taking_a_plan_apart_changes_nothing() {
+    let d = design();
+    for middles in [vec![], vec![4], vec![4, 5, 3]] {
+      for link in [None, Some((1, 1)), Some((0, 2))] {
+        for close in [true, false] {
+          let l = Layout { middles: middles.clone(), episode_bars: 2, link, close_at_home: close, ..Layout::default() };
+          let was = derive(&d, &l);
+          let apart = Layout { built: Some(taken_apart(&d, &l)), ..l.clone() };
+          assert_eq!(shape(&derive(&d, &apart)), shape(&was), "taken apart and put back differs: {l:?}");
+          // and the identities with them, so a reroll survives being taken apart
+          assert_eq!(identities_of(&d, &apart), identities_of(&d, &l), "the blocks changed name");
+        }
+      }
+    }
+  }
+
+  /// **An authored plan tiles time, and cannot be made not to.**
+  ///
+  /// `Built` has no `at` in it: where a block sits is derived by laying the list
+  /// end to end. So a gap and an overlap are not things a palette can express,
+  /// which is the guarantee the parameter path gets from accumulating and the
+  /// one 4.5 was most worried about losing.
+  #[test]
+  fn an_authored_plan_leaves_no_gaps_and_no_overlaps() {
+    let d = design();
+    let built = vec![
+      Built::Entry { voice: 0, shift: 0, tonal: false, key_of: 0 },
+      Built::Episode { voice: 2, shift: 0, key_of: 4, bars: 3 },
+      Built::Entry { voice: 1, shift: 4, tonal: true, key_of: 4 },
+      Built::Episode { voice: 0, shift: 0, key_of: 0, bars: 1 },
+    ];
+    let l = Layout { built: Some(built.clone()), ..Layout::default() };
+    let blocks = derive(&d, &l);
+    assert_eq!(blocks.len(), built.len());
+    assert_eq!(blocks[0].at, 0, "the piece does not start at the beginning");
+    for w in blocks.windows(2) {
+      assert_eq!(w[0].at + w[0].len, w[1].at, "a gap or an overlap between two authored blocks");
+    }
+    // an episode's length is authored in bars; an entry's is the subject's
+    assert_eq!(blocks[1].len, 3 * d.measure);
+    assert_eq!(blocks[0].len, subject_bars(&d));
+
+    // the parameters say nothing once blocks are authored
+    let noisy = Layout { middles: vec![1, 2, 3], episode_bars: 6, close_at_home: true, ..l.clone() };
+    assert_eq!(shape(&derive(&d, &noisy)), shape(&blocks), "a parameter moved an authored plan");
+  }
+
+  /// **An authored plan composes, and the grammar judges it rather than gating
+  /// it** — which is 4.5's whole argument. A plan that is not a fugue is written
+  /// and then told what it is missing.
+  #[test]
+  fn an_authored_plan_composes_and_is_judged_not_gated() {
+    let d = design();
+    // deliberately not a fugue: one entry, then episodes, and no exposition
+    let l = Layout {
+      built: Some(vec![
+        Built::Entry { voice: 0, shift: 0, tonal: false, key_of: 0 },
+        Built::Episode { voice: 1, shift: 0, key_of: 0, bars: 2 },
+        Built::Entry { voice: 1, shift: 0, tonal: false, key_of: 0 },
+      ]),
+      ..Layout::default()
+    };
+    let o = fugue(&d, &l, CONFIRMED, 0x5EED).expect("an authored plan composes");
+    assert_eq!(o.blocks.len(), 3);
+    // and the verdict says what it is not, rather than the layout having refused
+    assert!(!o.verdict.exposition_covers_the_voices, "three voices were covered by two entries");
+
+    // what *is* refused is a plan that is not a plan
+    let empty = Layout { built: Some(vec![]), ..Layout::default() };
+    match fugue(&d, &empty, CONFIRMED, 0x5EED) {
+      Ok(_) => panic!("a plan with no blocks composed"),
+      Err(e) => assert!(e.contains("no blocks"), "refused for another reason: {e}"),
+    }
+    let nowhere = Layout {
+      built: Some(vec![Built::Entry { voice: 9, shift: 0, tonal: false, key_of: 0 }]),
+      ..Layout::default()
+    };
+    match fugue(&d, &nowhere, CONFIRMED, 0x5EED) {
+      Ok(_) => panic!("a block in a voice that does not exist composed"),
+      Err(e) => assert!(e.contains("voice 9"), "refused for another reason: {e}"),
     }
   }
 

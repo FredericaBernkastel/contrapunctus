@@ -474,23 +474,38 @@ deliberately before an entry, for §8.16's leap-of-an-eleventh reason, and has
 never done it anywhere else. Whether the counterpoint survives being cold that
 often is not something §8.17 asked.
 
-### 4.5 Building a plan rather than choosing one — not built
+### 4.5 Building a plan rather than choosing one — built
 
 `Layout` is a **plan generator**: six parameters, and `derive` expands them. The
 alternative a reader asks for once they understand the strip is a **palette** —
 blocks dragged onto the lanes, and the plan authored rather than derived.
 
-It is possible, and the interesting part is what `derive` currently supplies for
-free:
+`Layout::built` is that palette, and the way in is **Take it apart into blocks**:
+a palette that starts empty is one nobody uses, so it starts from the plan this
+program wrote. `compose::taken_apart` is exact — the piece is the same piece the
+moment after, block for block and identity for identity — because the moment it
+is not, "take it apart" is an edit nobody asked for.
 
-- **Blocks tile time.** `Block::at` accumulates, so gaps and overlaps are not
-  expressible. Authored blocks make both expressible and the strip would have to
-  close them itself.
-- **`origins` names what a block came from.** Every edit in 4.2 is phrased over
-  `Origin::Middle(k)` — *this return goes to the dominant*. A hand-built plan has
-  no returns to index, so those edits need a second vocabulary at the block level.
-- **`identities_of` keys the rerolls and the turns**, off the chain a layout
-  derives. Authored blocks need identities that are theirs.
+Three things `derive` supplied for free, and what each became:
+
+- **Blocks tile time.** Kept, and kept the same way: `Built` has **no `at` in
+  it**. Where a block sits is derived by laying the list end to end from tick
+  zero, so a gap and an overlap are not things the palette can express. An entry's
+  length is the subject's for the same reason. Every field left is one somebody
+  can mean, and the guarantee is structural rather than a validator to remember.
+- **`origins` names what a block came from.** A second vocabulary, as predicted,
+  and `Origin::Built` is what keeps the two apart. Every 4.2 edit is written over
+  `Origin::Middle(k)` or `Origin::Link`, which an authored block matches neither
+  of — so the returns and the link simply stop being offered, and the palette's
+  own gestures appear instead. **Which vocabulary is on offer is decided by the
+  same function that decides what a block is**, rather than by a mode flag two
+  places have to agree about.
+- **`identities_of` keys the rerolls and the turns.** It reads the chain, and for
+  a built plan the chain *is* the blocks — so a reroll survives being taken apart,
+  which `taking_a_plan_apart_changes_nothing` asserts along with the rest.
+
+A turn is refused on a built plan, with the reason: it rotates the chain, and an
+authored plan sets its own lanes. Drag the block instead.
 
 **The grammar is already the safety net, and this is the argument for doing it.**
 `form::parse` judges *any* plan against §2.4's grammar and returns five
@@ -499,10 +514,15 @@ dominant, runs unbroken, there is a middle, it ends at home. That is what the
 generated fugues are scored against already; nothing new is needed to score an
 authored one.
 
-So the palette should **not** refuse an illegal drop. It should let the plan be
-built and let the verdict say which of the five things it is missing. That is
-1's two-user problem exactly: presets for somebody who wants a fugue, and a
-palette plus a live verdict for somebody who wants to know what a fugue is. A
+So the palette does **not** refuse an illegal drop, and
+`an_authored_plan_composes_and_is_judged_not_gated` is that as a test: a plan with
+one entry and no exposition composes, and comes back with
+`exposition_covers_the_voices` false. What *is* refused is a plan that is not a
+plan — no blocks at all, or a block in a voice that does not exist — because those
+are not illegal fugues, they are unanswerable questions.
+
+That is 1's two-user problem exactly: presets for somebody who wants a fugue, and
+a palette plus a live verdict for somebody who wants to know what a fugue is. A
 palette that only permits legal plans teaches nothing, because everything it
 allows is already legal.
 
@@ -1192,33 +1212,33 @@ Ordered by whether an interface can start without it.
 
 | # | change | why | size |
 |---|---|---|---|
-| 1 | Blocks addressable one at a time, for 4.5's palette | so a plan can be built rather than derived | medium |
-| 2 | A CDCL solver | **four parts sounding together**, and stretto packing | §9 |
+| 1 | A CDCL solver | **four parts sounding together**, and stretto packing | §9 |
 
-**Item 1 is measured and it is larger than it looks.** readme §8.17 asked what a
-resting voice costs and found that the search's wall moves with the number of
-voices it must *choose*, not with the number sounding: four voices with one
-resting costs 8 434 peak states, which is what three voices costs to the state,
-and fills in the same 150 ms with nothing relaxed. So the same field that fixes
-the texture also buys the voice count that readme §9 had assigned to a solver.
-`compose::fill_block` already takes a `silent` argument and `compose::block_cost`
-is the measurement's way in.
+**One item left, and it is narrower than the one it replaced.** This list opened
+with "four voices, and five" against a CDCL solver. Four voices turned out to be
+a texture decision costing a `Layout` field — readme §8.17 measured four voices
+with one resting at 8 434 peak states, which is three voices' figure to the state
+— and a whole four-voice fugue now composes without a solver anywhere near it.
 
-**Both halves of the texture are built**: `compose::resting` for the grammar's own
-rule and `Layout::rests` for the choice it cannot make, with
-`compose::rests_that_fit` supplying a pattern that keeps a piece under the wall.
-readme §8.17 has a whole four-voice fugue — 29 bars, all four grammar checks
-passing, three of thirteen blocks losing the join where the three-voice piece
-loses one.
+What the solver is actually for is four voices **sounding together**, which is
+three free voices and is the wall itself: no arrangement of rests moves it, and
+the four-voice piece runs `1 1 2 2 3 3 3 …` and never reaches four at once. Two
+different things were being called four voices, and only one of them was ever a
+solver problem. Stretto packing is the other half and is unchanged.
 
-**Item 3 is narrower than it was and clearer for it.** Four voices *sounding
-together* is three free voices, which is the wall itself and no arrangement of
-rests moves it — the four-voice piece runs `1 1 2 2 3 3 3 ...` and never reaches
-four at once. So the solver is for **texture density**, not for the voice count.
-Two things were being called four voices, and only one of them was ever a solver
-problem.
+Everything on this list is now done:
 
-Everything else on this list is now done:
+- **`Layout::built` and `compose::taken_apart`** — a plan authored block by block
+  instead of derived, with `Origin::Built` keeping 4.5's two vocabularies apart.
+  The tiling guarantee survives by construction rather than by validation:
+  `Built` has no `at` in it, so a gap is not a thing the palette can say.
+- **`Layout::rests`, `compose::resting` and `rests_that_fit`** — the grammar's
+  rule for who is silent before entering, the field for who is silent after, and
+  a pattern that keeps a piece under the wall. readme §8.17 has a whole
+  four-voice fugue: 29 bars, all four grammar checks passing, three of thirteen
+  blocks losing the join where the three-voice piece loses one.
+- **`Layout::texture`** — and readme §8.18 is why it defaults to `Given`. Both
+  ways of *choosing* a texture collapse onto a constant, in opposite directions.
 
 - **`Layout::turns`** — a rotation of the voice chain from one block on, which is
   what 4.3's voice drag turned out to be a parameter *for*. That section had said
@@ -1362,10 +1382,12 @@ Status is one of **done**, **partial** — usable and honestly incomplete — or
 | 3.2, 9 | **Four voices**, which asking for now sets a rest pattern for rather than refusing | `asking_for_four_voices_gives_four_voices`, `a_refusal_about_free_voices_names_its_own_cure` |
 | 4.1 | The strip drawing the piece it was given rather than the controls, which have moved | `the_strip_is_given_the_piece_it_is_drawing`, `a_click_in_a_lane_rests_that_voice` |
 | 4.4 | The search choosing the rests, off by default, with the finding beside the switch | `the_search_can_choose_who_rests`, `drawing_the_texture_is_off_and_at_three_voices_is_the_same_piece` |
+| 4.5 | A plan authored block by block, judged by the grammar rather than gated by it | `an_authored_plan_composes_and_is_judged_not_gated`, `a_built_plan_takes_the_palette_and_not_the_parameters` |
+| 4.5 | Taking a derived plan apart, exactly | `taking_a_plan_apart_changes_nothing`, `an_authored_plan_leaves_no_gaps_and_no_overlaps` |
 | 6.3 | System MIDI out, on the synth's own clock, against a real port, with the card silenced | `a_playhead_becomes_notes_and_leaves_none_held`, `a_midi_port_silences_the_card_without_stopping_it` |
 | 7.3 | Generating in a worker, with the protocol tested on the desktop and a fallback that says so | `a_reply_becomes_a_piece_or_a_reason`, `there_is_always_somewhere_to_generate_and_it_is_named` |
 
-Sixty tests, all headless — three of them only where a MIDI port exists. The interesting one is
+Sixty-four tests, all headless — three of them only where a MIDI port exists. The interesting one is
 `every_offered_subject_composes`: each of the 24 subjects is composed on the
 shortest layout that is still a fugue, because a picker whose entries have not
 been tried is a picker that wastes the one click a beginner is sure to make. It
@@ -1387,7 +1409,6 @@ silence is, in samples.
 
 | # | section | what | blocked on |
 |---|---|---|---|
-| 1 | 4.5 | A block palette, judged by the grammar rather than gated by it | blocks addressable one at a time |
 | 3 | 4.4 | A texture that varies for a *musical* reason | **a source** — readme §8.18 tried both mechanisms and both collapse |
 
 **Texture is built, and four voices with it.** `compose::resting` rests a voice
