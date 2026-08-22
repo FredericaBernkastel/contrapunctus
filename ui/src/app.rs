@@ -411,7 +411,7 @@ impl App {
     }
     match Player::open() {
       Ok(p) => {
-        p.set_mix(self.mix);
+        p.set_mix(heard(self.mix, self.to_midi()));
         self.player = Some(p);
         self.no_sound = None;
         self.reload_sound();
@@ -549,6 +549,7 @@ impl App {
     self.midi = None;
     let Some(i) = which else {
       self.status = Some("back to the built-in synth".into());
+      self.push_mix();
       return;
     };
     match midi::Out::open(i) {
@@ -558,6 +559,9 @@ impl App {
       }
       Err(e) => self.status = Some(e),
     }
+    // After, not before: the rule reads `self.midi`, and until it is set the
+    // answer is the one that was wrong.
+    self.push_mix();
   }
 
   /// Put the port where the playhead is. Once a frame, from the sound card's own
@@ -574,6 +578,27 @@ impl App {
       m.at(score, p.position());
     } else {
       m.silence();
+    }
+  }
+
+  /// Send the mix the card should be playing. Every caller goes through here, so
+  /// that "a MIDI port silences the synth" is one rule in one place rather than a
+  /// thing three call sites have to remember.
+  fn push_mix(&self) {
+    if let Some(p) = self.player.as_ref() {
+      p.set_mix(heard(self.mix, self.to_midi()));
+    }
+  }
+
+  /// Whether the notes are going out of a port rather than to the card.
+  fn to_midi(&self) -> bool {
+    #[cfg(feature = "midi-out")]
+    {
+      self.midi.is_some()
+    }
+    #[cfg(not(feature = "midi-out"))]
+    {
+      false
     }
   }
 
@@ -871,6 +896,9 @@ impl App {
       let measure = self.design.measure;
 
       ui.add_space(4.0);
+      // Set by the controls below and acted on after the row closes, because
+      // `push_mix` needs all of `self` and the row borrows pieces of it.
+      let mut push = false;
       ui.horizontal(|ui| {
         ui.label(RichText::new("PLAN").monospace().weak().small());
         ui.add_space(12.0);
@@ -887,9 +915,7 @@ impl App {
             .clicked()
           {
             self.mix.mute ^= 1 << v;
-            if let Some(p) = self.player.as_ref() {
-              p.set_mix(self.mix);
-            }
+            push = true;
           }
         }
 
@@ -910,11 +936,12 @@ impl App {
           )
           .changed()
         {
-          if let Some(p) = self.player.as_ref() {
-            p.set_mix(self.mix);
-          }
+          push = true;
         }
       });
+      if push {
+        self.push_mix();
+      }
       let head = self.playhead();
       let seen = self.seen.filter(|(a, b)| *b - *a < 0.999);
       let writing = self.work.as_ref().map(|r| (r.blocks(), r.progress().0));
@@ -1430,6 +1457,29 @@ fn describe_edit(e: strip::Edit, l: &Layout) -> String {
   }
 }
 
+/// What the sound card should actually play, given what is audible and where the
+/// notes are going — spec 6.3.
+///
+/// **The card keeps running when a MIDI port is open, and says nothing.** It is
+/// the clock: `midi::Out` is told where the playhead is, and the only thing that
+/// counts samples is the audio callback. So the stream stays up and every voice
+/// is muted, which is a different thing from stopping it and the reason the
+/// playhead still moves.
+///
+/// A free function because it is a rule and not a step, and because the rule was
+/// **written down and never applied** — `midi.rs` said "with every voice muted"
+/// from the first commit and three `set_mix` calls sent `self.mix` unchanged, so
+/// both sinks played at once. A sentence in a doc comment is not an
+/// implementation, and the way to tell the difference is to give it somewhere to
+/// be tested.
+fn heard(mix: Mix, to_midi: bool) -> Mix {
+  if to_midi {
+    Mix { mute: !0, ..mix }
+  } else {
+    mix
+  }
+}
+
 /// A group heading, in the mono voice the sketch uses for structure.
 fn group(ui: &mut Ui, title: &str) {
   ui.label(RichText::new(title).monospace().small().weak());
@@ -1489,6 +1539,42 @@ mod tests {
     // loop with the frame budget taken off.
     app.settle();
     assert!(app.out.is_some(), "the default settings did not produce a fugue: {:?}", app.refused);
+  }
+
+  /// **A MIDI port silences the card, and the card keeps running.**
+  ///
+  /// Reported: both sinks played at once. `midi.rs` had said "with every voice
+  /// muted" from its first line and nothing did it — three `set_mix` calls sent
+  /// the mix unchanged, so choosing a port added a second sound instead of
+  /// moving the notes to it. A sentence in a doc comment is not an
+  /// implementation.
+  ///
+  /// Muted rather than stopped, which is the other half: the card is the clock,
+  /// `midi::Out` is told where the playhead is, and a stopped stream is a
+  /// playhead that does not move.
+  #[test]
+  fn a_midi_port_silences_the_card_without_stopping_it() {
+    let quiet = Mix { mute: 0b010, tilt: 4.5 };
+    // to the card, what the listener asked for and nothing else
+    assert_eq!(heard(quiet, false).mute, 0b010, "the synth stopped hearing what the mute buttons said");
+    assert_eq!(heard(quiet, true).tilt, quiet.tilt, "a port changed the register balance, which is not its business");
+
+    // to a port, everything silent — and *every* voice, not only the ones the
+    // listener had already muted
+    let to_port = heard(quiet, true);
+    for v in 0..8 {
+      assert!(to_port.mute & (1 << v) != 0, "voice {v} still sounds on the card while a port is open");
+    }
+
+    // The listener's own mutes survive a port being opened and closed, because
+    // the silencing happens **on the way out** and never to the stored value —
+    // `push_mix` always reads `self.mix`, which no port writes to. Chaining
+    // `heard` into itself is not that property and does not hold: it is not
+    // invertible and was never meant to be.
+    let app = App { mix: quiet, ..App::default() };
+    assert_eq!(heard(app.mix, true).mute, !0, "a port did not silence the card");
+    assert_eq!(app.mix.mute, 0b010, "opening a port changed what the listener had asked for");
+    assert_eq!(heard(app.mix, false).mute, 0b010, "closing it did not give them back what they asked for");
   }
 
   /// **The strip draws the piece, not the controls** — and every gesture in it

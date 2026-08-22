@@ -745,6 +745,17 @@ be up to about 16 ms late against a quarter of 790 ms. That is audible on the
 fastest figures, and it is why 6.2 keeps the built-in synth the default: this is
 the sink that sounds better and keeps worse time.
 
+**The card is muted, and that took being told.** `midi.rs` said "with every voice
+muted" from its first line, and three `set_mix` calls sent the mix unchanged — so
+choosing a port added a second sound rather than moving the notes to it, and it
+was reported that way within the hour. The rule is `app::heard` now: one function,
+one place, and somewhere to be tested. **A sentence in a doc comment is not an
+implementation**, and a design note that describes behaviour nothing performs is
+worse than no note, because it reads as evidence.
+
+Muted rather than stopped, which is the other half of the same design: the card
+is the clock, and a stopped stream is a playhead that does not move.
+
 **This is the one thing in the repository that needed hardware**, and it got it.
 `a_playhead_becomes_notes_and_leaves_none_held` opens a real port and sends real
 bytes — never a virtual cable, only a synth that ends at a speaker, because a
@@ -1298,10 +1309,10 @@ Status is one of **done**, **partial** — usable and honestly incomplete — or
 | 3.2, 9 | **Four voices**, which asking for now sets a rest pattern for rather than refusing | `asking_for_four_voices_gives_four_voices`, `a_refusal_about_free_voices_names_its_own_cure` |
 | 4.1 | The strip drawing the piece it was given rather than the controls, which have moved | `the_strip_is_given_the_piece_it_is_drawing`, `a_click_in_a_lane_rests_that_voice` |
 | 4.4 | The search choosing the rests, off by default, with the finding beside the switch | `the_search_can_choose_who_rests`, `drawing_the_texture_is_off_and_at_three_voices_is_the_same_piece` |
-| 6.3 | System MIDI out, on the synth's own clock, against a real port | `a_playhead_becomes_notes_and_leaves_none_held`, `the_ports_are_named_or_the_absence_is` |
+| 6.3 | System MIDI out, on the synth's own clock, against a real port, with the card silenced | `a_playhead_becomes_notes_and_leaves_none_held`, `a_midi_port_silences_the_card_without_stopping_it` |
 | 7.3 | Generating in a worker, with the protocol tested on the desktop and a fallback that says so | `a_reply_becomes_a_piece_or_a_reason`, `there_is_always_somewhere_to_generate_and_it_is_named` |
 
-Fifty-seven tests, all headless — three of them only where a MIDI port exists. The interesting one is
+Fifty-eight tests, all headless — three of them only where a MIDI port exists. The interesting one is
 `every_offered_subject_composes`: each of the 24 subjects is composed on the
 shortest layout that is still a fugue, because a picker whose entries have not
 been tried is a picker that wastes the one click a beginner is sure to make. It
