@@ -137,9 +137,19 @@ pub struct App {
   #[cfg(feature = "midi-out")]
   midi: Option<midi::Out>,
   /// The ports there were when the panel last looked, or why there were none.
-  /// Enumerated once rather than every frame: it opens a client each time.
+  ///
+  /// Not enumerated every frame, because each call opens a client — and **not
+  /// cached when the answer is nothing**, because on the web nothing is what it
+  /// says before the browser has granted Web MIDI. `midir` asks for access
+  /// asynchronously and reports an empty list until the promise resolves and the
+  /// reader has answered the prompt, so a panel that believed the first answer
+  /// would say "no ports" for ever on a machine with two.
   #[cfg(feature = "midi-out")]
   midi_ports: Option<Result<Vec<String>, String>>,
+  /// When that was asked, so that an empty answer can be asked again without
+  /// asking sixty times a second.
+  #[cfg(feature = "midi-out")]
+  midi_asked: Option<web_time::Instant>,
   /// The very score the player holds. Kept so that every tick-to-sample
   /// conversion goes through the tempo the sound was actually built at, rather
   /// than through whatever the tempo control says at the moment of asking.
@@ -174,6 +184,8 @@ impl Default for App {
       midi: None,
       #[cfg(feature = "midi-out")]
       midi_ports: None,
+      #[cfg(feature = "midi-out")]
+      midi_asked: None,
       work: None,
       status: None,
       fidelity: None,
@@ -499,11 +511,18 @@ impl App {
   /// MIDI on this machine at all, MIDI but nothing to send to, and a list.
   #[cfg(feature = "midi-out")]
   fn midi_out(&mut self, ui: &mut Ui) {
-    // Enumerated on first sight rather than every frame: each call opens a
-    // client. A button re-asks, because a port can be plugged in later and
-    // nothing tells us when.
-    if self.midi_ports.is_none() {
+    // Asked again while the answer is nothing, and left alone once it is
+    // something. On the web the first answer is *always* nothing: `midir` asks
+    // the browser for Web MIDI access asynchronously and reports an empty list
+    // until that resolves and the reader has answered the permission prompt. A
+    // panel that believed the first answer would say "no ports" for ever.
+    //
+    // A port can also be plugged in later and nothing announces it, so the
+    // refresh button stays for the case where the answer *was* something.
+    let waited = self.midi_asked.map_or(f64::INFINITY, |t| t.elapsed().as_secs_f64());
+    if ask_again(self.midi_ports.as_ref(), waited) {
       self.midi_ports = Some(midi::ports());
+      self.midi_asked = Some(web_time::Instant::now());
     }
     ui.horizontal(|ui| {
       ui.label(RichText::new("send to").monospace().weak().small());
@@ -513,8 +532,17 @@ impl App {
           ui.add_enabled(false, egui::Button::new("no MIDI")).on_disabled_hover_text(why.clone());
         }
         Some(Ok(names)) if names.is_empty() => {
-          ui.add_enabled(false, egui::Button::new("no ports"))
-            .on_disabled_hover_text("This machine has MIDI but nothing to send it to.");
+          // Two different absences, and on the web the likelier one is that
+          // nothing has been granted yet rather than that nothing is there.
+          let (label, why) = if cfg!(target_arch = "wasm32") {
+            (
+              "asking…",
+              "Web MIDI asks permission the first time and answers a moment later, so this may                become a list. Not every browser has it at all — Chromium does, and the others                vary. Nothing is sent until a port is chosen.",
+            )
+          } else {
+            ("no ports", "This machine has MIDI but nothing to send it to.")
+          };
+          ui.add_enabled(false, egui::Button::new(label)).on_disabled_hover_text(why);
         }
         Some(Ok(names)) => {
           let names = names.clone();
@@ -540,6 +568,7 @@ impl App {
       }
       if ui.small_button("↻").on_hover_text("Look for ports again").clicked() {
         self.midi_ports = None;
+        self.midi_asked = None;
       }
     });
     if self.midi.is_some() {
@@ -1471,6 +1500,28 @@ fn describe_edit(e: strip::Edit, l: &Layout) -> String {
   }
 }
 
+/// Whether to look for MIDI ports again — spec 6.3, and the rule that an empty
+/// answer is not one.
+///
+/// **On the web the first answer is always nothing.** `midir` asks the browser
+/// for Web MIDI access asynchronously and reports an empty list until that
+/// resolves and the reader has answered the permission prompt, which is at best
+/// a moment later and at worst never. A panel that took the first answer said
+/// "no ports" for ever on a machine with two, which is how it was reported.
+///
+/// So nothing is asked again, a reason is asked again more slowly — a browser
+/// with no Web MIDI at all will keep saying so and there is no point hurrying it
+/// — and a list is left alone, because that is an answer.
+#[cfg(feature = "midi-out")]
+fn ask_again(ports: Option<&Result<Vec<String>, String>>, waited: f64) -> bool {
+  match ports {
+    None => true,
+    Some(Ok(names)) if names.is_empty() => waited > 1.0,
+    Some(Err(_)) => waited > 2.0,
+    Some(Ok(_)) => false,
+  }
+}
+
 /// What the sound card should actually play, given what is audible and where the
 /// notes are going — spec 6.3.
 ///
@@ -1553,6 +1604,31 @@ mod tests {
     // loop with the frame budget taken off.
     app.settle();
     assert!(app.out.is_some(), "the default settings did not produce a fugue: {:?}", app.refused);
+  }
+
+  /// **An empty port list is not an answer, and is asked again.**
+  ///
+  /// Reported as no dropdown at all on the web. Two faults: the browser build
+  /// did not ask for the `midi-out` feature, and the panel cached the first
+  /// answer — which on the web is *always* nothing, because `midir` requests Web
+  /// MIDI asynchronously and reports an empty list until the reader has answered
+  /// a permission prompt. Either alone was enough to show no ports for ever.
+  #[cfg(feature = "midi-out")]
+  #[test]
+  fn an_empty_port_list_is_asked_again_and_a_real_one_is_not() {
+    let none: Option<&Result<Vec<String>, String>> = None;
+    assert!(ask_again(none, 0.0), "never having looked is a reason to look");
+
+    let empty = Ok(vec![]);
+    assert!(!ask_again(Some(&empty), 0.1), "asking sixty times a second is not asking again, it is spinning");
+    assert!(ask_again(Some(&empty), 1.5), "an empty list was believed, which is the reported bug");
+
+    let refused: Result<Vec<String>, String> = Err("no MIDI on this system".into());
+    assert!(!ask_again(Some(&refused), 1.5), "a browser with no Web MIDI does not need hurrying");
+    assert!(ask_again(Some(&refused), 2.5), "and is still worth one more try, since nothing else will");
+
+    let found = Ok(vec!["Microsoft GS Wavetable Synth".to_string()]);
+    assert!(!ask_again(Some(&found), 600.0), "a list is an answer and re-opening a client is not free");
   }
 
   /// **A MIDI port silences the card, and the card keeps running.**

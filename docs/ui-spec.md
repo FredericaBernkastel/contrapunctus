@@ -717,10 +717,25 @@ the same native library — which is a Linux constraint that bites on Windows,
 because cargo resolves the whole graph and not the host's part of it.
 
 - Ports enumerated into a dropdown; nothing sent until one is chosen.
-- **Absence is stated, and there are three sentences and not two**: no MIDI on
-  this machine at all, MIDI with nothing to send to, and a list. A refresh
-  button, because a port can be plugged in later and nothing announces it.
-- Behind a cargo feature so a build without it has no dependency.
+- **Absence is stated, and there are four sentences and not two**: no MIDI on
+  this machine at all, MIDI with nothing to send to, *the browser has not
+  answered yet*, and a list. A refresh button, because a port can be plugged in
+  later and nothing announces it.
+- Behind a cargo feature so a build without it has no dependency — and
+  `index.html` asks for that feature, which it did not at first: the browser
+  build had no MIDI in it at all and the dropdown simply was not there.
+
+**On the web, the first answer is always nothing.** `midir` requests Web MIDI
+access asynchronously and reports an empty list until the promise resolves *and*
+the reader has answered a permission prompt. A panel that took the first answer
+says "no ports" for ever on a machine with two, which is what it did. `ask_again`
+is the rule: nothing is asked again, a reason is asked again more slowly, and a
+list is left alone because a list is an answer.
+
+Both halves of that were reported as one symptom — no dropdown on the web — and
+either alone was enough to cause it. The feature flag was the reason there was no
+control at all; the caching was waiting behind it to make the control say
+nothing.
 
 **It shares the synth's scheduler and the synth's clock**, which is the design
 rather than an economy. `schedule::Score` already holds every note as a span of
@@ -1329,7 +1344,7 @@ Status is one of **done**, **partial** — usable and honestly incomplete — or
 | 6.3 | System MIDI out, on the synth's own clock, against a real port, with the card silenced | `a_playhead_becomes_notes_and_leaves_none_held`, `a_midi_port_silences_the_card_without_stopping_it` |
 | 7.3 | Generating in a worker, with the protocol tested on the desktop and a fallback that says so | `a_reply_becomes_a_piece_or_a_reason`, `there_is_always_somewhere_to_generate_and_it_is_named` |
 
-Fifty-nine tests, all headless — three of them only where a MIDI port exists. The interesting one is
+Sixty tests, all headless — three of them only where a MIDI port exists. The interesting one is
 `every_offered_subject_composes`: each of the 24 subjects is composed on the
 shortest layout that is still a fugue, because a picker whose entries have not
 been tried is a picker that wastes the one click a beginner is sure to make. It
