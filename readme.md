@@ -52,6 +52,7 @@ are built and measured — [§8](#8-what-is-built-and-what-it-measures). Realisa
   - [8.15 Does the form grammar derive the book?](#815-does-the-form-grammar-derive-the-book)
   - [8.16 A fugue, from a subject](#816-a-fugue-from-a-subject)
   - [8.17 Silence, and what the voice count really costs](#817-silence-and-what-the-voice-count-really-costs)
+  - [8.18 A texture that varies, and the two ways of asking that do not work](#818-a-texture-that-varies-and-the-two-ways-of-asking-that-do-not-work)
 - [9. Roadmap](#9-roadmap)
 - [10. Reproducing the results](#10-reproducing-the-results)
   - [10.1 Environment and data](#101-environment-and-data)
@@ -2390,6 +2391,55 @@ all: there were once two places that wrote a block and they drifted apart in fou
 
 ---
 
+### 8.18 A texture that varies, and the two ways of asking that do not work
+
+`cargo run --release -- texture`
+
+[§8.17](#817-silence-and-what-the-voice-count-really-costs) left one thing open. Drawing the rest patterns returns
+the *densest* legal texture essentially always, which is not a texture anybody chose — and the obvious repair is a
+criterion that prefers a thinner one. [§8.10](#810-replacing-the-soft-tier-and-the-degenerate-optimum-of-every-positive-criterion)
+is the section about what a positive criterion does under a minimiser, so the repair is worth measuring before it is
+believed.
+
+`Texture::Thinnest` is that criterion in its plainest form: of the patterns that fill, take the one with fewest
+voices in it. Voices sounding per bar, three ways, one subject and one seed:
+
+| | mean | per bar |
+|---|---|---|
+| `Given` — no criterion | **2.52** | `1 1 2 2 3 3 2 3 3 2 3 2 3 3 3 3 2 3 3 2 3 2 3 3 2 3 3` |
+| `Drawn` — from the legal set | 2.44 | `1 1 2 2 3 3 2 3 3 2 3 2 3 3 3 2 1 3 3 2 3 2 3 3 2 3 3` |
+| `Thinnest` — minimised | 1.85 | `1 1 2 2 2 2 2 2 2 2 2 1 2 2 2 2 1 2 2 2 2 2 2 2 2 2 2` |
+
+**Both collapse onto a constant, in opposite directions.** Drawing weights a pattern by how much music it admits and
+another free voice *is* more music, so it takes the fullest the wall allows. Minimising takes the thinnest that will
+fill. Neither is answering a question about the bar it is in — each returns its own extreme wherever it is asked,
+which is what a degenerate optimum is.
+
+> **§8.10's finding does not need a fourth instance, and it got one anyway.** `move by step` collapsed onto
+> oscillating between two notes, `state the harmony` onto holding a chord tone, `move against` onto never moving.
+> Now `thinner` onto the thinnest thing available. What §8.10 could not see, having only a minimiser to point at the
+> problem, is that this project's *other* mechanism fails too and fails the other way: **drawing has degenerate
+> optima as surely as minimising does, and they are at the opposite end.** A parameter with one at each end cannot
+> be asked of either.
+
+**The thinnest does not reach silence, and the reason is worth having.** The all-resting pattern is never a
+candidate: `realise::fill` refuses a problem with no free voice in it, and is right to, so the floor is one
+accompanying voice rather than none. The criterion would go further and cannot. **A degenerate optimum stopped by an
+unrelated implementation detail is still degenerate**, and harder to see, which is the more dangerous kind — from
+the numbers alone `Thinnest` looks like a mechanism that settles somewhere rather than one that ran into a wall.
+
+**And the row that varies most is the one with no criterion in it.** `Given` alternates 3 and 2 after the
+exposition, and that alternation is the grammar's: `fill_block` rests the voice about to enter for a bar so it does
+not arrive by a leap ([§8.16](#816-a-fugue-from-a-subject)'s eleventh). Every bit of texture this program has comes
+from a rule somebody transcribed, and both attempts to *choose* one flattened it.
+
+So the open problem is narrower than it looked and older than this section. It wants a criterion with a shape in the
+middle rather than a direction, and this project's founding constraint says such a thing is transcribed from somebody rather than invented here.
+Nothing in the treatises read so far says when a voice should rest, beyond the two rules already built: before it
+enters, and to make room for an entry. That is the gap, and it is a gap in the sources rather than in the search.
+
+---
+
 ## 9. Roadmap
 
 Steps 0 to 5 are done and reported above. The project now produces notes and can be listened to. What remains, in
@@ -2496,10 +2546,13 @@ order.
    something principled. It ships **off**, with a control to turn it on, and
    [§8.17](#817-silence-and-what-the-voice-count-really-costs) is why rather than caution.
 
-   So the way to a texture that varies for musical reasons is not more drawing. It is a criterion that prefers one
-   density to another — which is a *positive* criterion, and
-   [§8.10](#810-replacing-the-soft-tier-and-the-degenerate-optimum-of-every-positive-criterion) is the section about
-   what those do under a minimiser. That is the open problem, and it is older than this section.
+   **And the criterion that would fix that has been tried.**
+   [§8.18](#818-a-texture-that-varies-and-the-two-ways-of-asking-that-do-not-work) measures it: drawing takes the
+   densest legal texture, minimising a thinness criterion takes the thinnest that will fill, and neither is
+   answering a question about the bar it is in. Both of this project's mechanisms have a degenerate optimum here and
+   they are at opposite ends, so the parameter cannot be asked of either. What is wanted is a criterion with a shape
+   in the middle rather than a direction, and nothing transcribed so far supplies one — which makes it a gap in the
+   sources rather than in the search, and the honest place to leave it.
 
    That does not make the solver wrong to want. It makes the ordering wrong: rests are cheap and buy the voice
    count, and conflict learning is expensive and buys the cases rests cannot reach.

@@ -1388,7 +1388,7 @@ silence is, in samples.
 | # | section | what | blocked on |
 |---|---|---|---|
 | 1 | 4.5 | A block palette, judged by the grammar rather than gated by it | blocks addressable one at a time |
-| 3 | 4.4 | A texture that varies for a *musical* reason | a criterion, and readme §8.10 is about what those do |
+| 3 | 4.4 | A texture that varies for a *musical* reason | **a source** — readme §8.18 tried both mechanisms and both collapse |
 
 **Texture is built, and four voices with it.** `compose::resting` rests a voice
 until it has entered — no parameter, the derivation already said who enters when —
@@ -1405,10 +1405,17 @@ draw returns the densest legal one essentially always. At three voices it change
 not a note. What it buys is which voice rests where one must, and there it
 replaces a heuristic with something principled.
 
-**Item 4 is what that leaves.** A texture that thins for a musical reason needs
-something that *prefers* one density to another, which is a positive criterion —
-and readme §8.10 is the section about what positive criteria do under a minimiser.
-It is on this list to be honest about being open, not because it is next.
+**Item 3 is what that leaves, and it has now been tried.** readme §8.18 measured
+both ways of asking: drawing returns the densest legal texture, minimising a
+thinness criterion returns the thinnest that will fill, and neither varies with
+the bar it is in. Both mechanisms have a degenerate optimum and they are at
+opposite ends, so this parameter cannot be asked of either.
+
+The row stays because the want is real, and what it is blocked on has changed
+from *a criterion* to **a source**: nothing in the treatises read so far says when
+a voice should rest, beyond the two rules already built — before it enters, and to
+make room for an entry. That is a gap in the sources rather than in the search,
+and inventing something to fill it is the one thing this project does not do.
 
 **Item 2 is mostly interface work on machinery that exists**, and 4.5 argues the
 one design point that matters: the palette should let an illegal plan be built

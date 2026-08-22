@@ -313,7 +313,7 @@ pub struct Layout {
   /// A `Layout` field and not interface state, because it changes what is
   /// generated and `docs/ui-spec.md` section 8 requires a saved fugue to reproduce.
   #[cfg_attr(feature = "serde", serde(default))]
-  pub drawn_texture: bool,
+  pub texture: Texture,
 }
 
 impl Default for Layout {
@@ -330,7 +330,7 @@ impl Default for Layout {
       rerolls: vec![],
       turns: vec![],
       rests: vec![],
-      drawn_texture: false,
+      texture: Texture::Given,
     }
   }
 }
@@ -677,7 +677,7 @@ fn fill_block(
   prior: &[Option<Pitch>],
   terminal: &[Option<Pitch>],
   silent: &[bool],
-  drawn: bool,
+  texture: Texture,
 ) -> Result<Written, String> {
   let b = &blocks[bi];
   let held = held_of(Some(b));
@@ -758,7 +758,7 @@ fn fill_block(
   // them — including the empty one, so the fullest texture is a candidate like
   // any other and is not privileged by being the default.
   let loose: Vec<usize> = (0..d.voices).filter(|v| free[*v]).collect();
-  let patterns: Vec<Vec<bool>> = if !drawn {
+  let patterns: Vec<Vec<bool>> = if texture == Texture::Given {
     vec![free.clone()]
   } else {
     (0..1u32 << loose.len())
@@ -815,7 +815,7 @@ fn fill_block(
     // The chosen pattern needs no carrying: `fill` returns a rested voice
     // unchanged, and unchanged for a voice with no notes is no notes — so the
     // solution already says who said nothing, and `joins` reads it off that.
-    if let Some((sol, _)) = draw_pattern(round, seed) {
+    if let Some((sol, _)) = pick_pattern(round, seed, texture) {
       got = Some((sol, attempt));
       break;
     }
@@ -875,9 +875,19 @@ fn fill_block(
 /// pattern with one more free voice admits orders of magnitude more fills. When
 /// something has to rest, the voice that goes is whichever one's absence leaves
 /// the counterpoint the most room. Both fall out of the arithmetic.
-fn draw_pattern(round: Vec<(realise::Solution, Vec<bool>)>, seed: u64) -> Option<(realise::Solution, Vec<bool>)> {
+fn pick_pattern(
+  round: Vec<(realise::Solution, Vec<bool>)>,
+  seed: u64,
+  texture: Texture,
+) -> Option<(realise::Solution, Vec<bool>)> {
   if round.len() <= 1 {
     return round.into_iter().next();
+  }
+  // **The thinnest that fills**, which is a preference and behaves like one:
+  // fewest free voices wins, and fewest is none but the subject. §8.18 measures
+  // where that ends up rather than arguing about it.
+  if texture == Texture::Thinnest {
+    return round.into_iter().min_by_key(|(_, p)| p.iter().filter(|f| **f).count());
   }
   let total: u128 = round.iter().map(|(s, _)| s.legal_fills.max(1)).sum();
   // SplitMix64 on the block's own seed, so the choice is part of what the seed
@@ -936,6 +946,35 @@ pub fn resting(d: &Design, l: &Layout) -> Vec<Vec<bool>> {
         .collect()
     })
     .collect()
+}
+
+/// How a block decides which voices rest.
+///
+/// Three, and **two of them are degenerate in opposite directions**, which is
+/// [§8.18](../readme.md) and is the reason the third is a control rather than a
+/// default.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum Texture {
+  /// Whatever the grammar rests and [`Layout::rests`] names, and nothing else.
+  /// The default, and the only one that does what somebody asked for.
+  #[default]
+  Given,
+  /// Drawn from the legal set: every pattern a block could take, weighted by how
+  /// much music each admits. Invents no rule — [§8.10](../readme.md)'s argument
+  /// for drawing over optimising, one level up — and
+  /// [§8.17](../readme.md) measured what it returns, which is the **densest**
+  /// legal texture essentially always.
+  Drawn,
+  /// The fewest voices that will still fill. [§8.18](../readme.md)'s control, and
+  /// it collapses to the subject alone: a criterion that prefers thinness has a
+  /// cheapest way to be satisfied and the search finds it, which is exactly what
+  /// §8.10 found for `move by step`, `move against` and `state the harmony`.
+  ///
+  /// Kept runnable rather than deleted, because the figure it produces is the
+  /// evidence for the claim above and a claim whose experiment has been removed
+  /// is an opinion.
+  Thinnest,
 }
 
 /// How many free voices the exact search can afford at once.
@@ -1027,7 +1066,7 @@ pub fn block_cost(d: &Design, tier: &[Rule], silent: &[bool], with_plan: bool) -
   let blocks =
     vec![Block { at: 0, len: subject_bars(d), kind: Kind::Entry { voice: 0, shift: 0, tonal: false }, key_of: 0 }];
   let segments = if with_plan { plan(d, &blocks) } else { vec![] };
-  let (_, _, attempt, peak) = fill_block(d, &blocks, 0, &segments, tier, 0x5EED, &[], &[], silent, false)?;
+  let (_, _, attempt, peak) = fill_block(d, &blocks, 0, &segments, tier, 0x5EED, &[], &[], silent, Texture::Given)?;
   Ok((peak, attempt))
 }
 
@@ -1093,8 +1132,8 @@ pub struct Run<'a> {
   /// Who says nothing in each block — [`resting`], computed once with the plan
   /// because it is a property of the derivation and not of the fill.
   resting: Vec<Vec<bool>>,
-  /// [`Layout::drawn_texture`], carried because `Run` does not keep the layout.
-  drawn: bool,
+  /// [`Layout::texture`], carried because `Run` does not keep the layout.
+  texture: Texture,
   voices: Vec<Voice>,
   prior: Vec<Option<Pitch>>,
   relaxed: Relaxed,
@@ -1121,7 +1160,7 @@ impl<'a> Run<'a> {
     let seeds = seeds(d, l, seed);
     let resting = resting(d, l);
     Ok(Run {
-      drawn: l.drawn_texture,
+      texture: l.texture,
       d: d.clone(),
       tier,
       blocks,
@@ -1171,7 +1210,7 @@ impl<'a> Run<'a> {
     let t0 = crate::clock::Instant::now();
     let bi = self.next;
     let (filled, after, attempt, _) =
-      fill_block(&self.d, &self.blocks, bi, &self.plan, self.tier, self.seeds[bi], &self.prior, &[], &self.resting[bi], self.drawn)?;
+      fill_block(&self.d, &self.blocks, bi, &self.plan, self.tier, self.seeds[bi], &self.prior, &[], &self.resting[bi], self.texture)?;
     self.relaxed.blocks += (attempt > 0) as usize;
     self.relaxed.without_prior += (attempt >= 1) as usize;
     self.relaxed.without_plan += (attempt >= 2) as usize;
@@ -1464,7 +1503,7 @@ pub fn refill_span(
     };
 
     let (filled, after, _, _) =
-      fill_block(d, &blocks, bi, &full, tier, seeds[bi], &prior, &terminal, &quiet[bi], l.drawn_texture)
+      fill_block(d, &blocks, bi, &full, tier, seeds[bi], &prior, &terminal, &quiet[bi], l.texture)
         .map_err(|e| e.to_string())?;
     prior = after;
 
@@ -1766,7 +1805,7 @@ mod tests {
 
   /// **The search can choose the rests itself, and reaches four voices doing it.**
   ///
-  /// `Layout::drawn_texture` with no `rests` at all: every legal rest pattern is a
+  /// `Layout::texture` set to `Drawn`, with no `rests` at all: every legal rest pattern is a
   /// search of its own, drawn in proportion to the fills it admits. What that has
   /// to deliver is a piece where `rests_that_fit`'s heuristic delivered one, and
   /// without the heuristic.
@@ -1784,7 +1823,7 @@ mod tests {
     }
 
     // on, with no pattern given, it finds one
-    let l = Layout { drawn_texture: true, ..brief.clone() };
+    let l = Layout { texture: Texture::Drawn, ..brief.clone() };
     assert!(l.rests.is_empty(), "this must prove the draw, not a pattern");
     let o = fugue(&d, &l, CONFIRMED, 0x5EED).expect("the draw reached four voices");
     for (v, voice) in o.voices.iter().enumerate() {
@@ -1816,14 +1855,59 @@ mod tests {
   /// opposite of what was measured.
   #[test]
   fn drawing_the_texture_is_off_and_at_three_voices_is_the_same_piece() {
-    assert!(!Layout::default().drawn_texture, "the draw must be off by default");
+    assert_eq!(Layout::default().texture, Texture::Given, "the draw must be off by default");
     let d = design();
     let brief = Layout { middles: vec![4, 5], episode_bars: 2, ..Layout::default() };
     let a = fugue(&d, &brief, CONFIRMED, 0x5EED).expect("plain");
-    let b = fugue(&d, &Layout { drawn_texture: true, ..brief.clone() }, CONFIRMED, 0x5EED).expect("drawn");
+    let b = fugue(&d, &Layout { texture: Texture::Drawn, ..brief.clone() }, CONFIRMED, 0x5EED).expect("drawn");
     assert_eq!(a.bars, b.bars);
     let same = notes(&a.voices) == notes(&b.voices);
     assert!(same, "at three voices the draw took a thinner texture than the full one, which 99.94% says it should not");
+  }
+
+  /// **Both ways of choosing a texture collapse onto a constant, in opposite
+  /// directions** — readme §8.18, and §8.10's finding arriving at texture.
+  ///
+  /// Drawing weights a pattern by how much music it admits and another free voice
+  /// *is* more music, so it takes the fullest. Minimising takes the thinnest that
+  /// will fill. Neither is answering a question about the bar it is in.
+  #[test]
+  fn choosing_a_texture_collapses_whichever_way_it_is_asked() {
+    let d = design();
+    let l = |t: Texture| Layout { texture: t, middles: vec![4, 5], episode_bars: 2, ..Layout::default() };
+    let density = |o: &Outcome| -> f64 {
+      let m = d.measure;
+      let bars = (length(&o.blocks) + m - 1) / m;
+      let total: usize = (0..bars)
+        .map(|b| {
+          let (lo, hi) = (b * m, (b + 1) * m);
+          o.voices.iter().filter(|v| v.notes.iter().any(|n| n.onset < hi && n.onset + n.dur > lo)).count()
+        })
+        .sum();
+      total as f64 / bars.max(1) as f64
+    };
+
+    let given = fugue(&d, &l(Texture::Given), CONFIRMED, 0x5EED).expect("given");
+    let drawn = fugue(&d, &l(Texture::Drawn), CONFIRMED, 0x5EED).expect("drawn");
+    let thin = fugue(&d, &l(Texture::Thinnest), CONFIRMED, 0x5EED).expect("thinnest");
+
+    assert!(density(&thin) < density(&given), "the thinnest criterion did not thin anything");
+    assert!(density(&thin) < density(&drawn), "the two ends came out the same way round");
+
+    // **The thinnest does not reach silence**, and the reason is not the
+    // criterion: the all-resting pattern is never a candidate, because
+    // `realise::fill` refuses a problem with no free voice in it. A degenerate
+    // optimum stopped by an unrelated detail is still degenerate.
+    assert!(density(&thin) >= 1.0, "something is sounding in every bar");
+    for (v, voice) in thin.voices.iter().enumerate() {
+      assert!(!voice.notes.is_empty(), "voice {v} was thinned out of the piece entirely");
+    }
+
+    // and every one of them is still a fugue, which is what makes this a finding
+    // about texture rather than about breaking the generator
+    for (what, o) in [("given", &given), ("drawn", &drawn), ("thinnest", &thin)] {
+      assert!(o.verdict.exposition_covers_the_voices, "{what} stopped being a fugue");
+    }
   }
 
   /// `Block` and `Voice` carry no `PartialEq` and this file is not the place to

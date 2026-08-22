@@ -3022,7 +3022,7 @@ pub fn texture() {
   println!("   uniformly from the union. No rule is invented — it is §8.10's finding applied to");
   println!("   texture. The question is what comes out.
 ");
-  let drawn = compose::Layout { drawn_texture: true, ..plain.clone() };
+  let drawn = compose::Layout { texture: compose::Texture::Drawn, ..plain.clone() };
   let mut seen: std::collections::BTreeMap<String, usize> = Default::default();
   let mut density: std::collections::BTreeMap<usize, usize> = Default::default();
   let mut refused = 0;
@@ -3074,6 +3074,82 @@ pub fn texture() {
   println!("   So it stays off by default, and now for a measured reason rather than caution:");
   println!("   §8.10 says draw rather than optimise, and it is right about notes. Applied to");
   println!("   texture the same argument returns the thing texture is supposed to vary.
+");
+
+  // ---- and the other end of the same question
+  println!("
+   -- and the criterion that would make a texture vary --
+");
+  println!("   Drawing returns the densest legal texture, which is not a texture anybody chose. The");
+  println!("   obvious repair is a criterion that *prefers* a thinner one — and §8.10 is the section");
+  println!("   about what a positive criterion does under a minimiser. `Texture::Thinnest` is that");
+  println!("   criterion in its plainest form: of the patterns that fill, take the one with fewest");
+  println!("   voices in it.
+");
+  println!("   voices sounding per bar, three ways, on the same subject and seed:
+");
+  let per_bar = |o: &compose::Outcome, voices: usize, measure: i64| -> Vec<usize> {
+    let bars = (compose::length(&o.blocks) + measure - 1) / measure;
+    (0..bars)
+      .map(|b| {
+        let (lo, hi) = (b * measure, (b + 1) * measure);
+        let _ = voices;
+        o.voices.iter().filter(|v| v.notes.iter().any(|n| n.onset < hi && n.onset + n.dur > lo)).count()
+      })
+      .collect()
+  };
+  for (what, tex) in [
+    ("given", compose::Texture::Given),
+    ("drawn", compose::Texture::Drawn),
+    ("thinnest", compose::Texture::Thinnest),
+  ] {
+    // three voices, where nothing is forced and the mechanism is on its own
+    let d3 = compose::Design {
+      subject: subject.clone(),
+      voices: 3,
+      key: p.key,
+      tonic,
+      measure: p.measure,
+      beat: p.beat,
+      compass: vec![(33, 45), (28, 40), (21, 33)],
+    };
+    let l = compose::Layout { texture: tex, ..compose::Layout::default() };
+    match compose::fugue(&d3, &l, tier, cli::params().seed) {
+      Err(e) => println!("   {what:>9}: REFUSED {}", e.lines().next().unwrap_or("")),
+      Ok(o) => {
+        let counts = per_bar(&o, 3, p.measure);
+        let mean = counts.iter().sum::<usize>() as f64 / counts.len().max(1) as f64;
+        println!("   {what:>9}: mean {mean:.2}   {counts:?}");
+      }
+    }
+  }
+  println!();
+  println!("   **Both mechanisms collapse onto a constant, and in opposite directions.** Drawing");
+  println!("   weights a pattern by how much music it admits, and another free voice *is* more");
+  println!("   music, so it takes the fullest texture the wall allows. Minimising takes the");
+  println!("   thinnest that will fill. Neither is answering a question about this bar: each");
+  println!("   returns its own extreme wherever it is asked, which is what a degenerate optimum");
+  println!("   is and is §8.10's finding arriving at texture.
+");
+  println!("   **The thinnest does not reach silence, and the reason is worth having.** The");
+  println!("   all-resting pattern is not among the candidates at all: `realise::fill` refuses a");
+  println!("   problem with no free voice in it and is right to, so the floor is one accompanying");
+  println!("   voice rather than none. The criterion would go further and cannot. A degenerate");
+  println!("   optimum stopped by an unrelated implementation detail is still degenerate — it is");
+  println!("   just harder to see, which is the more dangerous kind.
+");
+  println!("   **And the row that varies most is the one with no criterion in it.** `given` runs");
+  println!("   3 2 3 3 2 3 2 …, and that alternation is the grammar's: `fill_block` rests the");
+  println!("   voice about to enter for a bar so it does not arrive by a leap. Every bit of");
+  println!("   texture this program has comes from a rule somebody transcribed, and both attempts");
+  println!("   to *choose* a texture flattened it — one upward, one downward.
+");
+  println!("   So the open problem is narrower than it looked and older than this section. A");
+  println!("   parameter with a degenerate optimum at each end cannot be asked of a search that");
+  println!("   only draws or only minimises: it wants a criterion with a shape in the middle, and");
+  println!("   §1 says such a thing has to be transcribed from somebody rather than invented here.");
+  println!("   Nothing in the treatises read so far says when a voice should rest, beyond the two");
+  println!("   rules already built: before it enters, and to make room for an entry.
 ");
 
   println!();

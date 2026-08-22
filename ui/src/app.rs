@@ -1378,8 +1378,8 @@ impl App {
       ui.add_space(12.0);
       group(ui, "SEARCH");
 
-      labelled(ui, "Let the search choose who rests", "Layout::drawn_texture");
-      let mut drawn = self.layout.drawn_texture;
+      labelled(ui, "Let the search choose who rests", "Layout::texture");
+      let mut drawn = self.layout.texture == compose::Texture::Drawn;
       if ui
         .checkbox(&mut drawn, "")
         .on_hover_text(
@@ -1387,7 +1387,7 @@ impl App {
         )
         .changed()
       {
-        self.layout.drawn_texture = drawn;
+        self.layout.texture = if drawn { compose::Texture::Drawn } else { compose::Texture::Given };
         changed = true;
       }
       ui.label(
