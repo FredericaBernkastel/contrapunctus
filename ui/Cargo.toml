@@ -9,6 +9,11 @@ name = "contrapunctus-ui"
 version = "0.1.0"
 edition = "2021"
 publish = false
+# The `worker` target below is a second binary, and a package with two of them
+# leaves `cargo run` unable to choose. It is never run on the desktop — `trunk`
+# builds it into a second wasm and a browser starts it — so the workbench is
+# what `run` means here.
+default-run = "contrapunctus-ui"
 
 [[bin]]
 name = "contrapunctus-ui"

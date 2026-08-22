@@ -902,11 +902,22 @@ whole of the difference. Everything else — the interface, the search, the corp
 the synth — is one build.
 
 ```
+cargo run --release -p contrapunctus-ui                          # the desktop workbench
+cargo run --release -p contrapunctus-ui --features midi-out      # and with 6.3's MIDI out
+
 rustup target add wasm32-unknown-unknown
 cargo build -p contrapunctus-ui --target wasm32-unknown-unknown --release   # the binary
 cd ui && trunk build --release                                             # the page
 cd ui && trunk serve --release                                             # and served
 ```
+
+**Two binaries, and `default-run` names the one `cargo run` means.** 7.3's worker
+is a second `[[bin]]` in this package, and a package with two of them leaves
+`cargo run` unable to choose — which it announced by failing, immediately after
+the worker landed. The worker is never run on the desktop: `trunk` builds it into
+a second wasm and a browser starts it. `default-run = "contrapunctus-ui"` says
+so, and `--bin worker` is still there for anybody who wants to prove it does
+nothing.
 
 `trunk` fetches `wasm-bindgen` and `wasm-opt` itself; nothing else has to be
 installed. Run it from `ui/`, where it finds `index.html` and the manifest
