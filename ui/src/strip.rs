@@ -99,6 +99,20 @@ pub enum Edit {
   Drop(usize),
   /// An authored block's length in bars, for an episode.
   Bars(usize, i64),
+  /// Where an authored block goes, as diatonic steps above the home tonic.
+  ///
+  /// **The same question the derived plan asks about a return**, asked one block
+  /// at a time — which is the difference between the two vocabularies rather
+  /// than a gap in one of them. A return owns an episode and an entry and moves
+  /// both; an authored block is only itself.
+  ///
+  /// For an entry it moves the subject as well as the key: an entry *in* the
+  /// dominant that states the subject at home is not an entry in the dominant,
+  /// it is a mistake with a label on it.
+  BlockKey(usize, i16),
+  /// Whether an authored entry states the subject or the answer — §8.11's tonal
+  /// answer, which is what makes an exposition alternate rather than repeat.
+  BlockAnswer(usize, bool),
   /// An authored block moved to another lane. **A lane and not a rotation**: a
   /// built plan authors its own, so 4.3's chain has nothing to say about it.
   Lane(usize, usize),
@@ -156,7 +170,10 @@ impl Edit {
       // A lane is span-preserving on a built plan — the block stays where it is
       // and changes which voice carries it — and reaches back one, for the reason
       // a turn does: the block before rests whoever is about to enter.
-      Edit::Lane(at, _) => {
+      // The key and the answer are the same shape: one block's contents change,
+      // its length does not, and the block before it is told something different
+      // about who is arriving.
+      Edit::Lane(at, _) | Edit::BlockKey(at, _) | Edit::BlockAnswer(at, _) => {
         let last = compose::origins(d, l).len().checked_sub(1)?;
         Some(at.saturating_sub(1)..=last)
       }
@@ -222,6 +239,31 @@ impl Edit {
       Edit::Bars(at, bars) => {
         if let Some(compose::Built::Episode { bars: n, .. }) = out.built.as_mut().and_then(|v| v.get_mut(at)) {
           *n = bars.clamp(1, 12);
+        }
+      }
+      Edit::BlockKey(at, deg) => {
+        if let Some(b) = out.built.as_mut().and_then(|v| v.get_mut(at)) {
+          match b {
+            compose::Built::Entry { key_of, shift, .. } => {
+              *key_of = deg;
+              *shift = deg;
+            }
+            compose::Built::Episode { key_of, .. } => *key_of = deg,
+          }
+        }
+      }
+      Edit::BlockAnswer(at, answer) => {
+        if let Some(compose::Built::Entry { tonal, shift, key_of, .. }) =
+          out.built.as_mut().and_then(|v| v.get_mut(at))
+        {
+          *tonal = answer;
+          // An answer is the subject adjusted to fit the dominant, so it is *of*
+          // the dominant whatever the block said a moment ago. `derive` writes
+          // its own exposition that way and this is the same rule, not a second.
+          if answer {
+            *shift = 4;
+            *key_of = 4;
+          }
         }
       }
       Edit::Lane(at, voice) => {
@@ -528,8 +570,34 @@ impl Strip<'_> {
         } else {
           let bars = b.len / measure.max(1);
           let episode = matches!(b.kind, Kind::Episode { .. });
+          let key_of = b.key_of;
+          let answer = matches!(b.kind, Kind::Entry { tonal: true, .. });
           opened(&h).show(|ui| {
             ui.label(egui::RichText::new(describe(b)).strong());
+            ui.separator();
+            // The same question the derived plan asks of a return, asked of one
+            // block — because an authored block owns only itself. Without this
+            // the palette could put a block anywhere and never say what it was,
+            // which was the gap: `key_of`, `shift` and `tonal` are all authored
+            // fields and none of them had a control.
+            ui.label(egui::RichText::new("send this block to").weak().small());
+            for deg in 0..7i16 {
+              if ui.selectable_label(deg == key_of, degree_name(deg)).clicked() {
+                asked.edit = Some(Edit::BlockKey(i, deg));
+                ui.close();
+              }
+            }
+            if !episode {
+              ui.separator();
+              ui.label(egui::RichText::new("stating").weak().small());
+              for (is, label) in [(false, "the subject"), (true, "the answer")] {
+                if ui.selectable_label(is == answer, label).clicked() {
+                  asked.edit = Some(Edit::BlockAnswer(i, is));
+                  ui.close();
+                }
+              }
+            }
+            ui.separator();
             if episode {
               ui.label(egui::RichText::new("bars").weak().small());
               for n in [1i64, 2, 3, 4, 6] {
@@ -820,6 +888,8 @@ impl Strip<'_> {
         | Edit::PutBack
         | Edit::Drop(_)
         | Edit::Bars(..)
+        | Edit::BlockKey(..)
+        | Edit::BlockAnswer(..)
         | Edit::Lane(..)
         | Edit::Rest { .. }
         | Edit::Key(..)
@@ -1318,6 +1388,35 @@ mod tests {
 
     let moved = Edit::Lane(1, 2).applied(&d, &longer);
     assert_eq!(voice_of(&compose::derive(&d, &moved)[1].kind), Some(2), "the block did not move lane");
+
+    // **Where a block goes, and what it states** — the controls a derived plan
+    // offers a return, offered to one block. Reported missing: the palette could
+    // put a block anywhere and never say what it was, because `key_of`, `shift`
+    // and `tonal` are all authored and none of them had a control.
+    let sent = Edit::BlockKey(1, 3).applied(&d, &moved);
+    assert_eq!(compose::derive(&d, &sent)[1].key_of, 3, "the block did not move key");
+
+    // an entry moves its subject with its key: an entry *in* the dominant that
+    // states the subject at home is not one
+    let entry = Edit::Insert(0, compose::Built::Entry { voice: 0, shift: 0, tonal: false, key_of: 0 })
+      .applied(&d, &derived);
+    let dominant = Edit::BlockKey(0, 4).applied(&d, &entry);
+    match compose::derive(&d, &dominant)[0].kind {
+      Kind::Entry { shift, .. } => assert_eq!(shift, 4, "the key moved and the subject stayed behind"),
+      _ => panic!("the block stopped being an entry"),
+    }
+
+    let answered = Edit::BlockAnswer(0, true).applied(&d, &entry);
+    match compose::derive(&d, &answered)[0].kind {
+      Kind::Entry { tonal, shift, .. } => {
+        assert!(tonal, "the block did not become the answer");
+        assert_eq!(shift, 4, "an answer is of the dominant, whatever the block said before");
+      }
+      _ => panic!("the block stopped being an entry"),
+    }
+    // and an episode has no such question, so nothing offers it one
+    let ep = Edit::BlockAnswer(1, true).applied(&d, &moved);
+    assert_eq!(shape_of(&compose::derive(&d, &ep)), shape_of(&compose::derive(&d, &moved)), "an episode became an answer");
 
     let shrunk = Edit::Drop(1).applied(&d, &moved);
     assert_eq!(shrunk.built.as_ref().unwrap().len(), n - 1, "the block was not taken out");

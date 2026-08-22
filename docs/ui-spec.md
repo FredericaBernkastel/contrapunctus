@@ -523,6 +523,27 @@ Three things `derive` supplied for free, and what each became:
 A turn is refused on a built plan, with the reason: it rotates the chain, and an
 authored plan sets its own lanes. Drag the block instead.
 
+**Every authored field has a control, which took a second pass.** `Built` carries
+`key_of`, `shift` and `tonal`, and the first palette could put a block anywhere
+and never say what it was — a menu with a length and a delete in it, where the
+derived plan's return menu offers seven degrees. So a block's menu now asks the
+same question a return's does, of one block: *send this block to*, and for an
+entry *stating the subject / the answer*.
+
+Two rules travel with those, and both are `derive`'s own rather than new:
+
+- **An entry moves its subject with its key.** An entry *in* the dominant that
+  states the subject at home is not an entry in the dominant, it is a mistake
+  with a label on it — so `key_of` and `shift` move together.
+- **An answer is of the dominant.** Making a block the answer puts it there,
+  because that is what `derive` writes in its own exposition and §8.11 is the
+  reason. An episode is offered neither question, having neither.
+
+> **A second vocabulary has to say everything the first one says.** The gap was
+> not that the palette lacked a feature; it was that a plan could be *authored*
+> into a state it could not be *described* in. Anything a field can hold, some
+> control has to be able to set.
+
 **The grammar is already the safety net, and this is the argument for doing it.**
 `form::parse` judges *any* plan against §2.4's grammar and returns five
 independent verdicts — the exposition covers the voices, alternates tonic and

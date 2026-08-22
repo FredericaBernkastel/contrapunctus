@@ -1541,6 +1541,9 @@ fn describe_edit(e: strip::Edit, l: &Layout) -> String {
       _ => 0,
     }),
     strip::Edit::Lane(at, v) => format!("block {} moved to voice {}", at + 1, v + 1),
+    strip::Edit::BlockKey(at, deg) => format!("block {} sent to {}", at + 1, catalog::degree_name(deg)),
+    strip::Edit::BlockAnswer(at, true) => format!("block {} states the answer now", at + 1),
+    strip::Edit::BlockAnswer(at, false) => format!("block {} states the subject now", at + 1),
     strip::Edit::CloseAtHome(true) => "closing at home".to_string(),
     strip::Edit::CloseAtHome(false) => "stopping after the last return".to_string(),
   }
