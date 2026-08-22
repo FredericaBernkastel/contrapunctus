@@ -84,15 +84,17 @@ pub enum Edit {
   /// not a per-block parameter and never was; what is settable is where the
   /// chain is rotated. `id` keys `Layout::turns` and `block` is where it is now.
   Turn { block: usize, id: u64, by: i16 },
-  /// The plan stops being derived and becomes blocks — 4.5's way in.
+  /// A block dropped into the plan from the palette, at this position.
   ///
-  /// Not an edit to the music: `taken_apart` is exact, so the piece is the same
-  /// piece the moment after. What changes is what can be said about it.
-  TakeApart,
+  /// **This is 4.5's way in, and there is no other.** A derived plan becomes an
+  /// authored one on the way past — `taken_apart` is exact, so the piece either
+  /// side of that is the same piece — which means nobody has to enter a mode
+  /// before they can try something. The first version had a *Take it apart into
+  /// blocks* button, and a button you must press before the palette does
+  /// anything is a palette that has to be explained first.
+  Insert(usize, compose::Built),
   /// Back to the parameters, throwing the authored blocks away.
   PutBack,
-  /// A block appended to an authored plan.
-  Append(compose::Built),
   /// A block taken out of an authored plan.
   Drop(usize),
   /// An authored block's length in bars, for an episode.
@@ -163,9 +165,8 @@ impl Edit {
       // change none, and are still recomposed: they are a change of *mode*, and
       // one that reported itself as local would be promising a locality it has
       // no way to check the far side of.
-      Edit::TakeApart
+      Edit::Insert(..)
       | Edit::PutBack
-      | Edit::Append(_)
       | Edit::Drop(_)
       | Edit::Bars(..)
       | Edit::EpisodeBars(_)
@@ -202,13 +203,15 @@ impl Edit {
       // Turns at one place add up, and one that adds up to nothing is taken out
       // rather than left as a rotation of zero. Otherwise dragging a block down
       // and back up would leave a settings file that says something happened.
-      Edit::TakeApart => out.built = Some(compose::taken_apart(d_hint, l)),
-      Edit::PutBack => out.built = None,
-      Edit::Append(b) => {
-        if let Some(v) = out.built.as_mut() {
-          v.push(b);
-        }
+      Edit::Insert(at, b) => {
+        // Taken apart here rather than by a button somewhere else: dropping a
+        // block into a derived plan is somebody saying they would like to author
+        // one, and there is nothing else it could mean.
+        let mut built = out.built.take().unwrap_or_else(|| compose::taken_apart(d_hint, l));
+        built.insert(at.min(built.len()), b);
+        out.built = Some(built);
       }
+      Edit::PutBack => out.built = None,
       Edit::Drop(at) => {
         if let Some(v) = out.built.as_mut() {
           if at < v.len() {
@@ -592,6 +595,37 @@ impl Strip<'_> {
       }
     }
 
+    // ---- a block dropped in from the palette
+    //
+    // The pointer says both things: `x` against the block boundaries gives the
+    // position in the order — between blocks, so one can go in the middle — and
+    // `y` gives the lane, which is the voice. Outside the strip, nothing.
+    if self.writing.is_none() {
+      if let Some(held) = egui::DragAndDrop::payload::<crate::palette::Dragged>(ui.ctx()) {
+        let over = ui.ctx().pointer_interact_pos().filter(|p| area.contains(*p));
+        if let Some(pos) = over {
+          let edges: Vec<(f32, f32)> = self.out.blocks.iter().map(|b| (x_of(b.at), x_of(b.at + b.len))).collect();
+          let (at, lane) = crate::palette::landing(pos.x, lane_at(pos.y), &edges);
+          // Where it would land, drawn — a drop with no mark is a guess.
+          let x = edges.get(at).map(|(l, _)| *l).unwrap_or_else(|| edges.last().map_or(area.left(), |(_, r)| *r));
+          let top = lane_top(lane);
+          p.rect_filled(
+            Rect::from_min_max(Pos2::new(x - 1.5, top + 1.0), Pos2::new(x + 1.5, top + LANE - 1.0)),
+            CornerRadius::same(1),
+            theme::voice(lane, dark),
+          );
+          if ui.input(|i| i.pointer.any_released()) {
+            let mut b = held.0.clone();
+            match &mut b {
+              compose::Built::Entry { voice, .. } | compose::Built::Episode { voice, .. } => *voice = lane,
+            }
+            asked.edit = Some(Edit::Insert(at, b));
+            egui::DragAndDrop::clear_payload(ui.ctx());
+          }
+        }
+      }
+    }
+
     // ---- what to draw: the proposal if one is being dragged, else the piece
     let showing: Vec<Block> = match (&proposed, self.writing) {
       (Some((_, l)), _) => compose::derive(self.design, l),
@@ -692,26 +726,6 @@ impl Strip<'_> {
       }
     }
 
-    // ---- the palette's own row, where a derived plan has its handles
-    if self.layout.built.is_some() {
-      let y = area.bottom() - HANDLES;
-      let mut at = egui::Rect::from_min_size(Pos2::new(area.left() + 2.0, y), Vec2::new(150.0, HANDLES - 2.0));
-      let mut put = |ui: &mut Ui, label: &str, hint: &str, what: Edit| {
-        let r = egui::Rect::from_min_size(at.min, Vec2::new(label.len() as f32 * 6.5 + 14.0, HANDLES - 2.0));
-        at = egui::Rect::from_min_size(Pos2::new(r.max.x + 4.0, y), r.size());
-        if ui.put(r, egui::Button::new(egui::RichText::new(label).size(10.0)).small()).on_hover_text(hint).clicked() {
-          asked.edit = Some(what);
-        }
-      };
-      // Appended at the end and in the top voice, because a palette that made
-      // those choices for you would be a generator with fewer parameters.
-      put(ui, "+ entry", "A statement of the subject, as long as the subject is.",
-        Edit::Append(compose::Built::Entry { voice: 0, shift: 0, tonal: false, key_of: 0 }));
-      put(ui, "+ episode", "An episode of two bars, its motive in the top voice.",
-        Edit::Append(compose::Built::Episode { voice: 0, shift: 0, key_of: 0, bars: 2 }));
-      put(ui, "put it back", "Back to a plan derived from the controls, throwing these blocks away.", Edit::PutBack);
-    }
-
     // ---- the handles: a return added, a return removed, the close toggled
     //
     // These are the edits 4.2 wanted as gestures on the blocks themselves, and
@@ -802,9 +816,8 @@ impl Strip<'_> {
           format!("into voice {lane}, and every block after it moves with it")
         }
         // None of these is ever dragged, so none is ever previewed.
-        Edit::TakeApart
+        Edit::Insert(..)
         | Edit::PutBack
-        | Edit::Append(_)
         | Edit::Drop(_)
         | Edit::Bars(..)
         | Edit::Lane(..)
@@ -890,7 +903,7 @@ fn block_rect(b: &Block, v: usize, x_of: &impl Fn(i64) -> f32, lane_top: &impl F
 }
 
 #[allow(clippy::too_many_arguments)]
-fn draw_block(p: &egui::Painter, ui: &Ui, b: &Block, v: usize, r: Rect, dark: bool, fading: bool, cold: bool) {
+pub fn draw_block(p: &egui::Painter, ui: &Ui, b: &Block, v: usize, r: Rect, dark: bool, fading: bool, cold: bool) {
   let (label, solid) = match &b.kind {
     Kind::Entry { tonal, .. } => (if *tonal { "answer" } else { "subject" }, true),
     Kind::Episode { .. } => ("episode", false),
@@ -988,6 +1001,11 @@ fn text_on(c: Color32) -> Color32 {
 mod tests {
   use super::*;
   use contrapunctus::compose;
+
+  /// `Block` has no `PartialEq`, so comparisons go through what a block is.
+  fn shape_of(bs: &[Block]) -> Vec<(i64, i64, i16, &Kind)> {
+    bs.iter().map(|b| (b.at, b.len, b.key_of, &b.kind)).collect()
+  }
 
   fn design() -> Design {
     crate::catalog::load().subjects[1].design(3)
@@ -1272,33 +1290,38 @@ mod tests {
     let d = design();
     let derived = Layout { middles: vec![4], episode_bars: 2, ..Layout::default() };
 
-    // in, exactly
-    let apart = Edit::TakeApart.applied(&d, &derived);
-    assert!(apart.built.is_some());
-    assert_eq!(
-      compose::derive(&d, &apart).len(),
-      compose::derive(&d, &derived).len(),
-      "taking it apart changed the plan"
+    // **In by dropping a block, and by nothing else.** There is no mode to enter:
+    // an insert into a derived plan takes it apart on the way past, so the plan
+    // afterwards is the old one plus the block and nothing has been announced.
+    let was = compose::derive(&d, &derived);
+    let apart = Edit::Insert(1, compose::Built::Episode { voice: 1, shift: 0, key_of: 0, bars: 3 })
+      .applied(&d, &derived);
+    assert!(apart.built.is_some(), "dropping a block did not author the plan");
+    assert_eq!(compose::derive(&d, &apart).len(), was.len() + 1, "the drop did not add exactly one block");
+    // and it went where it was dropped, which is the middle and not the end
+    assert!(
+      matches!(compose::derive(&d, &apart)[1].kind, Kind::Episode { .. }),
+      "the block landed somewhere other than where it was dropped"
     );
+    // everything before it is the plan that was there
+    assert_eq!(shape_of(&compose::derive(&d, &apart)[..1]), shape_of(&was[..1]), "the drop disturbed what was there");
     assert!(
       compose::origins(&d, &apart).iter().all(|o| *o == compose::Origin::Built),
       "an authored block still claims to have come from a parameter"
     );
 
-    // the palette
-    let n = apart.built.as_ref().unwrap().len();
-    let grown = Edit::Append(compose::Built::Episode { voice: 1, shift: 0, key_of: 0, bars: 3 }).applied(&d, &apart);
-    assert_eq!(grown.built.as_ref().unwrap().len(), n + 1);
-    assert_eq!(compose::derive(&d, &grown).len(), n + 1, "the appended block is not in the plan");
+    // the palette's own edits, on the block that was just dropped
+    let grown = apart.clone();
+    let n = grown.built.as_ref().unwrap().len();
+    let longer = Edit::Bars(1, 5).applied(&d, &grown);
+    assert_eq!(compose::derive(&d, &longer)[1].len, 5 * d.measure, "the bars did not change");
 
-    let longer = Edit::Bars(n, 5).applied(&d, &grown);
-    assert_eq!(compose::derive(&d, &longer).last().unwrap().len, 5 * d.measure, "the bars did not change");
+    let moved = Edit::Lane(1, 2).applied(&d, &longer);
+    assert_eq!(voice_of(&compose::derive(&d, &moved)[1].kind), Some(2), "the block did not move lane");
 
-    let moved = Edit::Lane(n, 2).applied(&d, &longer);
-    assert_eq!(voice_of(&compose::derive(&d, &moved)[n].kind), Some(2), "the block did not move lane");
-
-    let shrunk = Edit::Drop(0).applied(&d, &moved);
-    assert_eq!(shrunk.built.as_ref().unwrap().len(), n, "the block was not taken out");
+    let shrunk = Edit::Drop(1).applied(&d, &moved);
+    assert_eq!(shrunk.built.as_ref().unwrap().len(), n - 1, "the block was not taken out");
+    assert_eq!(shape_of(&compose::derive(&d, &shrunk)), shape_of(&was), "taking it out did not give back the plan");
 
     // and the parameters are inert while built is set
     let noisy = Edit::EpisodeBars(6).applied(&d, &grown);
@@ -1311,7 +1334,7 @@ mod tests {
     // out again
     let back = Edit::PutBack.applied(&d, &grown);
     assert!(back.built.is_none());
-    assert_eq!(compose::derive(&d, &back).len(), compose::derive(&d, &derived).len(), "putting it back lost the plan");
+    assert_eq!(shape_of(&compose::derive(&d, &back)), shape_of(&was), "putting it back lost the plan");
   }
 
   /// A drag says the same thing the commit does, because both go through

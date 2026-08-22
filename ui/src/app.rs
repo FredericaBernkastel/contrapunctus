@@ -25,7 +25,7 @@ use crate::files::{self, Imported, Loaded, Note};
 use crate::schedule;
 use crate::synth::Mix;
 use crate::task::Slot;
-use crate::{compass, farm, report, score, strip, theme};
+use crate::{compass, farm, palette, report, score, strip, theme};
 #[cfg(feature = "midi-out")]
 use crate::midi;
 
@@ -999,6 +999,11 @@ impl App {
       edit = asked.edit;
       seek = asked.seek;
 
+      // Between the plan and the score, full width, because that is where a
+      // thing you drag *into the plan* belongs — spec 4.5.
+      ui.add_space(6.0);
+      palette::show(ui, design, layout);
+
       ui.add_space(10.0);
       ui.horizontal(|ui| {
         ui.label(RichText::new("SCORE").monospace().weak().small());
@@ -1320,18 +1325,9 @@ impl App {
       group(ui, "THE PLAN ITSELF");
       if self.layout.built.is_none() {
         labelled(ui, "Derived from the controls below", "Layout::built = None");
-        if ui
-          .button("Take it apart into blocks")
-          .on_hover_text(
-            "The controls below are the parameters of a *generator* of plans. Taking it apart              gives you the plan itself — blocks to add, drag between voices, resize and remove.              The piece does not change: it is the same blocks, said a different way.",
-          )
-          .clicked()
-        {
-          from_panel = Some(strip::Edit::TakeApart);
-        }
         ui.label(
           RichText::new(
-            "Nothing then checks that what you build is a fugue. The grammar reports on it              instead — the five verdicts below — because a palette that only allowed legal plans              would teach nothing, everything it allowed being legal already.",
+            "Drag a block from BLOCKS into the plan and it stops being derived: the controls              below are the parameters of a *generator* of plans, and after that you have the plan              itself. The piece does not change at the moment of it — the same blocks, said a              different way. Nothing then checks that what you build is a fugue; the five verdicts              report on it instead.",
           )
           .weak()
           .small(),
@@ -1534,9 +1530,11 @@ fn describe_edit(e: strip::Edit, l: &Layout) -> String {
       let resting = l.rests.iter().find(|(k, _)| *k == id).is_some_and(|(_, vs)| vs.contains(&voice));
       format!("voice {} {} there", voice + 1, if resting { "rests" } else { "plays again" })
     }
-    strip::Edit::TakeApart => "the plan taken apart into blocks — the parameters have nothing more to say".to_string(),
+    strip::Edit::Insert(at, _) => match l.built.as_ref().map_or(0, |v| v.len()) {
+      1 => "the plan is blocks now, and a block added to it".to_string(),
+      n => format!("a block put in at {} — {n} in all", at + 1),
+    },
     strip::Edit::PutBack => "back to a derived plan, and the blocks thrown away".to_string(),
-    strip::Edit::Append(_) => format!("a block added — {} in all", l.built.as_ref().map_or(0, |v| v.len())),
     strip::Edit::Drop(_) => format!("a block taken out — {} left", l.built.as_ref().map_or(0, |v| v.len())),
     strip::Edit::Bars(at, _) => format!("block {} of {} bars", at + 1, match l.built.as_ref().and_then(|v| v.get(at)) {
       Some(compose::Built::Episode { bars, .. }) => *bars,

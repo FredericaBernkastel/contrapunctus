@@ -17,6 +17,7 @@ mod files;
 mod glyph;
 #[cfg(feature = "midi-out")]
 mod midi;
+mod palette;
 mod report;
 mod schedule;
 mod score;

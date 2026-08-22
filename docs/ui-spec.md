@@ -480,11 +480,27 @@ often is not something §8.17 asked.
 alternative a reader asks for once they understand the strip is a **palette** —
 blocks dragged onto the lanes, and the plan authored rather than derived.
 
-`Layout::built` is that palette, and the way in is **Take it apart into blocks**:
-a palette that starts empty is one nobody uses, so it starts from the plan this
-program wrote. `compose::taken_apart` is exact — the piece is the same piece the
-moment after, block for block and identity for identity — because the moment it
-is not, "take it apart" is an edit nobody asked for.
+**A full-width section between the plan and the score**, with the subject, the
+answer and an episode in it — §2.4's three productions, which is why there are
+three. They are drawn by `strip::draw_block`, the function the plan draws with:
+not styled to match, but the same code, because blocks that merely *resembled*
+the ones in the plan would be a picture of the feature rather than the feature.
+
+**There is no mode to enter.** The first version had a *Take it apart into
+blocks* button, and that was exactly backwards: a palette's whole proposition is
+*drag this and see*, and a button you must press first is a palette that has to
+be explained. So dragging a block in is what converts the plan.
+`compose::taken_apart` is exact — the piece is the same piece the moment after,
+block for block and identity for identity — so `Edit::Insert` can do it silently
+on the way past, and nobody has to know the mode exists until they want to leave
+it. *Put it back* is in the panel for that.
+
+**A drop lands between blocks and not on one.** Two numbers, both off the
+pointer: `x` against the block boundaries gives the position in the order, and
+`y` gives the lane, which is the voice. The nearest boundary wins, so the left
+half of a block puts the new one before it, and a block can go in the **middle**
+of a plan rather than only at its end. A mark is drawn where it would land,
+because a drop with nothing to aim at is a guess.
 
 Three things `derive` supplied for free, and what each became:
 
@@ -1383,11 +1399,11 @@ Status is one of **done**, **partial** — usable and honestly incomplete — or
 | 4.1 | The strip drawing the piece it was given rather than the controls, which have moved | `the_strip_is_given_the_piece_it_is_drawing`, `a_click_in_a_lane_rests_that_voice` |
 | 4.4 | The search choosing the rests, off by default, with the finding beside the switch | `the_search_can_choose_who_rests`, `drawing_the_texture_is_off_and_at_three_voices_is_the_same_piece` |
 | 4.5 | A plan authored block by block, judged by the grammar rather than gated by it | `an_authored_plan_composes_and_is_judged_not_gated`, `a_built_plan_takes_the_palette_and_not_the_parameters` |
-| 4.5 | Taking a derived plan apart, exactly | `taking_a_plan_apart_changes_nothing`, `an_authored_plan_leaves_no_gaps_and_no_overlaps` |
+| 4.5 | A palette section, dropped into by drag, landing between blocks and converting the plan on the way | `a_drop_lands_at_the_nearest_boundary`, `a_built_plan_takes_the_palette_and_not_the_parameters` |
 | 6.3 | System MIDI out, on the synth's own clock, against a real port, with the card silenced | `a_playhead_becomes_notes_and_leaves_none_held`, `a_midi_port_silences_the_card_without_stopping_it` |
 | 7.3 | Generating in a worker, with the protocol tested on the desktop and a fallback that says so | `a_reply_becomes_a_piece_or_a_reason`, `there_is_always_somewhere_to_generate_and_it_is_named` |
 
-Sixty-four tests, all headless — three of them only where a MIDI port exists. The interesting one is
+Sixty-six tests, all headless — three of them only where a MIDI port exists. The interesting one is
 `every_offered_subject_composes`: each of the 24 subjects is composed on the
 shortest layout that is still a fugue, because a picker whose entries have not
 been tried is a picker that wastes the one click a beginner is sure to make. It
