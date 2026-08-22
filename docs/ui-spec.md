@@ -737,6 +737,19 @@ either alone was enough to cause it. The feature flag was the reason there was n
 control at all; the caching was waiting behind it to make the control say
 nothing.
 
+**And the two builds do not list the same ports, which is expected and worth
+saying.** On Windows `midir` uses **WinMM** by default — its `winrt` backend is
+behind a feature that is off — and WinMM lists *Microsoft GS Wavetable Synth*,
+which is a legacy software synth rather than a device. Chrome's Web MIDI does not
+go through WinMM, and does not offer it. A driver-level virtual cable such as
+loopMIDI is a real MIDI device and appears in both.
+
+So the desktop build can send to something that makes a sound with nothing
+plugged in, and the browser build generally cannot. That is one crate and one
+feature over two different Windows MIDI APIs, and it is not a fault in either.
+The desktop half of it is measured — two ports here, and the source says which
+backend — and the Chrome half is not measured from this repository.
+
 **It shares the synth's scheduler and the synth's clock**, which is the design
 rather than an economy. `schedule::Score` already holds every note as a span of
 samples and a MIDI number, and `audio::Player` already counts samples in its
@@ -933,9 +946,17 @@ the worker has answered once, that line says so: a worker that quietly failed to
 start and one that quietly worked look identical from a chair, and the difference
 is the entire feature.
 
-Until a browser has run it, that is exactly what this is: built, type-checked on
-both targets, its protocol tested on the desktop, and **unverified where it
-matters**. 6.4's stream rebuild is still there and still the safety net.
+**A browser has now run it, and it does the thing it was built for.** The panel
+reads *writing happens in a worker*, and pressing Compose while a piece is
+playing leaves the sound intact — which is the whole of 7.3 and the one claim
+that could not be checked from here. 6.4's stream rebuild stays as the safety
+net; what it now covers is a worker that fails rather than a worker that does not
+exist.
+
+Two faults were found on the way to that, both in the glue and neither reachable
+by any check in this repository: a boot script that never called `wasm_bindgen`,
+and one that did but dropped every message sent before the wasm finished
+instantiating — which is every first request there is.
 
 ### 7.4 Built, and how
 
@@ -1438,11 +1459,17 @@ Stated rather than left to be discovered:
   combination still *references* the panic, and referencing is not calling. The
   path it was reached by is gone; whether the string is reachable at all is
   unknown, and saying so is better than reporting a clean binary.
-- **The worker is built and has never run.** 7.3 has what it does and how it
-  falls back. What no test here reaches is whether a browser starts it, whether
-  the two paths trunk emits are the two paths it serves, and whether the sound
-  actually survives — the panel says where writing is happening precisely so that
-  the first of those takes one glance rather than a debugger.
+- **The worker runs, and nothing here can tell.** A reader confirmed both halves
+  — the panel says it is in a worker, and Compose during playback no longer
+  breaks the sound — and every check in this repository would say exactly the
+  same thing if neither were true. That is the standing shape of the web target
+  and the reason the panel names where writing happens: it makes the difference
+  between working and not working a glance rather than a debugger.
+- **The desktop and the browser do not offer the same MIDI ports.** `midir` uses
+  WinMM on Windows and Chrome's Web MIDI does not, so *Microsoft GS Wavetable
+  Synth* is in the desktop list and not the browser one. Expected, and stated in
+  6.3, because a control that offers different things in two builds of the same
+  program looks like a fault until somebody says otherwise.
 - **Generation no longer blocks the frame, and on the web that is still not
   enough.** `compose::Run` fills a block at a time and the interface spends six
   milliseconds of each frame on it, so the window stays answerable and the plan
