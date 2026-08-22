@@ -1433,6 +1433,40 @@ It ships **off**, with a control to turn it on, and the measurement rather than 
 > positive criterion, which is the exact subject of §8.10 and its degenerate optima. The open problem is older than
 > this section and this section found its way back to it.
 
+## §8.18 — the other mechanism has degenerate optima too
+
+[`4ce9385`](../../commit/4ce9385)
+
+§8.17 left drawing returning the densest legal texture, which is not a texture anybody chose. The obvious repair is
+a criterion that prefers a thinner one, and §8.10 is the section about what positive criteria do under a minimiser —
+so the repair was measured rather than believed.
+
+`Texture` replaces the `drawn_texture` flag with three: `Given`, `Drawn`, `Thinnest`. Mean voices sounding per bar,
+one subject and one seed: **2.52**, **2.44**, **1.85**.
+
+> **Drawing has degenerate optima as surely as minimising does, and they are at the opposite end.** §8.10 found
+> three positive criteria collapse under a minimiser — `move by step` onto oscillation, `state the harmony` onto a
+> held chord tone, `move against` onto never moving. It had only a minimiser to point at the problem with. Pointed
+> at texture, this project's *other* mechanism collapses too: a pattern with one more free voice admits thousands
+> of times more music, so drawing takes the fullest wherever it is asked. A parameter with a degenerate optimum at
+> each end cannot be asked of either.
+
+> **A degenerate optimum stopped by an unrelated implementation detail is still degenerate, and worse to find.**
+> `Thinnest` settles at 1.85 rather than at the subject alone, and not because the criterion is satisfied: the
+> all-resting pattern is never a candidate, since `realise::fill` refuses a problem with no free voice in it. From
+> the numbers it looks like a mechanism that settles somewhere. It is one that ran into a wall belonging to
+> something else, and the wall is what makes it look reasonable.
+
+**The row that varies most is the one with no criterion in it.** `Given` alternates 3 and 2 after the exposition,
+and that alternation is the grammar's — `fill_block` rests the voice about to enter so it does not arrive by a leap,
+which is §8.16's eleventh. Every bit of texture this program has comes from a rule somebody transcribed, and both
+attempts to *choose* one flattened it.
+
+So the roadmap item stops being blocked on a criterion and starts being blocked on a **source**. Nothing in the
+treatises read so far says when a voice should rest, beyond the two rules already built: before it enters, and to
+make room for an entry. That is a gap in the sources rather than in the search, and filling it by invention is the
+one thing this project does not do.
+
 ---
 
 ## Recurring pattern
