@@ -886,15 +886,32 @@ judged in the page cannot disagree.
 
 - `data-type="worker"` emits wasm-bindgen's `no-modules` shim, which *defines*
   `wasm_bindgen` and never calls it. A `Worker` pointed at that file loads a
-  function and then sits there for ever. `worker-boot.js` is the two lines that
-  were missing — `importScripts` then `wasm_bindgen(...)` — copied in as an asset.
+  function and then sits there for ever. `worker-boot.js` is what was missing —
+  `importScripts` then `wasm_bindgen(...)` — copied in as an asset.
+- **And that boot script drops the first message**, which is a second fault
+  wearing the first one's clothes. The script finishes evaluating in a
+  millisecond; instantiating 1.1 MB of wasm does not. A worker's messages are
+  queued only until its script has been *evaluated* — after that they dispatch
+  immediately, and one dispatched with no handler registered is dropped without a
+  trace. The page asks for its first fugue on its first frame, which is inside
+  that window every time. It was reported as *"Writing — in a worker" stuck for
+  ever, cured by pressing Compose*: the second request arrives after the handler
+  exists. So a handler goes on **synchronously**, before anything is awaited, and
+  holds what arrives until the real one can take it.
 - The main bundle is content-hashed and the worker's output is **not**, so
   `./worker-boot.js` and `./worker.js` are paths that can be written down. That is
   luck rather than design and a trunk that starts hashing them would break this
   silently, which is why the failure is a fallback and not a panic.
 
-**It always falls back and always says which.** A worker can fail for reasons no
-build check reaches — a browser without them, a page on `file://`, a policy that
+**It always falls back and always says which — and now it does that on a clock
+too.** A request outstanding longer than `farm::PATIENCE` (25 s, which is
+generous because the first one pays for fetching and instantiating a megabyte of
+wasm before it starts) writes the worker off *for good* and writes the piece in
+the page, saying so. The stuck panel above is the shape that rules out: a worker
+failing in some way the boot script does not catch used to be a wait with no end,
+and is now a wait with a length and a reason.
+
+A worker can fail for reasons no build check reaches — a browser without them, a page on `file://`, a policy that
 forbids them — so `Farm::start` cannot fail: it returns something that generates
 either way, and the panel carries a line saying *where writing happens*. Until
 the worker has answered once, that line says so: a worker that quietly failed to
@@ -1312,7 +1329,7 @@ Status is one of **done**, **partial** — usable and honestly incomplete — or
 | 6.3 | System MIDI out, on the synth's own clock, against a real port, with the card silenced | `a_playhead_becomes_notes_and_leaves_none_held`, `a_midi_port_silences_the_card_without_stopping_it` |
 | 7.3 | Generating in a worker, with the protocol tested on the desktop and a fallback that says so | `a_reply_becomes_a_piece_or_a_reason`, `there_is_always_somewhere_to_generate_and_it_is_named` |
 
-Fifty-eight tests, all headless — three of them only where a MIDI port exists. The interesting one is
+Fifty-nine tests, all headless — three of them only where a MIDI port exists. The interesting one is
 `every_offered_subject_composes`: each of the 24 subjects is composed on the
 shortest layout that is still a fugue, because a picker whose entries have not
 been tried is a picker that wastes the one click a beginner is sure to make. It

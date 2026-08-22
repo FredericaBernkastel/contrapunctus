@@ -77,8 +77,9 @@ pub struct App {
   farm: farm::Farm,
   /// The design and layout a worker was asked with, because it answers later and
   /// the controls may have moved by then — the same reason `shown` exists, and
-  /// the same fault it was written for.
-  asked: Option<(Design, Layout)>,
+  /// the same fault it was written for. And when, so that a worker which never
+  /// answers becomes a fallback rather than a wait with no end.
+  asked: Option<(Design, Layout, web_time::Instant)>,
   /// A generate in progress **here**, a block per frame — spec 7.3.
   ///
   /// Six tenths of a second is rude on a desktop and freezes a browser tab, and
@@ -200,7 +201,7 @@ impl App {
     self.work = None;
     self.asked = None;
     if self.farm.ask(&self.design, &self.layout, self.tier, self.seed) {
-      self.asked = Some((self.design.clone(), self.layout.clone()));
+      self.asked = Some((self.design.clone(), self.layout.clone(), web_time::Instant::now()));
       self.refused = None;
       self.stale = false;
       self.fidelity = None;
@@ -236,7 +237,20 @@ impl App {
   fn grind(&mut self, ctx: &egui::Context) {
     // Whatever the worker has said since the last frame, first: it answers all
     // at once and there is nothing to do in the frame while it is working.
-    if let Some((d, l)) = self.asked.clone() {
+    if let Some((d, l, since)) = self.asked.clone() {
+      // Give up before taking, so that a worker which answers nothing at all is
+      // a fallback with a reason rather than a panel that says "writing" for ever.
+      if farm::overdue(since.elapsed().as_secs_f64()) {
+        self.asked = None;
+        self.farm.give_up("it was asked and never answered");
+        self.status = Some(format!(
+          "the worker did not answer in {:.0} s, so this is being written in the page instead",
+          farm::PATIENCE
+        ));
+        self.compose();
+        ctx.request_repaint();
+        return;
+      }
       if let Some(done) = self.farm.take(&d, &l) {
         self.asked = None;
         match done {

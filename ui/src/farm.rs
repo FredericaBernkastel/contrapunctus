@@ -85,6 +85,23 @@ pub fn request(d: &Design, l: &Layout, tier: contrapunctus::automaton::Tier, see
   .to_json()
 }
 
+/// How long to wait for a worker before writing it off, in seconds.
+///
+/// Generous, because the first request pays for fetching and instantiating a
+/// megabyte of wasm on top of the generate itself, and a slow machine on a slow
+/// connection is not a broken worker. Short enough that a broken one is a wait
+/// and not a hang.
+pub const PATIENCE: f64 = 25.0;
+
+/// Whether a request has been outstanding long enough to give up on.
+///
+/// A function rather than a comparison written where it is used, because it is
+/// the one part of the fallback that can be tested on a desktop — the rest of it
+/// only ever runs in a browser.
+pub fn overdue(waiting: f64) -> bool {
+  waiting > PATIENCE
+}
+
 /// Where a generate happens, and what it is doing.
 pub enum Farm {
   /// A worker, and whether it has ever answered. Until it has, nothing is known
@@ -152,6 +169,15 @@ impl Farm {
       }
       Farm::Here(_) => false,
     }
+  }
+
+  /// Write off whatever was generating and do it here from now on.
+  ///
+  /// **For good, and not for this attempt.** A worker that did not answer once
+  /// has given no reason to expect it to answer next time, and asking again
+  /// would be another wait ending the same way.
+  pub fn give_up(&mut self, why: &str) {
+    *self = Farm::Here(why.to_owned());
   }
 
   /// Anything that has come back since last asked.
@@ -296,6 +322,28 @@ mod tests {
       Ok(_) => panic!("a refusal became a piece"),
       Err(e) => assert_eq!(e, "the wall", "the reason did not survive the wire"),
     }
+  }
+
+  /// **A worker that never answers is given up on, and says so.**
+  ///
+  /// The page asks on its first frame and then waits; without this, a worker
+  /// that fails in any way the boot script did not catch leaves the panel
+  /// reading "Writing — in a worker" for ever. That was reported, from a
+  /// different cause — a message dispatched before the wasm had finished
+  /// instantiating, which `worker-boot.js` now holds — and the shape of it is
+  /// what this rules out for the next cause as well.
+  #[test]
+  fn a_worker_that_never_answers_is_given_up_on() {
+    assert!(!overdue(0.0));
+    assert!(!overdue(PATIENCE), "giving up exactly on the limit is giving up early");
+    assert!(overdue(PATIENCE + 0.001));
+
+    let mut farm = Farm::start();
+    farm.give_up("it never answered");
+    assert!(farm.where_it_runs().contains("never answered"), "giving up did not say why");
+    // and it is here now, so the next request is not another wait
+    let (d, l) = design();
+    assert!(!farm.ask(&d, &l, contrapunctus::automaton::Tier::Confirmed, 0), "it asked again after giving up");
   }
 
   /// A farm always exists and always says where it is running. On the desktop
